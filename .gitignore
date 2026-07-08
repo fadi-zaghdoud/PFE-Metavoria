@@ -1,0 +1,49 @@
+# ── Dependencies ──
+node_modules/
+.pnp
+.pnp.js
+
+# ── Builds / sorties ──
+dist/
+build/
+*.tsbuildinfo
+
+# ── Variables d'environnement (ne jamais committer les secrets) ──
+.env
+.env.local
+.env.*.local
+backend/.env
+frontend/.env
+
+# ── Prisma ──
+# Le client généré est régénérable, on ne le versionne pas
+backend/src/generated/
+backend/node_modules/.prisma/
+
+# ── Logs ──
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── Docker ──
+# Les volumes de données Postgres restent locaux
+postgres-data/
+
+# ── IDE / OS ──
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+.DS_Store
+Thumbs.db
+
+# ── Divers ──
+coverage/
+.cache/
+*.pem
+uploads/

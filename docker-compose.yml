@@ -1,0 +1,61 @@
+# =============================================================================
+#  Smart Ticketing & Support Assistant — Environnement Docker
+#  Usage :  cp .env.example .env   puis   docker compose up --build
+#  Dév local : seul postgres est nécessaire ->  docker compose up -d postgres
+# =============================================================================
+
+services:
+  # ── Base de données PostgreSQL 17 + extension pgvector ─────────────────────
+  # Image officielle pgvector : l'extension est disponible dès maintenant,
+  # ce qui évite une migration d'infrastructure lors de la phase IA.
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: smart-ticketing-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-smart_ticketing}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-smart_ticketing}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── API backend (Express + Prisma) ──────────────────────────────────────────
+  backend:
+    build: ./backend
+    container_name: smart-ticketing-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-smart_ticketing}?schema=public
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET manquant — définis-le dans .env}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      BCRYPT_SALT_ROUNDS: ${BCRYPT_SALT_ROUNDS:-12}
+      CORS_ORIGIN: http://localhost:${FRONTEND_PORT:-5173}
+    ports:
+      - "${BACKEND_PORT:-4000}:4000"
+    # Applique les migrations au démarrage puis lance l'API
+    command: sh -c "npx prisma migrate deploy && node dist/server.js"
+
+  # ── Frontend (React buildé, servi par nginx qui proxifie /api) ─────────────
+  frontend:
+    build: ./frontend
+    container_name: smart-ticketing-web
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+
+volumes:
+  postgres-data:

@@ -1,0 +1,169 @@
+// =============================================================================
+//  Schéma Prisma — Smart Ticketing & Support Assistant (Metavoria)
+//  Entités nommées en français, fidèles au MCD validé.
+//  Tables et colonnes mappées en snake_case (convention PostgreSQL).
+// =============================================================================
+
+generator client {
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  moduleFormat    = "cjs"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  extensions = [vector]
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Énumérations
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum Role {
+  EMPLOYE
+  TECHNICIEN
+  ADMINISTRATEUR
+}
+
+enum StatutTicket {
+  NOUVEAU
+  EN_COURS
+  EN_ATTENTE
+  RESOLU
+  CLOTURE
+}
+
+enum Priorite {
+  FAIBLE
+  MOYENNE
+  HAUTE
+  CRITIQUE
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Entités
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Utilisateur {
+  id         Int      @id @default(autoincrement())
+  nom        String
+  prenom     String
+  email      String   @unique
+  motDePasse String   @map("mot_de_passe")
+  role       Role     @default(EMPLOYE)
+  service    String?
+  poste      String?
+  dateCreation DateTime @default(now()) @map("date_creation")
+
+  // Relations
+  ticketsDemandes Ticket[]       @relation("TicketsDemandes")
+  ticketsAssignes Ticket[]       @relation("TicketsAssignes")
+  commentaires    Commentaire[]
+  notifications   Notification[]
+
+  @@map("utilisateurs")
+}
+
+model Categorie {
+  id          Int     @id @default(autoincrement())
+  nom         String  @unique
+  description String?
+
+  tickets Ticket[]
+
+  @@map("categories")
+}
+
+model Ticket {
+  id               Int          @id @default(autoincrement())
+  titre            String
+  description      String
+  statut           StatutTicket @default(NOUVEAU)
+  priorite         Priorite     @default(MOYENNE)
+  dateCreation     DateTime     @default(now()) @map("date_creation")
+  dateCloture      DateTime?    @map("date_cloture")
+  satisfactionNote Int?         @map("satisfaction_note") // 1..5, renseignée à la clôture
+
+  // Embedding du ticket pour la recherche de similarité (module IA, phase 5).
+  // Dimension 1536 = standard des modèles d'embedding actuels ; ajustable via migration.
+  embedding Unsupported("vector(1536)")?
+
+  categorieId Int? @map("categorie_id")
+  categorie   Categorie? @relation(fields: [categorieId], references: [id], onDelete: SetNull)
+
+  demandeurId Int @map("demandeur_id")
+  demandeur   Utilisateur @relation("TicketsDemandes", fields: [demandeurId], references: [id])
+
+  technicienId Int? @map("technicien_id")
+  technicien   Utilisateur? @relation("TicketsAssignes", fields: [technicienId], references: [id], onDelete: SetNull)
+
+  commentaires  Commentaire[]
+  piecesJointes PieceJointe[]
+  suggestionsIA SuggestionIA[]
+
+  @@index([statut])
+  @@index([priorite])
+  @@index([demandeurId])
+  @@index([technicienId])
+  @@index([categorieId])
+  @@map("tickets")
+}
+
+model Commentaire {
+  id           Int      @id @default(autoincrement())
+  contenu      String
+  dateCreation DateTime @default(now()) @map("date_creation")
+
+  ticketId Int    @map("ticket_id")
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  auteurId Int         @map("auteur_id")
+  auteur   Utilisateur @relation(fields: [auteurId], references: [id])
+
+  @@index([ticketId])
+  @@map("commentaires")
+}
+
+model PieceJointe {
+  id         Int      @id @default(autoincrement())
+  nomFichier String   @map("nom_fichier")
+  url        String
+  dateUpload DateTime @default(now()) @map("date_upload")
+
+  ticketId Int    @map("ticket_id")
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@map("pieces_jointes")
+}
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  type      String // ex. CHANGEMENT_STATUT, AFFECTATION, NOUVEAU_COMMENTAIRE
+  contenu   String
+  lu        Boolean  @default(false)
+  dateEnvoi DateTime @default(now()) @map("date_envoi")
+
+  utilisateurId Int         @map("utilisateur_id")
+  utilisateur   Utilisateur @relation(fields: [utilisateurId], references: [id], onDelete: Cascade)
+
+  @@index([utilisateurId, lu])
+  @@map("notifications")
+}
+
+// Prévu dans le schéma dès maintenant ; la logique IA sera implémentée en phase 5.
+model SuggestionIA {
+  id             Int      @id @default(autoincrement())
+  typeSuggestion String   @map("type_suggestion") // CLASSIFICATION | PRIORISATION | SOLUTION | RESUME
+  contenu        String
+  scoreConfiance Float    @map("score_confiance") // 0..1, affiché au technicien (validation humaine obligatoire)
+  valideeParTechnicien Boolean? @map("validee_par_technicien")
+  dateCreation   DateTime @default(now()) @map("date_creation")
+
+  ticketId Int    @map("ticket_id")
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@map("suggestions_ia")
+}

@@ -1,11 +1,18 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type SubmitEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { authApi } from '../features/auth/authApi';
 import { useAuthStore } from '../store/authStore';
 import { ApiError } from '../lib/apiClient';
+import { AuthLayout } from '../components/layout/AuthLayout';
+import { Button } from '../components/ui/Button';
+import { Field, Input } from '../components/ui/Input';
+import { Alert } from '../components/ui/Alert';
+import { PasswordInput } from '../components/ui/PasswordInput';
+import { useToast } from '../components/ui/Toast';
 
 export function LoginPage() {
   const navigate = useNavigate();
+  const toast = useToast();
   const connecter = useAuthStore((state) => state.connecter);
 
   const [email, setEmail] = useState('');
@@ -13,76 +20,77 @@ export function LoginPage() {
   const [erreur, setErreur] = useState<string | null>(null);
   const [enCours, setEnCours] = useState(false);
 
-  async function handleSubmit(event: FormEvent) {
+  async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     setErreur(null);
     setEnCours(true);
     try {
       const auth = await authApi.connecter({ email, motDePasse });
       connecter(auth);
+      toast.success('Connexion réussie', `Bon retour, ${auth.utilisateur.prenom} !`);
       navigate('/tableau-de-bord', { replace: true });
     } catch (err) {
-      setErreur(err instanceof ApiError ? err.message : 'Impossible de se connecter');
+      const message = err instanceof ApiError ? err.message : 'Impossible de se connecter';
+      setErreur(message);
+      if (err instanceof ApiError && err.status === 0) {
+        toast.error('Connexion perdue', message);
+      }
     } finally {
       setEnCours(false);
     }
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
-      <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-8 shadow-sm">
-        <h1 className="mb-1 text-xl font-semibold text-slate-900">Connexion</h1>
-        <p className="mb-6 text-sm text-slate-500">Smart Ticketing & Support Assistant</p>
+    <AuthLayout
+      titre="Bon retour parmi nous"
+      sousTitre="Connectez-vous à votre espace de support."
+      pied={
+        <>
+          Pas encore de compte ?{' '}
+          <Link to="/inscription" className="font-medium text-primary-600 hover:underline">
+            Créer un compte
+          </Link>
+        </>
+      }
+    >
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Field label="Email" htmlFor="email">
+          <Input
+            id="email"
+            type="email"
+            required
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="prenom.nom@metavoria.tn"
+          />
+        </Field>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label htmlFor="email" className="mb-1 block text-sm font-medium text-slate-700">
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-              placeholder="prenom.nom@metavoria.tn"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="motDePasse" className="mb-1 block text-sm font-medium text-slate-700">
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <label htmlFor="motDePasse" className="block text-sm font-medium text-slate-700">
               Mot de passe
             </label>
-            <input
-              id="motDePasse"
-              type="password"
-              required
-              value={motDePasse}
-              onChange={(e) => setMotDePasse(e.target.value)}
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-              placeholder="••••••••"
-            />
+            <Link to="/mot-de-passe-oublie" className="text-xs font-medium text-primary-600 hover:underline">
+              Mot de passe oublié ?
+            </Link>
           </div>
+          <PasswordInput
+            id="motDePasse"
+            required
+            autoComplete="current-password"
+            value={motDePasse}
+            onChange={(e) => setMotDePasse(e.target.value)}
+            placeholder="••••••••"
+          />
+        </div>
 
-          {erreur && <p className="text-sm text-red-600">{erreur}</p>}
+        {erreur && <Alert variant="danger">{erreur}</Alert>}
 
-          <button
-            type="submit"
-            disabled={enCours}
-            className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-          >
-            {enCours ? 'Connexion…' : 'Se connecter'}
-          </button>
-        </form>
-
-        <p className="mt-4 text-center text-sm text-slate-500">
-          Pas encore de compte ?{' '}
-          <Link to="/inscription" className="font-medium text-blue-600 hover:underline">
-            S'inscrire
-          </Link>
-        </p>
-      </div>
-    </div>
+        <Button type="submit" loading={enCours} className="w-full">
+          Se connecter
+        </Button>
+      </form>
+    </AuthLayout>
   );
 }

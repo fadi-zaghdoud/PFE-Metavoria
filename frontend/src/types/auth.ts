@@ -1,5 +1,8 @@
 export type Role = 'EMPLOYE' | 'TECHNICIEN' | 'ADMINISTRATEUR';
 
+// EN_ATTENTE : compte invité n'ayant pas encore choisi son mot de passe.
+export type StatutCompte = 'EN_ATTENTE' | 'ACTIF' | 'DESACTIVE';
+
 export interface Utilisateur {
   id: number;
   nom: string;
@@ -8,6 +11,8 @@ export interface Utilisateur {
   role: Role;
   service: string | null;
   poste: string | null;
+  actif: boolean;
+  statutCompte: StatutCompte;
   dateCreation: string;
 }
 
@@ -28,4 +33,56 @@ export interface ConnexionPayload {
 export interface AuthResponse {
   utilisateur: Utilisateur;
   token: string;
+}
+
+export interface MiseAJourProfilPayload {
+  nom?: string;
+  prenom?: string;
+  service?: string;
+  poste?: string;
+}
+
+export interface ChangementMotDePassePayload {
+  motDePasseActuel: string;
+  nouveauMotDePasse: string;
+}
+
+export interface DemandeReinitialisationPayload {
+  email: string;
+}
+
+export interface VerificationCodePayload {
+  email: string;
+  code: string;
+}
+
+export interface ReinitialisationPayload {
+  email: string;
+  code: string;
+  nouveauMotDePasse: string;
+}
+
+export interface FiltresUtilisateurs {
+  role?: Role;
+  service?: string;
+  actif?: boolean;
+}
+
+export interface InvitationPayload {
+  nom: string;
+  prenom: string;
+  email: string;
+  service?: string;
+  poste?: string;
+  role: Role;
+}
+
+export interface InvitationInfo {
+  prenom: string;
+  email: string;
+}
+
+export interface ActivationComptePayload {
+  token: string;
+  motDePasse: string;
 }

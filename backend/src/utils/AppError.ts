@@ -2,6 +2,9 @@ export class AppError extends Error {
   constructor(
     public readonly statusCode: number,
     message: string,
+    // Code machine optionnel, transmis au client pour un traitement spécifique
+    // (ex. TOKEN_INVALIDE -> déconnexion automatique côté frontend).
+    public readonly code?: string,
   ) {
     super(message);
     this.name = 'AppError';
@@ -9,8 +12,14 @@ export class AppError extends Error {
 }
 
 export class UnauthorizedError extends AppError {
-  constructor(message = 'Authentification requise') {
-    super(401, message);
+  constructor(message = 'Authentification requise', code?: string) {
+    super(401, message, code);
+  }
+}
+
+export class TooManyRequestsError extends AppError {
+  constructor(message = 'Trop de requêtes — réessayez plus tard') {
+    super(429, message);
   }
 }
 

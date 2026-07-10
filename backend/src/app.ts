@@ -8,6 +8,10 @@ import { errorHandler, notFoundHandler } from './middlewares/error.middleware';
 
 export const app = express();
 
+// Un seul proxy de confiance devant l'API (nginx en Docker) : nécessaire pour
+// que req.ip reflète le client réel et que le rate limiting par IP fonctionne.
+app.set('trust proxy', 1);
+
 app.use(helmet());
 app.use(cors({ origin: env.CORS_ORIGIN, credentials: true }));
 app.use(express.json());

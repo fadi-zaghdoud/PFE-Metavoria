@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
-import { ZodError } from 'zod';
+import { z, ZodError } from 'zod';
 import { AppError } from '../utils/AppError';
 
 export function notFoundHandler(req: Request, res: Response): void {
@@ -14,12 +14,12 @@ export function errorHandler(
   _next: NextFunction,
 ): void {
   if (err instanceof AppError) {
-    res.status(err.statusCode).json({ error: err.message });
+    res.status(err.statusCode).json({ error: err.message, ...(err.code ? { code: err.code } : {}) });
     return;
   }
 
   if (err instanceof ZodError) {
-    res.status(400).json({ error: 'Données invalides', details: err.flatten().fieldErrors });
+    res.status(400).json({ error: 'Données invalides', details: z.flattenError(err).fieldErrors });
     return;
   }
 

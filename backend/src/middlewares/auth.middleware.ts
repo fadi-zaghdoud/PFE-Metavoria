@@ -23,8 +23,10 @@ declare global {
 export function requireAuth(req: Request, _res: Response, next: NextFunction): void {
   const header = req.headers.authorization;
 
+  // Le code TOKEN_INVALIDE permet au frontend de distinguer une session expirée
+  // (déconnexion automatique) d'un simple 401 métier (ex. mot de passe incorrect).
   if (!header?.startsWith('Bearer ')) {
-    throw new UnauthorizedError('Jeton d\'authentification manquant');
+    throw new UnauthorizedError('Jeton d\'authentification manquant', 'TOKEN_INVALIDE');
   }
 
   const token = header.slice('Bearer '.length);
@@ -34,7 +36,7 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction): v
     req.user = payload;
     next();
   } catch {
-    throw new UnauthorizedError('Jeton d\'authentification invalide ou expiré');
+    throw new UnauthorizedError('Votre session a expiré — reconnectez-vous', 'TOKEN_INVALIDE');
   }
 }
 

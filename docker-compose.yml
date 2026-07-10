@@ -42,6 +42,13 @@ services:
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
       BCRYPT_SALT_ROUNDS: ${BCRYPT_SALT_ROUNDS:-12}
       CORS_ORIGIN: http://localhost:${FRONTEND_PORT:-5173}
+      FRONTEND_URL: http://localhost:${FRONTEND_PORT:-5173}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-Smart Ticketing <no-reply@metavoria.tn>}
     ports:
       - "${BACKEND_PORT:-4000}:4000"
     # Applique les migrations au démarrage puis lance l'API

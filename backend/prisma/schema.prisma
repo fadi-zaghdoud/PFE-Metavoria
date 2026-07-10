@@ -46,15 +46,29 @@ enum Priorite {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Utilisateur {
-  id         Int      @id @default(autoincrement())
-  nom        String
-  prenom     String
-  email      String   @unique
-  motDePasse String   @map("mot_de_passe")
+  id     Int    @id @default(autoincrement())
+  nom    String
+  prenom String
+  email  String @unique
+  // Null tant que le compte invité n'a pas été activé (statut « En attente »).
+  motDePasse String?  @map("mot_de_passe")
   role       Role     @default(EMPLOYE)
   service    String?
   poste      String?
+  actif      Boolean  @default(true)
   dateCreation DateTime @default(now()) @map("date_creation")
+
+  // Invitation par un administrateur : hash SHA-256 du token (jamais en clair),
+  // lien valable 72 h. Effacés à l'activation du compte.
+  tokenInvitation       String?   @unique @map("token_invitation")
+  tokenInvitationExpire DateTime? @map("token_invitation_expire")
+
+  // Réinitialisation de mot de passe par code OTP à 6 chiffres :
+  // seul le hash SHA-256 du code est stocké ; validité 10 min ; 5 tentatives max.
+  codeReinitialisation           String?   @map("code_reinitialisation")
+  codeReinitialisationExpire     DateTime? @map("code_reinitialisation_expire")
+  codeReinitialisationEmis       DateTime? @map("code_reinitialisation_emis")
+  codeReinitialisationTentatives Int       @default(0) @map("code_reinitialisation_tentatives")
 
   // Relations
   ticketsDemandes Ticket[]       @relation("TicketsDemandes")

@@ -7,6 +7,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { UsersManagementPage } from './pages/UsersManagementPage';
 import { TicketsListPage } from './pages/TicketsListPage';
+import { CreateTicketPage } from './pages/CreateTicketPage';
 import { TicketDetailPage } from './pages/TicketDetailPage';
 import { AppShell } from './components/layout/AppShell';
 import { ProtectedRoute } from './routes/ProtectedRoute';
@@ -27,6 +28,7 @@ function App() {
         <Route element={<AppShell />}>
           <Route path="/tableau-de-bord" element={<DashboardPage />} />
           <Route path="/tickets" element={<TicketsListPage />} />
+          <Route path="/tickets/nouveau" element={<CreateTicketPage />} />
           <Route path="/tickets/:id" element={<TicketDetailPage />} />
           <Route path="/profil" element={<ProfilePage />} />
 

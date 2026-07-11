@@ -1,112 +1,322 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
-  ArrowRight,
   CheckCheck,
   Clock,
-  Lock,
-  Paperclip,
+  Flag,
+  RefreshCw,
   Send,
   Sparkles,
+  Star,
   Ticket,
+  UserMinus,
+  UserPlus,
+  type LucideIcon,
 } from 'lucide-react';
+import { ticketsApi } from '../features/tickets/ticketsApi';
+import { utilisateursApi } from '../features/utilisateurs/utilisateursApi';
 import {
-  trouverTicketDemo,
-  type MessageDemo,
-  type StatutTicket,
-  type PrioriteTicket,
-} from '../features/tickets/demo-data';
-import { PrioriteLabel, SentimentBadge, SlaPill, StatutBadge } from '../features/tickets/ticket-ui';
+  LABEL_PRIORITE,
+  LABEL_STATUT,
+  PRIORITE_OPTIONS,
+  PrioriteLabel,
+  STATUT_OPTIONS,
+  StatutBadge,
+} from '../features/tickets/ticket-ui';
 import { useAuthStore } from '../store/authStore';
-import { tempsRelatif } from '../lib/format';
+import { ApiError } from '../lib/apiClient';
+import { tempsRelatif, dateLongue } from '../lib/format';
+import type {
+  Commentaire,
+  EvenementTicket,
+  PrioriteTicket,
+  StatutTicket,
+  TicketDetail,
+  TypeEvenement,
+} from '../types/ticket';
+import type { Utilisateur } from '../types/auth';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Avatar } from '../components/ui/Avatar';
-import { Alert } from '../components/ui/Alert';
 import { Select, Textarea } from '../components/ui/Input';
+import { Skeleton } from '../components/ui/Skeleton';
 import { EmptyState } from '../components/ui/EmptyState';
+import { useToast } from '../components/ui/Toast';
 import { cn } from '../lib/cn';
 
-const STATUTS: { value: StatutTicket; label: string }[] = [
-  { value: 'NOUVEAU', label: 'Nouveau' },
-  { value: 'EN_COURS', label: 'En cours' },
-  { value: 'EN_ATTENTE', label: 'En attente' },
-  { value: 'RESOLU', label: 'Résolu' },
-  { value: 'CLOTURE', label: 'Clôturé' },
-];
-
-const PRIORITES: { value: PrioriteTicket; label: string }[] = [
-  { value: 'CRITIQUE', label: 'Critique' },
-  { value: 'HAUTE', label: 'Haute' },
-  { value: 'MOYENNE', label: 'Moyenne' },
-  { value: 'FAIBLE', label: 'Faible' },
-];
-
-function MessageBulle({ message }: { message: MessageDemo }) {
-  const estTechnicien = message.role === 'TECHNICIEN';
-
-  if (message.noteInterne) {
-    return (
-      <div className="flex gap-3">
-        <Avatar prenom={message.auteur.prenom} nom={message.auteur.nom} size="sm" className="mt-1" />
-        <div className="min-w-0 flex-1 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2.5">
-          <div className="flex items-center gap-2 text-xs">
-            <Lock className="size-3 text-amber-600" aria-hidden />
-            <span className="font-medium text-amber-800">
-              Note interne — {message.auteur.prenom} {message.auteur.nom}
-            </span>
-            <span className="text-amber-600/70">{tempsRelatif(message.date)}</span>
-          </div>
-          <p className="mt-1.5 whitespace-pre-line text-sm leading-relaxed text-amber-900">
-            {message.contenu}
-          </p>
-        </div>
-      </div>
-    );
-  }
-
+function MessageBulle({ commentaire, estDemandeur }: { commentaire: Commentaire; estDemandeur: boolean }) {
+  const { auteur } = commentaire;
   return (
     <div className="flex gap-3">
-      <Avatar prenom={message.auteur.prenom} nom={message.auteur.nom} size="sm" className="mt-1" />
+      <Avatar prenom={auteur.prenom} nom={auteur.nom} size="sm" className="mt-1" />
       <div
         className={cn(
           'min-w-0 flex-1 rounded-lg px-3.5 py-2.5',
-          estTechnicien ? 'border border-slate-200 bg-white shadow-xs' : 'bg-slate-100',
+          estDemandeur ? 'bg-slate-100' : 'border border-slate-200 bg-white shadow-xs',
         )}
       >
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <span className="font-medium text-slate-900">
-            {message.auteur.prenom} {message.auteur.nom}
+            {auteur.prenom} {auteur.nom}
           </span>
-          {estTechnicien && <Badge variant="primary">Support</Badge>}
-          <span className="text-slate-400">{tempsRelatif(message.date)}</span>
+          {!estDemandeur && <Badge variant="primary">Support</Badge>}
+          <span className="text-slate-400">{tempsRelatif(commentaire.dateCreation)}</span>
         </div>
         <p className="mt-1.5 whitespace-pre-line text-sm leading-relaxed text-slate-700">
-          {message.contenu}
+          {commentaire.contenu}
         </p>
       </div>
     </div>
   );
 }
 
+function labelStatut(v: string | null): string {
+  return v && v in LABEL_STATUT ? LABEL_STATUT[v as StatutTicket] : v ?? '—';
+}
+
+function labelPriorite(v: string | null): string {
+  return v && v in LABEL_PRIORITE ? LABEL_PRIORITE[v as PrioriteTicket] : v ?? '—';
+}
+
+function decrireEvenement(e: EvenementTicket): string {
+  switch (e.type) {
+    case 'CHANGEMENT_STATUT':
+      return `a changé le statut : ${labelStatut(e.ancienneValeur)} → ${labelStatut(e.nouvelleValeur)}`;
+    case 'CHANGEMENT_PRIORITE':
+      return `a changé la priorité : ${labelPriorite(e.ancienneValeur)} → ${labelPriorite(e.nouvelleValeur)}`;
+    case 'AFFECTATION':
+      return e.nouvelleValeur === `${e.auteur.prenom} ${e.auteur.nom}`
+        ? 'a pris le ticket en charge'
+        : `a assigné le ticket à ${e.nouvelleValeur}`;
+    case 'DESAFFECTATION':
+      return "a retiré l'affectation";
+    case 'EVALUATION':
+      return `a évalué la résolution : ${e.nouvelleValeur ?? ''}`;
+    default:
+      return 'a mis à jour le ticket';
+  }
+}
+
+const ICONE_EVENEMENT: Record<TypeEvenement, LucideIcon> = {
+  CHANGEMENT_STATUT: RefreshCw,
+  CHANGEMENT_PRIORITE: Flag,
+  AFFECTATION: UserPlus,
+  DESAFFECTATION: UserMinus,
+  EVALUATION: Star,
+};
+
+// Ligne d'historique (centrée, discrète) affichée dans le fil, entre les messages.
+function EvenementLigne({ evenement }: { evenement: EvenementTicket }) {
+  const Icon = ICONE_EVENEMENT[evenement.type];
+  return (
+    <div className="flex items-center justify-center gap-2 text-center text-xs text-slate-400">
+      <Icon className="size-3.5 shrink-0" aria-hidden />
+      <span>
+        <span className="font-medium text-slate-500">
+          {evenement.auteur.prenom} {evenement.auteur.nom}
+        </span>{' '}
+        {decrireEvenement(evenement)} · {tempsRelatif(evenement.dateCreation)}
+      </span>
+    </div>
+  );
+}
+
+function EtoilesLecture({ note }: { note: number }) {
+  return (
+    <div className="flex" aria-label={`Note : ${note} sur 5`}>
+      {[1, 2, 3, 4, 5].map((n) => (
+        <Star
+          key={n}
+          className={cn('size-5', n <= note ? 'fill-amber-400 text-amber-400' : 'text-slate-200')}
+          aria-hidden
+        />
+      ))}
+    </div>
+  );
+}
+
+// Bloc de satisfaction : formulaire (note + commentaire) pour le demandeur,
+// synthèse en lecture seule pour le support et après évaluation.
+function BlocSatisfaction({
+  ticket,
+  estDemandeur,
+  onEvaluer,
+  enCours,
+}: {
+  ticket: TicketDetail;
+  estDemandeur: boolean;
+  onEvaluer: (note: number, commentaire: string) => void;
+  enCours: boolean;
+}) {
+  const dejaEvalue = ticket.satisfactionNote != null;
+  const [edition, setEdition] = useState(false);
+  const [note, setNote] = useState(ticket.satisfactionNote ?? 0);
+  const [survol, setSurvol] = useState(0);
+  const [commentaire, setCommentaire] = useState(ticket.satisfactionCommentaire ?? '');
+
+  const montrerFormulaire = estDemandeur && (!dejaEvalue || edition);
+
+  if (montrerFormulaire) {
+    return (
+      <Card>
+        <CardHeader
+          title="Votre satisfaction"
+          description="Le problème a-t-il été résolu à votre convenance ?"
+        />
+        <CardContent className="space-y-3">
+          <div className="flex items-center gap-1" onMouseLeave={() => setSurvol(0)}>
+            {[1, 2, 3, 4, 5].map((n) => (
+              <button
+                key={n}
+                type="button"
+                disabled={enCours}
+                onMouseEnter={() => setSurvol(n)}
+                onClick={() => setNote(n)}
+                aria-label={`Attribuer ${n} sur 5`}
+                className="rounded p-0.5 disabled:cursor-not-allowed"
+              >
+                <Star
+                  className={cn(
+                    'size-7 transition-colors',
+                    n <= (survol || note)
+                      ? 'fill-amber-400 text-amber-400'
+                      : 'text-slate-300 hover:text-amber-300',
+                  )}
+                  aria-hidden
+                />
+              </button>
+            ))}
+          </div>
+          <Textarea
+            value={commentaire}
+            onChange={(e) => setCommentaire(e.target.value)}
+            placeholder="Un mot sur la résolution ? (facultatif)"
+            aria-label="Commentaire de satisfaction"
+            maxLength={2000}
+          />
+          <div className="flex justify-end gap-2">
+            {dejaEvalue && (
+              <Button variant="secondary" size="sm" disabled={enCours} onClick={() => setEdition(false)}>
+                Annuler
+              </Button>
+            )}
+            <Button
+              size="sm"
+              loading={enCours}
+              disabled={note < 1 || enCours}
+              onClick={() => {
+                onEvaluer(note, commentaire);
+                setEdition(false);
+              }}
+            >
+              Envoyer mon évaluation
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (dejaEvalue) {
+    return (
+      <Card>
+        <CardHeader title={estDemandeur ? 'Votre satisfaction' : 'Satisfaction du demandeur'} />
+        <CardContent className="space-y-2.5">
+          <div className="flex items-center gap-2.5">
+            <EtoilesLecture note={ticket.satisfactionNote as number} />
+            <span className="text-sm font-medium text-slate-700">{ticket.satisfactionNote}/5</span>
+          </div>
+          {ticket.satisfactionCommentaire && (
+            <p className="whitespace-pre-line rounded-lg bg-slate-50 px-3 py-2 text-sm italic text-slate-600">
+              « {ticket.satisfactionCommentaire} »
+            </p>
+          )}
+          <p className="text-xs text-slate-400">
+            {ticket.satisfactionDate && `Évalué ${tempsRelatif(ticket.satisfactionDate)}`}
+            {estDemandeur && (
+              <button
+                onClick={() => setEdition(true)}
+                className="ml-2 font-medium text-primary-600 hover:underline"
+              >
+                Modifier
+              </button>
+            )}
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Support/admin : ticket résolu mais pas encore évalué par le demandeur.
+  return (
+    <Card>
+      <CardHeader title="Satisfaction du demandeur" />
+      <CardContent>
+        <p className="text-sm text-slate-400">En attente de l'évaluation du demandeur.</p>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function TicketDetailPage() {
   const { id } = useParams();
+  const ticketId = Number(id);
+  const token = useAuthStore((state) => state.token);
   const utilisateur = useAuthStore((state) => state.utilisateur);
-  const ticket = useMemo(() => (id ? trouverTicketDemo(id) : undefined), [id]);
+  const toast = useToast();
+
+  const [ticket, setTicket] = useState<TicketDetail | null>(null);
+  const [chargement, setChargement] = useState(true);
+  const [introuvable, setIntrouvable] = useState(false);
+  const [techniciens, setTechniciens] = useState<Utilisateur[]>([]);
 
   const [reponse, setReponse] = useState('');
-  const [messagesLocaux, setMessagesLocaux] = useState<MessageDemo[]>([]);
-  const [statut, setStatut] = useState<StatutTicket | undefined>(ticket?.statut);
-  const [priorite, setPriorite] = useState<PrioriteTicket | undefined>(ticket?.priorite);
+  const [envoiCommentaire, setEnvoiCommentaire] = useState(false);
+  const [action, setAction] = useState(false); // statut / priorité / affectation en cours
+  const [envoiSatisfaction, setEnvoiSatisfaction] = useState(false);
 
-  if (!ticket) {
+  useEffect(() => {
+    if (!token || !Number.isInteger(ticketId)) {
+      setIntrouvable(true);
+      setChargement(false);
+      return;
+    }
+    setChargement(true);
+    ticketsApi
+      .detail(ticketId, token)
+      .then(({ ticket: t }) => setTicket(t))
+      .catch(() => setIntrouvable(true))
+      .finally(() => setChargement(false));
+  }, [ticketId, token]);
+
+  // Liste des techniciens pour l'affectation (réservée à l'administrateur).
+  useEffect(() => {
+    if (!token || utilisateur?.role !== 'ADMINISTRATEUR') return;
+    utilisateursApi
+      .lister({ role: 'TECHNICIEN' }, token)
+      .then(({ utilisateurs }) => setTechniciens(utilisateurs.filter((u) => u.actif)))
+      .catch(() => {
+        /* l'affectation reste possible manuellement plus tard */
+      });
+  }, [token, utilisateur?.role]);
+
+  if (chargement) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-8 w-40" />
+        <Skeleton className="h-64" />
+      </div>
+    );
+  }
+
+  if (introuvable || !ticket) {
     return (
       <EmptyState
         icon={Ticket}
         title="Ticket introuvable"
-        description="Ce ticket n'existe pas dans le jeu de données de démonstration."
+        description="Ce ticket n'existe pas ou vous n'y avez pas accès."
         action={
           <Link to="/tickets" className="text-sm font-medium text-primary-600 hover:underline">
             Retour à la liste
@@ -116,23 +326,115 @@ export function TicketDetailPage() {
     );
   }
 
-  const messages = [...ticket.messages, ...messagesLocaux];
+  const estDemandeur = ticket.demandeur.id === utilisateur?.id;
+  const estAdmin = utilisateur?.role === 'ADMINISTRATEUR';
+  const estTechnicienAssigne = ticket.technicien?.id === utilisateur?.id;
+  const estGestionnaire = Boolean(estAdmin || estTechnicienAssigne);
+  const peutCommenter = estDemandeur || estGestionnaire;
+  const estCloture = ticket.statut === 'CLOTURE';
+  const montrerSatisfaction =
+    ticket.statut === 'RESOLU' || ticket.statut === 'CLOTURE' || ticket.satisfactionNote != null;
 
-  function envoyerReponse() {
-    const contenu = reponse.trim();
-    if (!contenu || !utilisateur) return;
-    setMessagesLocaux((prev) => [
-      ...prev,
-      {
-        id: 1000 + prev.length,
-        auteur: { prenom: utilisateur.prenom, nom: utilisateur.nom, email: utilisateur.email },
-        role: 'TECHNICIEN',
-        contenu,
-        date: new Date(),
-      },
-    ]);
-    setReponse('');
+  // Fil unifié : commentaires + événements (changements), triés chronologiquement.
+  type ElementFil =
+    | { cle: string; date: string; kind: 'message'; commentaire: Commentaire }
+    | { cle: string; date: string; kind: 'evenement'; evenement: EvenementTicket };
+  const fil: ElementFil[] = [
+    ...ticket.commentaires.map(
+      (c): ElementFil => ({ cle: `c${c.id}`, date: c.dateCreation, kind: 'message', commentaire: c }),
+    ),
+    ...ticket.evenements.map(
+      (e): ElementFil => ({ cle: `e${e.id}`, date: e.dateCreation, kind: 'evenement', evenement: e }),
+    ),
+  ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+  async function withAction<T>(fn: () => Promise<T>, echec: string): Promise<T | undefined> {
+    if (!token) return undefined;
+    setAction(true);
+    try {
+      return await fn();
+    } catch (err) {
+      toast.error('Action impossible', err instanceof ApiError ? err.message : echec);
+      return undefined;
+    } finally {
+      setAction(false);
+    }
   }
+
+  async function handleChangerStatut(statut: StatutTicket) {
+    if (!token || statut === ticket!.statut) return;
+    const res = await withAction(
+      () => ticketsApi.changerStatut(ticket!.id, statut, token),
+      'Le statut n\'a pas pu être modifié',
+    );
+    if (res) {
+      setTicket(res.ticket);
+      toast.success('Statut mis à jour', `Le ticket est désormais « ${LABEL_STATUT[statut]} ».`);
+    }
+  }
+
+  async function handleChangerPriorite(priorite: PrioriteTicket) {
+    if (!token || priorite === ticket!.priorite) return;
+    const res = await withAction(
+      () => ticketsApi.changerPriorite(ticket!.id, priorite, token),
+      'La priorité n\'a pas pu être modifiée',
+    );
+    if (res) {
+      setTicket(res.ticket);
+      toast.success('Priorité mise à jour', `Priorité « ${LABEL_PRIORITE[priorite]} ».`);
+    }
+  }
+
+  async function handleAffecter(technicienId: number | null) {
+    if (!token) return;
+    const res = await withAction(
+      () => ticketsApi.affecter(ticket!.id, technicienId, token),
+      "L'affectation a échoué",
+    );
+    if (res) {
+      setTicket(res.ticket);
+      toast.success(
+        technicienId ? 'Ticket affecté' : 'Ticket désaffecté',
+        technicienId ? 'Le technicien a été notifié.' : 'Le ticket est de nouveau dans la file.',
+      );
+    }
+  }
+
+  async function handleEnvoyerCommentaire() {
+    const contenu = reponse.trim();
+    if (!contenu || !token) return;
+    setEnvoiCommentaire(true);
+    try {
+      const { commentaire } = await ticketsApi.commenter(ticket!.id, contenu, token);
+      setTicket((prev) => (prev ? { ...prev, commentaires: [...prev.commentaires, commentaire] } : prev));
+      setReponse('');
+    } catch (err) {
+      toast.error('Envoi impossible', err instanceof ApiError ? err.message : 'Réessayez plus tard');
+    } finally {
+      setEnvoiCommentaire(false);
+    }
+  }
+
+  async function handleEvaluer(note: number, commentaire: string) {
+    if (!token) return;
+    setEnvoiSatisfaction(true);
+    try {
+      const { ticket: t } = await ticketsApi.evaluerSatisfaction(
+        ticket!.id,
+        note,
+        commentaire.trim() || undefined,
+        token,
+      );
+      setTicket(t);
+      toast.success('Merci !', 'Votre évaluation a bien été enregistrée.');
+    } catch (err) {
+      toast.error('Évaluation impossible', err instanceof ApiError ? err.message : 'Réessayez plus tard');
+    } finally {
+      setEnvoiSatisfaction(false);
+    }
+  }
+
+  const peutResoudre = estGestionnaire && ticket.statut !== 'RESOLU' && !estCloture;
 
   return (
     <div>
@@ -148,130 +450,196 @@ export function TicketDetailPage() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2.5">
-              <span className="font-mono text-sm text-slate-400">{ticket.id}</span>
-              <StatutBadge statut={statut ?? ticket.statut} />
-              <PrioriteLabel priorite={priorite ?? ticket.priorite} />
+              <span className="font-mono text-sm text-slate-400">#{ticket.id}</span>
+              <StatutBadge statut={ticket.statut} />
+              <PrioriteLabel priorite={ticket.priorite} />
             </div>
             <h1 className="mt-1.5 text-xl font-semibold tracking-tight text-slate-900">{ticket.titre}</h1>
             <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-400">
               <Clock className="size-3.5" aria-hidden />
-              Créé {tempsRelatif(ticket.dateCreation)} · via {ticket.canal.toLowerCase()}
+              Créé {tempsRelatif(ticket.dateCreation)}
             </p>
           </div>
-          <Button variant="secondary" disabled title="Disponible en Phase 3">
-            <CheckCheck className="size-4" aria-hidden />
-            Marquer résolu
-          </Button>
+          {peutResoudre && (
+            <Button variant="secondary" disabled={action} onClick={() => handleChangerStatut('RESOLU')}>
+              <CheckCheck className="size-4" aria-hidden />
+              Marquer résolu
+            </Button>
+          )}
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_340px]">
-        {/* Colonne centrale : conversation */}
+        {/* Colonne centrale : description + conversation */}
         <div className="min-w-0 space-y-6">
           <Card>
-            <CardHeader title="Conversation" description={`${messages.length} message${messages.length > 1 ? 's' : ''}`} />
+            <CardHeader title="Demande" />
+            <CardContent>
+              <p className="whitespace-pre-line text-sm leading-relaxed text-slate-700">
+                {ticket.description}
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader
+              title="Conversation"
+              description={`${ticket.commentaires.length} message${ticket.commentaires.length > 1 ? 's' : ''}`}
+            />
             <CardContent className="space-y-5">
-              {messages.map((m) => (
-                <MessageBulle key={m.id} message={m} />
-              ))}
+              {fil.length === 0 && (
+                <p className="text-sm text-slate-400">Aucun message pour l'instant.</p>
+              )}
+              {fil.map((el) =>
+                el.kind === 'message' ? (
+                  <MessageBulle
+                    key={el.cle}
+                    commentaire={el.commentaire}
+                    estDemandeur={el.commentaire.auteur.id === ticket.demandeur.id}
+                  />
+                ) : (
+                  <EvenementLigne key={el.cle} evenement={el.evenement} />
+                ),
+              )}
             </CardContent>
 
             {/* Composer */}
-            <div className="border-t border-slate-100 p-4">
-              <Textarea
-                value={reponse}
-                onChange={(e) => setReponse(e.target.value)}
-                placeholder="Écrire une réponse au demandeur…"
-                aria-label="Votre réponse"
-              />
-              <div className="mt-3 flex items-center justify-between">
-                <Button variant="ghost" size="sm" disabled title="Pièces jointes — disponible en Phase 3">
-                  <Paperclip className="size-4" aria-hidden />
-                  Joindre
-                </Button>
-                <Button size="sm" onClick={envoyerReponse} disabled={!reponse.trim()}>
-                  <Send className="size-3.5" aria-hidden />
-                  Envoyer
-                </Button>
+            {peutCommenter ? (
+              <div className="border-t border-slate-100 p-4">
+                <Textarea
+                  value={reponse}
+                  onChange={(e) => setReponse(e.target.value)}
+                  placeholder={estDemandeur ? 'Écrire un message au support…' : 'Répondre au demandeur…'}
+                  aria-label="Votre message"
+                  maxLength={5000}
+                />
+                <div className="mt-3 flex justify-end">
+                  <Button size="sm" onClick={handleEnvoyerCommentaire} loading={envoiCommentaire} disabled={!reponse.trim()}>
+                    <Send className="size-3.5" aria-hidden />
+                    Envoyer
+                  </Button>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="border-t border-slate-100 p-4">
+                <p className="text-xs text-slate-400">
+                  Prenez le ticket en charge pour participer à la conversation.
+                </p>
+              </div>
+            )}
           </Card>
+
+          {/* Évaluation de satisfaction (formulaire pour le demandeur, synthèse pour le support) */}
+          {montrerSatisfaction && (
+            <BlocSatisfaction
+              ticket={ticket}
+              estDemandeur={estDemandeur}
+              onEvaluer={handleEvaluer}
+              enCours={envoiSatisfaction}
+            />
+          )}
         </div>
 
         {/* Colonne latérale */}
         <div className="space-y-5">
-          {/* Assistant IA */}
-          <div className="rounded-xl bg-gradient-to-br from-primary-400 via-violet-400 to-primary-400 p-px shadow-xs">
-            <div className="rounded-[calc(0.75rem-1px)] bg-white">
-              <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
-                <span className="flex size-6 items-center justify-center rounded-md bg-gradient-to-br from-primary-500 to-violet-600 text-white">
-                  <Sparkles className="size-3.5" aria-hidden />
-                </span>
-                <h2 className="text-sm font-semibold text-slate-900">Assistant IA</h2>
-                <Badge variant="primary" className="ml-auto">
-                  Aperçu
-                </Badge>
+          {/* Propriétés */}
+          <Card>
+            <CardHeader title="Propriétés" />
+            <CardContent className="space-y-3.5">
+              <div className="grid grid-cols-[90px_1fr] items-center gap-2">
+                <p className="text-xs text-slate-400">Statut</p>
+                {estGestionnaire ? (
+                  <Select
+                    value={ticket.statut}
+                    disabled={action}
+                    onChange={(e) => handleChangerStatut(e.target.value as StatutTicket)}
+                    aria-label="Statut du ticket"
+                  >
+                    {STATUT_OPTIONS.map((s) => (
+                      <option key={s} value={s}>
+                        {LABEL_STATUT[s]}
+                      </option>
+                    ))}
+                  </Select>
+                ) : (
+                  <div>
+                    <StatutBadge statut={ticket.statut} />
+                  </div>
+                )}
               </div>
 
-              <div className="space-y-4 p-4">
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Résumé</p>
-                  <p className="mt-1 text-sm leading-relaxed text-slate-600">{ticket.ia.resume}</p>
-                </div>
+              <div className="grid grid-cols-[90px_1fr] items-center gap-2">
+                <p className="text-xs text-slate-400">Priorité</p>
+                {estGestionnaire ? (
+                  <Select
+                    value={ticket.priorite}
+                    disabled={action}
+                    onChange={(e) => handleChangerPriorite(e.target.value as PrioriteTicket)}
+                    aria-label="Priorité du ticket"
+                  >
+                    {PRIORITE_OPTIONS.map((p) => (
+                      <option key={p} value={p}>
+                        {LABEL_PRIORITE[p]}
+                      </option>
+                    ))}
+                  </Select>
+                ) : (
+                  <div>
+                    <PrioriteLabel priorite={ticket.priorite} />
+                  </div>
+                )}
+              </div>
 
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Sentiment</p>
-                  <SentimentBadge sentiment={ticket.ia.sentiment} />
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                      Classification · {ticket.categorie}
-                    </p>
-                    <span className="text-xs font-semibold tabular-nums text-slate-600">
-                      {Math.round(ticket.ia.confianceClassification * 100)} %
+              <div className="grid grid-cols-[90px_1fr] items-center gap-2">
+                <p className="text-xs text-slate-400">Assigné à</p>
+                {estAdmin ? (
+                  <Select
+                    value={ticket.technicien?.id ?? ''}
+                    disabled={action}
+                    onChange={(e) => handleAffecter(e.target.value ? Number(e.target.value) : null)}
+                    aria-label="Technicien assigné"
+                  >
+                    <option value="">Non assigné</option>
+                    {techniciens.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.prenom} {t.nom}
+                      </option>
+                    ))}
+                  </Select>
+                ) : ticket.technicien ? (
+                  <div className="flex items-center gap-2">
+                    <Avatar prenom={ticket.technicien.prenom} nom={ticket.technicien.nom} size="sm" />
+                    <span className="truncate text-sm text-slate-700">
+                      {ticket.technicien.prenom} {ticket.technicien.nom}
                     </span>
                   </div>
-                  <div
-                    className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-100"
-                    role="meter"
-                    aria-label="Confiance de la classification"
-                    aria-valuenow={Math.round(ticket.ia.confianceClassification * 100)}
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                  >
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-primary-500 to-violet-500"
-                      style={{ width: `${ticket.ia.confianceClassification * 100}%` }}
-                    />
-                  </div>
-                </div>
-
-                <div className="rounded-lg bg-slate-50 p-3">
-                  <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                    Suggestion de réponse
-                  </p>
-                  <p className="mt-1.5 line-clamp-4 whitespace-pre-line text-xs leading-relaxed text-slate-600">
-                    {ticket.ia.suggestionReponse}
-                  </p>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="mt-2.5 w-full"
-                    onClick={() => setReponse(ticket.ia.suggestionReponse)}
-                  >
-                    <Sparkles className="size-3.5 text-primary-500" aria-hidden />
-                    Utiliser cette réponse
+                ) : utilisateur?.role === 'TECHNICIEN' ? (
+                  <Button size="sm" variant="secondary" disabled={action} onClick={() => handleAffecter(utilisateur.id)}>
+                    <UserPlus className="size-3.5" aria-hidden />
+                    Prendre en charge
                   </Button>
-                </div>
-
-                <p className="text-[11px] leading-relaxed text-slate-400">
-                  Validation humaine obligatoire — l'IA assiste, le technicien décide.
-                </p>
+                ) : (
+                  <span className="text-sm text-slate-400">Non assigné</span>
+                )}
               </div>
-            </div>
-          </div>
+
+              <div className="grid grid-cols-[90px_1fr] items-center gap-2">
+                <p className="text-xs text-slate-400">Catégorie</p>
+                {ticket.categorie ? (
+                  <Badge variant="neutral">{ticket.categorie.nom}</Badge>
+                ) : (
+                  <span className="text-sm text-slate-400">Non classé</span>
+                )}
+              </div>
+
+              {ticket.dateCloture && (
+                <div className="grid grid-cols-[90px_1fr] items-center gap-2">
+                  <p className="text-xs text-slate-400">Clôturé</p>
+                  <span className="text-sm text-slate-600">{dateLongue(ticket.dateCloture)}</span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Demandeur */}
           <Card>
@@ -290,91 +658,22 @@ export function TicketDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Propriétés */}
-          <Card>
-            <CardHeader title="Propriétés" />
-            <CardContent className="space-y-3.5">
-              <div className="grid grid-cols-[90px_1fr] items-center gap-2">
-                <p className="text-xs text-slate-400">Statut</p>
-                <Select
-                  value={statut ?? ticket.statut}
-                  onChange={(e) => setStatut(e.target.value as StatutTicket)}
-                  aria-label="Statut du ticket"
-                >
-                  {STATUTS.map(({ value, label }) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-              <div className="grid grid-cols-[90px_1fr] items-center gap-2">
-                <p className="text-xs text-slate-400">Priorité</p>
-                <Select
-                  value={priorite ?? ticket.priorite}
-                  onChange={(e) => setPriorite(e.target.value as PrioriteTicket)}
-                  aria-label="Priorité du ticket"
-                >
-                  {PRIORITES.map(({ value, label }) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-              <div className="grid grid-cols-[90px_1fr] items-center gap-2">
-                <p className="text-xs text-slate-400">SLA</p>
-                <div>
-                  <SlaPill echeance={ticket.slaEcheance} statut={statut ?? ticket.statut} />
-                </div>
-              </div>
-              <div className="grid grid-cols-[90px_1fr] items-center gap-2">
-                <p className="text-xs text-slate-400">Assigné à</p>
-                {ticket.technicien ? (
-                  <div className="flex items-center gap-2">
-                    <Avatar prenom={ticket.technicien.prenom} nom={ticket.technicien.nom} size="sm" />
-                    <span className="truncate text-sm text-slate-700">
-                      {ticket.technicien.prenom} {ticket.technicien.nom}
-                    </span>
-                  </div>
-                ) : (
-                  <span className="text-sm text-slate-400">Non assigné</span>
-                )}
-              </div>
-              <div className="grid grid-cols-[90px_1fr] items-start gap-2">
-                <p className="pt-0.5 text-xs text-slate-400">Tags</p>
-                <div className="flex flex-wrap gap-1.5">
-                  <Badge variant="neutral">{ticket.categorie}</Badge>
-                  {ticket.tags.map((tag) => (
-                    <Badge key={tag} variant="neutral">
-                      #{tag}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Tickets similaires */}
-          <Card>
-            <CardHeader title="Tickets similaires" description="Recherche vectorielle (RAG) — aperçu" />
-            <CardContent className="p-2">
-              <ul className="divide-y divide-slate-100">
-                {ticket.ia.ticketsSimilaires.map((similaire) => (
-                  <li key={similaire.id} className="flex items-center gap-3 px-3 py-2.5">
-                    <span className="font-mono text-xs text-slate-400">{similaire.id}</span>
-                    <p className="min-w-0 flex-1 truncate text-sm text-slate-700">{similaire.titre}</p>
-                    <Badge variant="primary">{Math.round(similaire.similarite * 100)} %</Badge>
-                    <ArrowRight className="size-3.5 text-slate-300" aria-hidden />
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
-
-          <Alert variant="info">
-            Données de démonstration — ce panneau sera alimenté par le moteur IA (Phase 5).
-          </Alert>
+          {/* Assistant IA — à venir en Phase 5 */}
+          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 p-4">
+            <div className="flex items-center gap-2">
+              <span className="flex size-6 items-center justify-center rounded-md bg-slate-200 text-slate-500">
+                <Sparkles className="size-3.5" aria-hidden />
+              </span>
+              <h2 className="text-sm font-semibold text-slate-500">Assistant IA</h2>
+              <Badge variant="neutral" className="ml-auto">
+                Phase 5
+              </Badge>
+            </div>
+            <p className="mt-2 text-xs leading-relaxed text-slate-400">
+              Classification automatique, suggestion de résolution et recherche de tickets similaires
+              seront ajoutées avec le module d'intelligence artificielle.
+            </p>
+          </div>
         </div>
       </div>
     </div>

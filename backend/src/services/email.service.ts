@@ -46,6 +46,53 @@ export const emailService = {
     }
   },
 
+  // Notifie un utilisateur d'un événement sur un ticket (changement de statut,
+  // affectation, nouveau commentaire). Best-effort : l'appelant (notificationService)
+  // ignore l'échec pour ne jamais bloquer l'action métier déjà validée.
+  async envoyerNotificationTicket(
+    destinataire: string,
+    prenom: string,
+    sujet: string,
+    message: string,
+    ticketId: number,
+  ) {
+    const lien = `${env.FRONTEND_URL}/tickets/${ticketId}`;
+
+    if (!smtpConfigured) {
+      console.warn(`⚠️  SMTP non configuré — notification pour ${destinataire} : ${message} (${lien})`);
+      return;
+    }
+
+    try {
+      await transporteurMail.sendMail({
+        from: env.SMTP_FROM,
+        to: destinataire,
+        subject: `${sujet} — Smart Ticketing`,
+        text: `Bonjour ${prenom},\n\n${message}\n\nConsulter le ticket : ${lien}\n\nL'équipe support Metavoria`,
+        html: `
+          <div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;padding:24px">
+            <h2 style="color:#1e293b;margin:0 0 8px">${sujet}</h2>
+            <p style="color:#475569;font-size:14px;line-height:1.6;margin:0 0 20px">
+              Bonjour ${prenom},<br/>${message}
+            </p>
+            <p style="text-align:center;margin:0 0 20px">
+              <a href="${lien}" style="display:inline-block;background:#4f46e5;color:#ffffff;
+                 text-decoration:none;font-weight:bold;font-size:14px;padding:12px 24px;
+                 border-radius:12px">Consulter le ticket</a>
+            </p>
+            <p style="color:#94a3b8;font-size:12px;line-height:1.6;margin:0">
+              Si le bouton ne fonctionne pas, copiez ce lien dans votre navigateur :<br/>
+              <span style="word-break:break-all">${lien}</span>
+            </p>
+          </div>
+        `,
+      });
+    } catch (err) {
+      console.error("Échec d'envoi de l'e-mail de notification :", err);
+      throw new AppError(502, "L'envoi de l'e-mail de notification a échoué.");
+    }
+  },
+
   // Envoie le code OTP de réinitialisation. À n'appeler QUE pour un compte
   // existant et actif — la vérification d'existence se fait dans la couche service.
   async envoyerCodeReinitialisation(destinataire: string, code: string, validiteMinutes: number) {

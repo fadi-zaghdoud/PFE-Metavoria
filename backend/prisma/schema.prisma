@@ -71,10 +71,11 @@ model Utilisateur {
   codeReinitialisationTentatives Int       @default(0) @map("code_reinitialisation_tentatives")
 
   // Relations
-  ticketsDemandes Ticket[]       @relation("TicketsDemandes")
-  ticketsAssignes Ticket[]       @relation("TicketsAssignes")
-  commentaires    Commentaire[]
-  notifications   Notification[]
+  ticketsDemandes  Ticket[]          @relation("TicketsDemandes")
+  ticketsAssignes  Ticket[]          @relation("TicketsAssignes")
+  commentaires     Commentaire[]
+  evenementsTicket EvenementTicket[]
+  notifications    Notification[]
 
   @@map("utilisateurs")
 }
@@ -97,7 +98,9 @@ model Ticket {
   priorite         Priorite     @default(MOYENNE)
   dateCreation     DateTime     @default(now()) @map("date_creation")
   dateCloture      DateTime?    @map("date_cloture")
-  satisfactionNote Int?         @map("satisfaction_note") // 1..5, renseignée à la clôture
+  satisfactionNote        Int?      @map("satisfaction_note") // 1..5, renseignée à la clôture
+  satisfactionCommentaire String?   @map("satisfaction_commentaire") // retour libre optionnel du demandeur
+  satisfactionDate        DateTime? @map("satisfaction_date") // horodatage de l'évaluation
 
   // Embedding du ticket pour la recherche de similarité (module IA, phase 5).
   // Dimension 1536 = standard des modèles d'embedding actuels ; ajustable via migration.
@@ -115,6 +118,8 @@ model Ticket {
   commentaires  Commentaire[]
   piecesJointes PieceJointe[]
   suggestionsIA SuggestionIA[]
+  evenements    EvenementTicket[]
+  notifications Notification[]
 
   @@index([statut])
   @@index([priorite])
@@ -162,8 +167,33 @@ model Notification {
   utilisateurId Int         @map("utilisateur_id")
   utilisateur   Utilisateur @relation(fields: [utilisateurId], references: [id], onDelete: Cascade)
 
+  // Ticket concerné : permet au clic sur la notification de rediriger vers le ticket.
+  // Optionnel pour rester compatible avec d'éventuelles notifications non liées à un ticket.
+  ticketId Int?    @map("ticket_id")
+  ticket   Ticket? @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
   @@index([utilisateurId, lu])
   @@map("notifications")
+}
+
+// Historique des changements d'un ticket (statut, priorité, affectation), affiché
+// dans le fil de conversation à côté des commentaires. Sert aussi de trace d'audit
+// consultable dans l'application (exigence non fonctionnelle « Traçabilité »).
+model EvenementTicket {
+  id             Int      @id @default(autoincrement())
+  type           String // CHANGEMENT_STATUT | CHANGEMENT_PRIORITE | AFFECTATION | DESAFFECTATION
+  ancienneValeur String?  @map("ancienne_valeur")
+  nouvelleValeur String?  @map("nouvelle_valeur")
+  dateCreation   DateTime @default(now()) @map("date_creation")
+
+  ticketId Int    @map("ticket_id")
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  auteurId Int         @map("auteur_id")
+  auteur   Utilisateur @relation(fields: [auteurId], references: [id])
+
+  @@index([ticketId])
+  @@map("evenements_ticket")
 }
 
 // Prévu dans le schéma dès maintenant ; la logique IA sera implémentée en phase 5.

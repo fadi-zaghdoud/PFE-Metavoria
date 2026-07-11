@@ -25,7 +25,7 @@ interface NavItem {
 
 const NAV_PRINCIPAL: NavItem[] = [
   { to: '/tableau-de-bord', label: 'Tableau de bord', icon: LayoutDashboard },
-  { to: '/tickets', label: 'Tickets', icon: Ticket, badge: 'Démo' },
+  { to: '/tickets', label: 'Tickets', icon: Ticket },
   { to: '/profil', label: 'Mon profil', icon: UserCircle },
 ];
 

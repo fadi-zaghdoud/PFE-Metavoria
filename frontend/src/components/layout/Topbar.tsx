@@ -1,5 +1,6 @@
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { ChevronRight, Menu, Search } from 'lucide-react';
+import { NotificationsBell } from './NotificationsBell';
 
 interface Crumb {
   label: string;
@@ -69,6 +70,8 @@ export function Topbar({ onOpenMobileNav, onOpenPalette }: TopbarProps) {
           Ctrl K
         </kbd>
       </button>
+
+      <NotificationsBell />
     </header>
   );
 }

@@ -1,15 +1,7 @@
-import {
-  Globe,
-  Mail,
-  MessageSquare,
-  Minus,
-  SignalHigh,
-  TriangleAlert,
-  type LucideIcon,
-} from 'lucide-react';
+import { Minus, SignalHigh, TriangleAlert, type LucideIcon } from 'lucide-react';
 import { Badge, type BadgeVariant } from '../../components/ui/Badge';
 import { cn } from '../../lib/cn';
-import type { CanalTicket, PrioriteTicket, StatutTicket, Sentiment } from './demo-data';
+import type { PrioriteTicket, StatutTicket } from '../../types/ticket';
 
 // ── Statut ───────────────────────────────────────────────────────────────────
 const STATUTS: Record<StatutTicket, { label: string; variant: BadgeVariant }> = {
@@ -19,6 +11,16 @@ const STATUTS: Record<StatutTicket, { label: string; variant: BadgeVariant }> = 
   RESOLU: { label: 'Résolu', variant: 'success' },
   CLOTURE: { label: 'Clôturé', variant: 'neutral' },
 };
+
+export const LABEL_STATUT: Record<StatutTicket, string> = {
+  NOUVEAU: 'Nouveau',
+  EN_COURS: 'En cours',
+  EN_ATTENTE: 'En attente',
+  RESOLU: 'Résolu',
+  CLOTURE: 'Clôturé',
+};
+
+export const STATUT_OPTIONS: StatutTicket[] = ['NOUVEAU', 'EN_COURS', 'EN_ATTENTE', 'RESOLU', 'CLOTURE'];
 
 export function StatutBadge({ statut }: { statut: StatutTicket }) {
   const { label, variant } = STATUTS[statut];
@@ -37,6 +39,16 @@ const PRIORITES: Record<PrioriteTicket, { label: string; icon: LucideIcon; class
   FAIBLE: { label: 'Faible', icon: Minus, classe: 'text-slate-400' },
 };
 
+export const LABEL_PRIORITE: Record<PrioriteTicket, string> = {
+  CRITIQUE: 'Critique',
+  HAUTE: 'Haute',
+  MOYENNE: 'Moyenne',
+  FAIBLE: 'Faible',
+};
+
+// Ordonnées de la plus urgente à la moins urgente (utilisées dans les filtres/sélecteurs).
+export const PRIORITE_OPTIONS: PrioriteTicket[] = ['CRITIQUE', 'HAUTE', 'MOYENNE', 'FAIBLE'];
+
 export function PrioriteLabel({ priorite }: { priorite: PrioriteTicket }) {
   const { label, icon: Icon, classe } = PRIORITES[priorite];
   return (
@@ -44,68 +56,5 @@ export function PrioriteLabel({ priorite }: { priorite: PrioriteTicket }) {
       <Icon className="size-4" aria-hidden />
       {label}
     </span>
-  );
-}
-
-// ── SLA ──────────────────────────────────────────────────────────────────────
-export function SlaPill({ echeance, statut }: { echeance: Date; statut: StatutTicket }) {
-  if (statut === 'RESOLU' || statut === 'CLOTURE') {
-    return <span className="text-xs text-slate-400">—</span>;
-  }
-  const restantMs = echeance.getTime() - Date.now();
-  const heures = Math.abs(restantMs) / 3600_000;
-  const texteDuree = heures < 1 ? `${Math.round(heures * 60)} min` : `${Math.round(heures)} h`;
-
-  if (restantMs < 0) {
-    return (
-      <span className="inline-flex items-center rounded-md bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-700 ring-1 ring-inset ring-rose-600/15">
-        Dépassé de {texteDuree}
-      </span>
-    );
-  }
-  const urgent = heures < 4;
-  return (
-    <span
-      className={cn(
-        'inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ring-1 ring-inset',
-        urgent
-          ? 'bg-amber-50 text-amber-700 ring-amber-600/20'
-          : 'bg-slate-50 text-slate-500 ring-slate-500/10',
-      )}
-    >
-      {texteDuree} restantes
-    </span>
-  );
-}
-
-// ── Canal ────────────────────────────────────────────────────────────────────
-const CANAUX: Record<CanalTicket, { label: string; icon: LucideIcon }> = {
-  EMAIL: { label: 'E-mail', icon: Mail },
-  PORTAIL: { label: 'Portail', icon: Globe },
-  TEAMS: { label: 'Teams', icon: MessageSquare },
-};
-
-export function CanalIcone({ canal }: { canal: CanalTicket }) {
-  const { label, icon: Icon } = CANAUX[canal];
-  return (
-    <span title={label} aria-label={label} className="text-slate-400">
-      <Icon className="size-4" aria-hidden />
-    </span>
-  );
-}
-
-// ── Sentiment (analyse IA) ───────────────────────────────────────────────────
-const SENTIMENTS: Record<Sentiment, { label: string; variant: BadgeVariant }> = {
-  POSITIF: { label: 'Positif', variant: 'success' },
-  NEUTRE: { label: 'Neutre', variant: 'neutral' },
-  FRUSTRE: { label: 'Frustré', variant: 'danger' },
-};
-
-export function SentimentBadge({ sentiment }: { sentiment: Sentiment }) {
-  const { label, variant } = SENTIMENTS[sentiment];
-  return (
-    <Badge variant={variant} dot>
-      {label}
-    </Badge>
   );
 }

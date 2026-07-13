@@ -123,7 +123,21 @@ export interface StatistiquesTickets {
   ticketsOuverts: number;
   ticketsResolus: number;
   ticketsClotures: number;
+  tempsResolutionMoyenHeures: number | null;
+  delaiPriseEnChargeMoyenHeures: number | null;
   satisfactionMoyenne: number | null;
   nombreEvaluations: number;
   repartitionSatisfaction: { note: number; count: number }[];
+  repartitionStatut: { statut: StatutTicket; count: number }[];
+  repartitionPriorite: { priorite: PrioriteTicket; count: number }[];
+  repartitionCategorie: { categorie: string; count: number }[];
+  chargeParTechnicien: { technicien: string; count: number }[];
+}
+
+export interface FiltresStatistiques {
+  dateDebut?: string;
+  dateFin?: string;
+  technicienId?: number;
+  categorieId?: number;
+  service?: string;
 }

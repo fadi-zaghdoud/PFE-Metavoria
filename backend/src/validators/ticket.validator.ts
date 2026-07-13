@@ -63,6 +63,16 @@ export const commentaireSchema = z.object({
     .max(5000, 'Le commentaire ne peut pas dépasser 5000 caractères'),
 });
 
+// Filtres du tableau de bord : période (sur la date de création), technicien,
+// catégorie et service demandeur. Tous facultatifs.
+export const statistiquesQuerySchema = z.object({
+  dateDebut: z.coerce.date().optional(),
+  dateFin: z.coerce.date().optional(),
+  technicienId: idPositif.optional(),
+  categorieId: idPositif.optional(),
+  service: z.string().trim().max(100).optional(),
+});
+
 export const satisfactionSchema = z.object({
   note: z.coerce
     .number('La note est requise')
@@ -83,3 +93,4 @@ export type ChangerPrioriteDto = z.infer<typeof changerPrioriteSchema>;
 export type AffectationDto = z.infer<typeof affectationSchema>;
 export type CommentaireDto = z.infer<typeof commentaireSchema>;
 export type SatisfactionDto = z.infer<typeof satisfactionSchema>;
+export type StatistiquesQueryDto = z.infer<typeof statistiquesQuerySchema>;

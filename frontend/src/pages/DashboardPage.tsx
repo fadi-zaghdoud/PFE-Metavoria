@@ -3,11 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   ArrowRight,
   BrainCircuit,
-  CheckCircle2,
-  Inbox,
   ShieldCheck,
-  Star,
-  Ticket,
   UserCheck,
   UserCircle,
   Users,
@@ -15,11 +11,9 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { utilisateursApi } from '../features/utilisateurs/utilisateursApi';
-import { ticketsApi } from '../features/tickets/ticketsApi';
+import { TableauDeBord } from '../features/statistiques/TableauDeBord';
 import type { Utilisateur } from '../types/auth';
-import type { StatistiquesTickets } from '../types/ticket';
 import { dateLongue, LABELS_ROLE, tempsRelatif } from '../lib/format';
-import { PageHeader } from '../components/ui/PageHeader';
 import { StatCard } from '../components/ui/StatCard';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
 import { Avatar } from '../components/ui/Avatar';
@@ -33,12 +27,14 @@ const MODULES_A_VENIR = [
     titre: 'Assistant IA',
     texte: 'Classification automatique, priorisation et suggestions de résolution.',
     phase: 'Phase 5',
+    grad: 'from-primary-500 to-accent-600',
   },
   {
     icon: ShieldCheck,
     titre: 'Statistiques & SLA',
     texte: 'Rapports détaillés, temps de résolution et délais SLA.',
     phase: 'Phase 4',
+    grad: 'from-emerald-500 to-teal-600',
   },
 ];
 
@@ -73,13 +69,13 @@ function StatsAdmin() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {stats ? (
           <>
-            <StatCard label="Utilisateurs" value={stats.total} icon={Users} tone="primary" />
-            <StatCard label="Comptes actifs" value={stats.actifs} icon={UserCheck} tone="success" />
-            <StatCard label="Techniciens" value={stats.techniciens} icon={Wrench} tone="warning" />
-            <StatCard label="Administrateurs" value={stats.admins} icon={ShieldCheck} tone="neutral" />
+            <StatCard label="Utilisateurs" value={stats.total} icon={Users} tone="primary" index={0} />
+            <StatCard label="Comptes actifs" value={stats.actifs} icon={UserCheck} tone="success" index={1} />
+            <StatCard label="Techniciens" value={stats.techniciens} icon={Wrench} tone="warning" index={2} />
+            <StatCard label="Administrateurs" value={stats.admins} icon={ShieldCheck} tone="neutral" index={3} />
           </>
         ) : (
-          Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-[104px] rounded-xl" />)
+          Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-[116px] rounded-2xl" />)
         )}
       </div>
 
@@ -89,7 +85,7 @@ function StatsAdmin() {
           actions={
             <Link
               to="/administration/utilisateurs"
-              className="inline-flex items-center gap-1 text-xs font-medium text-primary-600 hover:underline"
+              className="inline-flex items-center gap-1 text-xs font-medium text-primary-600 transition-colors hover:text-primary-700 hover:underline"
             >
               Tout voir <ArrowRight className="size-3.5" aria-hidden />
             </Link>
@@ -99,7 +95,10 @@ function StatsAdmin() {
           {stats ? (
             <ul className="divide-y divide-slate-100">
               {stats.recents.map((u) => (
-                <li key={u.id} className="flex items-center gap-3 px-3 py-2.5">
+                <li
+                  key={u.id}
+                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-slate-50"
+                >
                   <Avatar prenom={u.prenom} nom={u.nom} />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-slate-900">
@@ -129,80 +128,6 @@ function StatsAdmin() {
   );
 }
 
-// Indicateurs tickets + satisfaction, adaptés au périmètre de l'utilisateur
-// (ses propres tickets pour un employé, l'ensemble pour le support/admin).
-function StatsTickets() {
-  const token = useAuthStore((state) => state.token);
-  const [stats, setStats] = useState<StatistiquesTickets | null>(null);
-  const [erreur, setErreur] = useState(false);
-
-  useEffect(() => {
-    if (!token) return;
-    ticketsApi
-      .statistiques(token)
-      .then(setStats)
-      .catch(() => setErreur(true));
-  }, [token]);
-
-  if (erreur) return null;
-
-  return (
-    <>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {stats ? (
-          <>
-            <StatCard label="Tickets" value={stats.totalTickets} icon={Ticket} tone="primary" />
-            <StatCard label="Ouverts" value={stats.ticketsOuverts} icon={Inbox} tone="warning" />
-            <StatCard
-              label="Résolus / clôturés"
-              value={stats.ticketsResolus + stats.ticketsClotures}
-              icon={CheckCircle2}
-              tone="success"
-            />
-            <StatCard
-              label="Satisfaction moyenne"
-              value={stats.satisfactionMoyenne != null ? `${stats.satisfactionMoyenne} / 5` : '—'}
-              hint={`${stats.nombreEvaluations} évaluation${stats.nombreEvaluations > 1 ? 's' : ''}`}
-              icon={Star}
-              tone="warning"
-            />
-          </>
-        ) : (
-          ['s1', 's2', 's3', 's4'].map((k) => <Skeleton key={k} className="h-[104px] rounded-xl" />)
-        )}
-      </div>
-
-      {stats && stats.nombreEvaluations > 0 && (
-        <Card className="mt-4">
-          <CardHeader
-            title="Répartition des évaluations"
-            description={`${stats.nombreEvaluations} évaluation${stats.nombreEvaluations > 1 ? 's' : ''}`}
-          />
-          <CardContent className="space-y-2">
-            {[...stats.repartitionSatisfaction].reverse().map(({ note, count }) => {
-              const pct = stats.nombreEvaluations
-                ? Math.round((count / stats.nombreEvaluations) * 100)
-                : 0;
-              return (
-                <div key={note} className="flex items-center gap-3">
-                  <span className="flex w-9 items-center gap-1 text-xs text-slate-500">
-                    {note}
-                    <Star className="size-3 fill-amber-400 text-amber-400" aria-hidden />
-                  </span>
-                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
-                    <div className="h-full rounded-full bg-amber-400" style={{ width: `${pct}%` }} />
-                  </div>
-                  <span className="w-8 text-right text-xs tabular-nums text-slate-400">{count}</span>
-                </div>
-              );
-            })}
-          </CardContent>
-        </Card>
-      )}
-    </>
-  );
-}
-
 export function DashboardPage() {
   const utilisateur = useAuthStore((state) => state.utilisateur);
 
@@ -217,45 +142,72 @@ export function DashboardPage() {
   };
 
   return (
-    <div>
-      <PageHeader
-        eyebrow={dateLongue(new Date())}
-        title={`Bonjour, ${utilisateur.prenom} 👋`}
-        description={DESCRIPTIONS[utilisateur.role]}
-        actions={
+    <div className="space-y-8">
+      {/* Hero de bienvenue — bannière de marque */}
+      <div className="animate-fade-up relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary-600 via-primary-700 to-accent-600 p-6 text-white shadow-glow md:p-8">
+        <span
+          aria-hidden
+          className="absolute inset-0 opacity-[0.12] [background-image:linear-gradient(white_1px,transparent_1px),linear-gradient(90deg,white_1px,transparent_1px)] [background-size:32px_32px]"
+        />
+        <span aria-hidden className="absolute -right-16 -top-20 size-64 rounded-full bg-white/10 blur-3xl" />
+        <span aria-hidden className="absolute -bottom-24 left-1/3 size-56 rounded-full bg-accent-400/20 blur-3xl" />
+        <div className="relative flex flex-wrap items-end justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-xs font-medium uppercase tracking-wider text-white/60">
+              {dateLongue(new Date())}
+            </p>
+            <h1 className="mt-1.5 text-2xl font-semibold tracking-tight md:text-3xl">
+              Bonjour, {utilisateur.prenom} 👋
+            </h1>
+            <p className="mt-2 max-w-lg text-sm leading-relaxed text-white/70">
+              {DESCRIPTIONS[utilisateur.role]}
+            </p>
+          </div>
           <Link
             to="/profil"
-            className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 shadow-xs transition-colors hover:bg-slate-50"
+            className="inline-flex h-9 items-center gap-2 rounded-lg bg-white/10 px-4 text-sm font-medium text-white ring-1 ring-inset ring-white/20 backdrop-blur transition-colors hover:bg-white/20"
           >
             <UserCircle className="size-4" aria-hidden />
             Mon profil
           </Link>
-        }
-      />
+        </div>
+      </div>
 
-      <StatsTickets />
+      <TableauDeBord />
 
       {estAdmin && (
-        <div className="mt-8">
+        <div>
           <h2 className="mb-3 text-sm font-semibold text-slate-900">Utilisateurs</h2>
           <StatsAdmin />
         </div>
       )}
 
-      <h2 className="mb-3 mt-8 text-sm font-semibold text-slate-900">Feuille de route du projet</h2>
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        {MODULES_A_VENIR.map(({ icon: Icon, titre, texte, phase }) => (
-          <Card key={titre} className="flex flex-col p-5 transition-shadow duration-200 hover:shadow-md">
-            <div className="flex items-start justify-between">
-              <span className="flex size-10 items-center justify-center rounded-lg bg-primary-50 text-primary-600">
-                <Icon className="size-5" aria-hidden />
-              </span>
-              <Badge variant="neutral">{phase}</Badge>
-            </div>
-            <h3 className="mt-4 text-sm font-semibold text-slate-900">{titre}</h3>
-            <p className="mt-1 flex-1 text-sm leading-relaxed text-slate-500">{texte}</p>
-          </Card>
-        ))}
+      <div>
+        <h2 className="mb-3 text-sm font-semibold text-slate-900">Feuille de route du projet</h2>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {MODULES_A_VENIR.map(({ icon: Icon, titre, texte, phase, grad }, i) => (
+            <Card
+              key={titre}
+              className="animate-fade-up group relative flex flex-col overflow-hidden p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
+              style={{ animationDelay: `${i * 80}ms` }}
+            >
+              <span
+                aria-hidden
+                className={`pointer-events-none absolute -right-10 -top-10 size-28 rounded-full bg-gradient-to-br ${grad} opacity-[0.08] blur-2xl transition-opacity duration-300 group-hover:opacity-[0.16]`}
+              />
+              <div className="relative flex items-start justify-between">
+                <span
+                  className={`flex size-11 items-center justify-center rounded-xl bg-gradient-to-br ${grad} text-white shadow-glow-sm ring-1 ring-inset ring-white/20`}
+                >
+                  <Icon className="size-5" aria-hidden />
+                </span>
+                <Badge variant="neutral">{phase}</Badge>
+              </div>
+              <h3 className="relative mt-4 text-sm font-semibold text-slate-900">{titre}</h3>
+              <p className="relative mt-1 flex-1 text-sm leading-relaxed text-slate-500">{texte}</p>
+            </Card>
+          ))}
+        </div>
       </div>
     </div>
   );

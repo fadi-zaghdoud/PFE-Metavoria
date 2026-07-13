@@ -74,4 +74,18 @@ export const utilisateurRepository = {
       orderBy: { dateCreation: 'desc' },
     });
   },
+
+  // Nombre d'administrateurs actifs — garde-fou contre la suppression du dernier
+  // administrateur (rétrogradation ou désactivation).
+  countAdminsActifs() {
+    return prisma.utilisateur.count({ where: { role: 'ADMINISTRATEUR', actif: true } });
+  },
+
+  // Pour l'affichage de noms dans les statistiques (id -> prénom/nom).
+  findManyByIds(ids: number[]) {
+    return prisma.utilisateur.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, prenom: true, nom: true },
+    });
+  },
 };

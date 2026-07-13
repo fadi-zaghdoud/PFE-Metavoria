@@ -111,7 +111,7 @@ export function ActivateAccountPage() {
             id="motDePasse"
             required
             autoFocus
-            minLength={8}
+            minLength={10}
             maxLength={128}
             autoComplete="new-password"
             value={motDePasse}

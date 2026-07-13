@@ -11,18 +11,23 @@ import {
   verificationCodeSchema,
 } from '../validators/auth.validator';
 import { UnauthorizedError, ValidationError } from '../utils/AppError';
+import { effacerCookieRefresh, lireCookieRefresh, poserCookieRefresh } from '../utils/cookies';
 
 export const authController = {
   async inscrire(req: Request, res: Response) {
     const input = inscriptionSchema.parse(req.body);
-    const result = await authService.inscrire(input);
-    res.status(201).json(result);
+    const { utilisateur, accessToken, refreshToken } = await authService.inscrire(input);
+    poserCookieRefresh(res, refreshToken);
+    // Le refresh token reste dans le cookie httpOnly ; le corps ne renvoie que
+    // l'access token court (« token ») et l'utilisateur.
+    res.status(201).json({ utilisateur, token: accessToken });
   },
 
   async connecter(req: Request, res: Response) {
     const input = connexionSchema.parse(req.body);
-    const result = await authService.connecter(input);
-    res.status(200).json(result);
+    const { utilisateur, accessToken, refreshToken } = await authService.connecter(input);
+    poserCookieRefresh(res, refreshToken);
+    res.status(200).json({ utilisateur, token: accessToken });
   },
 
   async profil(req: Request, res: Response) {
@@ -54,7 +59,10 @@ export const authController = {
   async demanderCodeReinitialisation(req: Request, res: Response) {
     const input = demandeReinitialisationSchema.parse(req.body);
     await authService.demanderCodeReinitialisation(input.email);
-    res.status(200).json({ message: 'Code de vérification envoyé par e-mail' });
+    // Message générique (anti-énumération) : identique que le compte existe ou non.
+    res.status(200).json({
+      message: 'Si un compte existe pour cette adresse, un code de vérification vient d’être envoyé.',
+    });
   },
 
   async verifierCodeReinitialisation(req: Request, res: Response) {
@@ -80,7 +88,30 @@ export const authController = {
 
   async activerCompte(req: Request, res: Response) {
     const input = activationCompteSchema.parse(req.body);
-    const result = await authService.activerCompte(input.token, input.motDePasse);
-    res.status(200).json(result);
+    const { utilisateur, accessToken, refreshToken } = await authService.activerCompte(
+      input.token,
+      input.motDePasse,
+    );
+    poserCookieRefresh(res, refreshToken);
+    res.status(200).json({ utilisateur, token: accessToken });
+  },
+
+  // Renouvelle l'access token à partir du refresh token (cookie httpOnly), avec
+  // rotation du refresh token. Appelé silencieusement par le frontend.
+  async rafraichir(req: Request, res: Response) {
+    const refresh = lireCookieRefresh(req);
+    if (!refresh) {
+      throw new UnauthorizedError('Session absente — reconnectez-vous', 'TOKEN_INVALIDE');
+    }
+    const { utilisateur, accessToken, refreshToken } = await authService.rafraichir(refresh);
+    poserCookieRefresh(res, refreshToken);
+    res.status(200).json({ utilisateur, token: accessToken });
+  },
+
+  // Déconnexion : révoque le refresh token et efface le cookie.
+  async deconnexion(req: Request, res: Response) {
+    await authService.deconnecter(lireCookieRefresh(req));
+    effacerCookieRefresh(res);
+    res.status(204).send();
   },
 };

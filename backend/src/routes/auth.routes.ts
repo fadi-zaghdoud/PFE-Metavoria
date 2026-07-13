@@ -11,6 +11,12 @@ import { asyncHandler } from '../utils/asyncHandler';
 
 export const authRouter = Router();
 
+// Réponses d'authentification (jetons d'accès, profil) : jamais mises en cache.
+authRouter.use((_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store');
+  next();
+});
+
 authRouter.post('/inscription', limiteurInscription, asyncHandler(authController.inscrire));
 authRouter.post('/connexion', limiteurConnexion, asyncHandler(authController.connecter));
 
@@ -42,6 +48,10 @@ authRouter.post(
   limiteurVerificationCode,
   asyncHandler(authController.activerCompte),
 );
+
+// Renouvellement de session (refresh token en cookie httpOnly) et déconnexion.
+authRouter.post('/rafraichir', asyncHandler(authController.rafraichir));
+authRouter.post('/deconnexion', asyncHandler(authController.deconnexion));
 
 authRouter.get('/moi', requireAuth, asyncHandler(authController.profil));
 authRouter.patch('/moi', requireAuth, asyncHandler(authController.mettreAJourProfil));

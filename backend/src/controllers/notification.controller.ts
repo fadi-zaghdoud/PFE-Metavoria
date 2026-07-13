@@ -1,9 +1,7 @@
 import type { Request, Response } from 'express';
-import jwt from 'jsonwebtoken';
 import { notificationService } from '../services/notification.service';
 import { sseHub } from '../utils/sseHub';
-import { env } from '../config/env';
-import type { JwtPayload } from '../middlewares/auth.middleware';
+import { authentifierToken } from '../middlewares/auth.middleware';
 import { UnauthorizedError, ValidationError } from '../utils/AppError';
 
 // Intervalle du commentaire keep-alive : maintient la connexion SSE ouverte
@@ -31,13 +29,9 @@ export const notificationController = {
     if (!token) {
       throw new UnauthorizedError("Jeton d'authentification manquant", 'TOKEN_INVALIDE');
     }
-    let utilisateurId: number;
-    try {
-      const payload = jwt.verify(token, env.JWT_SECRET) as unknown as JwtPayload;
-      utilisateurId = payload.sub;
-    } catch {
-      throw new UnauthorizedError('Votre session a expiré — reconnectez-vous', 'TOKEN_INVALIDE');
-    }
+    // Vérifie signature + compte actif + rôle à jour (révocation immédiate),
+    // exactement comme requireAuth pour les routes classiques.
+    const { sub: utilisateurId } = await authentifierToken(token);
 
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',

@@ -1,15 +1,14 @@
-import { randomInt, timingSafeEqual } from 'node:crypto';
+import { randomInt, randomBytes, timingSafeEqual } from 'node:crypto';
 import { sha256Hex } from '../utils/hash';
 import bcrypt from 'bcryptjs';
 import jwt, { type SignOptions } from 'jsonwebtoken';
 import { env } from '../config/env';
 import { utilisateurRepository } from '../repositories/utilisateur.repository';
+import { refreshTokenRepository } from '../repositories/refreshToken.repository';
 import { emailService } from './email.service';
 import {
-  AppError,
   ConflictError,
   ForbiddenError,
-  NotFoundError,
   TooManyRequestsError,
   UnauthorizedError,
   ValidationError,
@@ -56,9 +55,29 @@ export interface ChangementMotDePasseInput {
   nouveauMotDePasse: string;
 }
 
-function signToken(payload: JwtPayload): string {
-  const options: SignOptions = { expiresIn: env.JWT_EXPIRES_IN as SignOptions['expiresIn'] };
+// Jeton d'accès JWT de courte durée (ACCESS_TOKEN_TTL). Algorithme épinglé (HS256).
+function signAccessToken(payload: JwtPayload): string {
+  const options: SignOptions = {
+    expiresIn: env.ACCESS_TOKEN_TTL as SignOptions['expiresIn'],
+    algorithm: 'HS256',
+  };
   return jwt.sign(payload, env.JWT_SECRET, options);
+}
+
+// Refresh token opaque : seul son hash SHA-256 est stocké, le secret n'est
+// renvoyé qu'au client (cookie httpOnly).
+async function creerRefreshToken(utilisateurId: number): Promise<string> {
+  const brut = randomBytes(32).toString('hex');
+  const expireLe = new Date(Date.now() + env.REFRESH_TOKEN_TTL_DAYS * 86_400_000);
+  await refreshTokenRepository.create({ utilisateurId, tokenHash: sha256Hex(brut), expireLe });
+  return brut;
+}
+
+// Émet une session : access token court + refresh token rotatif.
+async function emettreSession(utilisateur: { id: number; role: Role }) {
+  const accessToken = signAccessToken({ sub: utilisateur.id, role: utilisateur.role });
+  const refreshToken = await creerRefreshToken(utilisateur.id);
+  return { accessToken, refreshToken };
 }
 
 const hacherCode = sha256Hex;
@@ -134,8 +153,8 @@ export const authService = {
       poste: input.poste,
     });
 
-    const token = signToken({ sub: utilisateur.id, role: utilisateur.role });
-    return { utilisateur: toPublicUser(utilisateur), token };
+    const session = await emettreSession(utilisateur);
+    return { utilisateur: toPublicUser(utilisateur), ...session };
   },
 
   async connecter(input: ConnexionInput) {
@@ -161,8 +180,10 @@ export const authService = {
       throw new ForbiddenError('Ce compte a été désactivé — contactez un administrateur');
     }
 
-    const token = signToken({ sub: utilisateur.id, role: utilisateur.role });
-    return { utilisateur: toPublicUser(utilisateur), token };
+    // Nettoie les sessions obsolètes puis émet une session courte + refresh rotatif.
+    await refreshTokenRepository.supprimerObsoletes(utilisateur.id);
+    const session = await emettreSession(utilisateur);
+    return { utilisateur: toPublicUser(utilisateur), ...session };
   },
 
   // ── Activation d'un compte invité ──────────────────────────────────────────
@@ -205,8 +226,8 @@ export const authService = {
     });
 
     // Auto-connexion : l'invité arrive directement sur son espace.
-    const token = signToken({ sub: active.id, role: active.role });
-    return { utilisateur: toPublicUser(active), token };
+    const session = await emettreSession(active);
+    return { utilisateur: toPublicUser(active), ...session };
   },
 
   async profil(userId: number) {
@@ -238,30 +259,20 @@ export const authService = {
   },
 
   // ── Étape 1 : demande de code ──────────────────────────────────────────────
-  // Choix produit assumé (voir cahier des charges de la refonte auth) : on
-  // indique explicitement si l'email n'existe pas. Aucun e-mail n'est alors
-  // envoyé. Le rate limiting par IP limite l'énumération de comptes.
+  // Réponse TOUJOURS générique (anti-énumération) : que le compte existe ou non,
+  // qu'il soit invité (sans mot de passe) ou en cooldown, l'appelant reçoit la
+  // même réponse. Aucune information sur l'existence du compte ne fuit.
   async demanderCodeReinitialisation(email: string) {
     const utilisateur = await utilisateurRepository.findByEmail(email);
 
-    if (!utilisateur || !utilisateur.actif) {
-      throw new NotFoundError('Aucun compte n\'est associé à cette adresse e-mail');
-    }
+    // Pas de compte actif disposant d'un mot de passe à réinitialiser → on ne
+    // fait rien, en silence (sans révéler l'inexistence ou l'état « invité »).
+    if (!utilisateur || !utilisateur.actif || !utilisateur.motDePasse) return;
 
-    // Un compte invité n'a pas encore de mot de passe à réinitialiser.
-    if (!utilisateur.motDePasse) {
-      throw new ValidationError(MESSAGE_COMPTE_NON_ACTIVE);
-    }
-
-    // Anti-spam : un seul code par minute et par compte.
+    // Anti-spam : un seul code par minute et par compte (appliqué en silence).
     if (utilisateur.codeReinitialisationEmis) {
       const depuisMs = Date.now() - utilisateur.codeReinitialisationEmis.getTime();
-      const resteS = COOLDOWN_RENVOI_SECONDES - Math.floor(depuisMs / 1000);
-      if (resteS > 0) {
-        throw new TooManyRequestsError(
-          `Un code vient d'être envoyé — patientez ${resteS} s avant d'en redemander un`,
-        );
-      }
+      if (depuisMs < COOLDOWN_RENVOI_SECONDES * 1000) return;
     }
 
     // Code à 6 chiffres cryptographiquement aléatoire (000000–999999).
@@ -277,16 +288,16 @@ export const authService = {
     try {
       await emailService.envoyerCodeReinitialisation(utilisateur.email, code, VALIDITE_CODE_MINUTES);
     } catch (err) {
-      // Échec d'envoi : on invalide le code pour ne pas laisser un secret orphelin.
+      // Échec d'envoi : on invalide le code orphelin et on journalise, mais on ne
+      // remonte PAS l'erreur au client — sinon l'échec ne surviendrait que pour un
+      // compte existant, ce qui révélerait son existence.
       await utilisateurRepository.update(utilisateur.id, {
         codeReinitialisation: null,
         codeReinitialisationExpire: null,
         codeReinitialisationEmis: null,
         codeReinitialisationTentatives: 0,
       });
-      throw err instanceof AppError
-        ? err
-        : new AppError(502, "L'envoi de l'e-mail a échoué. Réessayez dans quelques instants.");
+      console.error('Échec envoi code de réinitialisation :', err);
     }
   },
 
@@ -294,7 +305,8 @@ export const authService = {
   async verifierCodeReinitialisation(email: string, code: string) {
     const utilisateur = await utilisateurRepository.findByEmail(email);
     if (!utilisateur || !utilisateur.actif) {
-      throw new NotFoundError('Aucun compte n\'est associé à cette adresse e-mail');
+      // Ne révèle pas l'inexistence du compte : même message qu'un code invalide.
+      throw new ValidationError('Code incorrect ou expiré — demandez un nouveau code');
     }
     await validerCodeOtp(utilisateur, code);
   },
@@ -303,7 +315,7 @@ export const authService = {
   async reinitialiserMotDePasse(email: string, code: string, nouveauMotDePasse: string) {
     const utilisateur = await utilisateurRepository.findByEmail(email);
     if (!utilisateur || !utilisateur.actif) {
-      throw new NotFoundError('Aucun compte n\'est associé à cette adresse e-mail');
+      throw new ValidationError('Code incorrect ou expiré — demandez un nouveau code');
     }
 
     await validerCodeOtp(utilisateur, code);
@@ -318,5 +330,47 @@ export const authService = {
       codeReinitialisationEmis: null,
       codeReinitialisationTentatives: 0,
     });
+
+    // Un changement de mot de passe révoque toutes les sessions existantes.
+    await refreshTokenRepository.revokeAllForUser(utilisateur.id);
+  },
+
+  // ── Rotation du refresh token ──────────────────────────────────────────────
+  // Valide le refresh token, le révoque (rotation) et émet une nouvelle session.
+  // Réutilisation d'un jeton déjà tourné = vol probable → révocation globale.
+  async rafraichir(refreshBrut: string) {
+    const existant = await refreshTokenRepository.findByHash(sha256Hex(refreshBrut));
+    if (!existant) {
+      throw new UnauthorizedError('Session invalide — reconnectez-vous', 'TOKEN_INVALIDE');
+    }
+    if (existant.revoke) {
+      // Détection de réutilisation : par précaution, on coupe toutes les sessions.
+      await refreshTokenRepository.revokeAllForUser(existant.utilisateurId);
+      throw new UnauthorizedError('Session invalide — reconnectez-vous', 'TOKEN_INVALIDE');
+    }
+    if (existant.expireLe < new Date()) {
+      await refreshTokenRepository.revoke(existant.id);
+      throw new UnauthorizedError('Session expirée — reconnectez-vous', 'TOKEN_INVALIDE');
+    }
+
+    const utilisateur = await utilisateurRepository.findById(existant.utilisateurId);
+    if (!utilisateur || !utilisateur.actif) {
+      await refreshTokenRepository.revoke(existant.id);
+      throw new UnauthorizedError('Session invalide — reconnectez-vous', 'TOKEN_INVALIDE');
+    }
+
+    // Rotation : l'ancien jeton est révoqué, un nouveau est émis.
+    await refreshTokenRepository.revoke(existant.id);
+    const session = await emettreSession(utilisateur);
+    return { utilisateur: toPublicUser(utilisateur), ...session };
+  },
+
+  // Déconnexion : révoque le refresh token présenté (best-effort).
+  async deconnecter(refreshBrut: string | null) {
+    if (!refreshBrut) return;
+    const existant = await refreshTokenRepository.findByHash(sha256Hex(refreshBrut));
+    if (existant && !existant.revoke) {
+      await refreshTokenRepository.revoke(existant.id);
+    }
   },
 };

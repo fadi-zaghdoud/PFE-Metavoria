@@ -11,6 +11,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
+import { authApi } from '../../features/auth/authApi';
 import { cn } from '../../lib/cn';
 
 interface Commande {
@@ -60,6 +61,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
       section: 'Compte',
       motsCles: 'logout quitter',
       action: () => {
+        void authApi.deconnexion().catch(() => {});
         deconnecter();
         onClose();
         navigate('/connexion', { replace: true });
@@ -121,7 +123,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.97, y: -8 }}
             transition={{ duration: 0.16, ease: 'easeOut' }}
-            className="relative w-full max-w-lg overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg"
+            className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-xl"
           >
             <div className="flex items-center gap-2.5 border-b border-slate-100 px-4">
               <Search className="size-4 text-slate-400" aria-hidden />

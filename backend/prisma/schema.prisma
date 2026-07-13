@@ -76,8 +76,27 @@ model Utilisateur {
   commentaires     Commentaire[]
   evenementsTicket EvenementTicket[]
   notifications    Notification[]
+  refreshTokens    RefreshToken[]
 
   @@map("utilisateurs")
+}
+
+// Jetons de rafraîchissement (sessions) : seul le hash SHA-256 du jeton opaque est
+// stocké. Rotation à chaque usage (l'ancien est révoqué), révocation possible
+// (déconnexion, désactivation) et détection de réutilisation d'un jeton déjà
+// tourné (signale un vol → toute la famille de l'utilisateur est révoquée).
+model RefreshToken {
+  id            Int      @id @default(autoincrement())
+  tokenHash     String   @unique @map("token_hash")
+  expireLe      DateTime @map("expire_le")
+  revoke        Boolean  @default(false)
+  creeLe        DateTime @default(now()) @map("cree_le")
+
+  utilisateurId Int         @map("utilisateur_id")
+  utilisateur   Utilisateur @relation(fields: [utilisateurId], references: [id], onDelete: Cascade)
+
+  @@index([utilisateurId])
+  @@map("refresh_tokens")
 }
 
 model Categorie {

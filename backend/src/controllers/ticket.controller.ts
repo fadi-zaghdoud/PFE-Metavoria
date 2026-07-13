@@ -8,6 +8,7 @@ import {
   creerTicketSchema,
   listeTicketsQuerySchema,
   satisfactionSchema,
+  statistiquesQuerySchema,
 } from '../validators/ticket.validator';
 import { UnauthorizedError, ValidationError } from '../utils/AppError';
 
@@ -79,7 +80,8 @@ export const ticketController = {
   },
 
   async statistiques(req: Request, res: Response) {
-    const stats = await ticketService.statistiques(acteur(req));
+    const filtres = statistiquesQuerySchema.parse(req.query);
+    const stats = await ticketService.statistiques(acteur(req), filtres);
     res.status(200).json(stats);
   },
 };

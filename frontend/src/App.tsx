@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
+import { Loader2 } from 'lucide-react';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
@@ -12,8 +14,46 @@ import { TicketDetailPage } from './pages/TicketDetailPage';
 import { AppShell } from './components/layout/AppShell';
 import { ProtectedRoute } from './routes/ProtectedRoute';
 import { RequireRole } from './routes/RequireRole';
+import { Logo } from './components/layout/Logo';
+import { useAuthStore } from './store/authStore';
+import { rafraichirAccessToken } from './lib/apiClient';
+
+// Écran d'attente pendant la restauration de session (rafraîchissement silencieux).
+function SplashScreen() {
+  return (
+    <div className="flex min-h-dvh items-center justify-center bg-slate-50">
+      <div className="animate-fade-in flex flex-col items-center gap-4">
+        <Logo />
+        <Loader2 className="size-5 animate-spin text-primary-500" aria-label="Chargement…" />
+      </div>
+    </div>
+  );
+}
 
 function App() {
+  const estAuthentifie = useAuthStore((s) => s.estAuthentifie);
+  const token = useAuthStore((s) => s.token);
+  const deconnecter = useAuthStore((s) => s.deconnecter);
+
+  // Restauration de session au chargement : si l'on était authentifié mais que
+  // l'access token (non persisté) est absent, on tente un rafraîchissement
+  // silencieux via le cookie refresh httpOnly. Sinon, on rend l'app directement.
+  const [pret, setPret] = useState(() => !(estAuthentifie && !token));
+
+  useEffect(() => {
+    if (estAuthentifie && !token) {
+      rafraichirAccessToken()
+        .then((nouveau) => {
+          if (!nouveau) deconnecter();
+        })
+        .finally(() => setPret(true));
+    }
+    // Au montage uniquement.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (!pret) return <SplashScreen />;
+
   return (
     <Routes>
       <Route path="/connexion" element={<LoginPage />} />

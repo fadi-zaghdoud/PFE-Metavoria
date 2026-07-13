@@ -204,7 +204,7 @@ export function ForgotPasswordPage() {
                   id="nouveauMotDePasse"
                   required
                   autoFocus
-                  minLength={8}
+                  minLength={10}
                   autoComplete="new-password"
                   value={nouveauMotDePasse}
                   onChange={(e) => setNouveauMotDePasse(e.target.value)}

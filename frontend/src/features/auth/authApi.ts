@@ -40,4 +40,7 @@ export const authApi = {
 
   activerCompte: (payload: ActivationComptePayload) =>
     apiRequest<AuthResponse>('/auth/activer-compte', { method: 'POST', body: payload }),
+
+  // Révoque le refresh token côté serveur et efface le cookie (best-effort).
+  deconnexion: () => apiRequest<void>('/auth/deconnexion', { method: 'POST' }),
 };

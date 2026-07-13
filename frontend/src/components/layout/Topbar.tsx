@@ -32,7 +32,7 @@ export function Topbar({ onOpenMobileNav, onOpenPalette }: TopbarProps) {
   const crumbs = useBreadcrumbs();
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-slate-200 bg-white/85 px-4 backdrop-blur md:px-6">
+    <header className="glass sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-slate-200/70 px-4 shadow-xs md:px-6">
       <button
         onClick={onOpenMobileNav}
         aria-label="Ouvrir le menu"
@@ -62,9 +62,9 @@ export function Topbar({ onOpenMobileNav, onOpenPalette }: TopbarProps) {
 
       <button
         onClick={onOpenPalette}
-        className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-400 shadow-xs transition-colors hover:border-slate-300 hover:text-slate-600"
+        className="group flex items-center gap-2 rounded-lg border border-slate-200 bg-white/70 px-3 py-1.5 text-sm text-slate-400 shadow-xs transition-all hover:border-primary-200 hover:text-slate-600 hover:shadow-sm"
       >
-        <Search className="size-4" aria-hidden />
+        <Search className="size-4 transition-colors group-hover:text-primary-500" aria-hidden />
         <span className="hidden sm:inline">Rechercher…</span>
         <kbd className="hidden rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-sans text-[10px] font-medium text-slate-400 sm:inline">
           Ctrl K

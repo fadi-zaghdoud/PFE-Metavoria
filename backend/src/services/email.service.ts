@@ -1,12 +1,14 @@
 import { env } from '../config/env';
 import { smtpConfigured, transporteurMail } from '../config/mailer';
 import { AppError } from '../utils/AppError';
+import { escapeHtml } from '../utils/escapeHtml';
 
 export const emailService = {
   // Envoie le lien d'invitation permettant à un compte créé par un administrateur
   // de choisir son mot de passe. Le token en clair ne transite que par cet e-mail.
   async envoyerInvitation(destinataire: string, prenom: string, token: string, validiteHeures: number) {
     const lien = `${env.FRONTEND_URL}/activer-compte?token=${token}`;
+    const prenomHtml = escapeHtml(prenom); // échappé pour le corps HTML
 
     if (!smtpConfigured) {
       console.warn(`⚠️  SMTP non configuré — lien d'invitation pour ${destinataire} : ${lien}`);
@@ -23,7 +25,7 @@ export const emailService = {
           <div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;padding:24px">
             <h2 style="color:#1e293b;margin:0 0 8px">Bienvenue sur Smart Ticketing</h2>
             <p style="color:#475569;font-size:14px;line-height:1.6;margin:0 0 20px">
-              Bonjour ${prenom},<br/>
+              Bonjour ${prenomHtml},<br/>
               un compte vous a été créé sur la plateforme de support de Metavoria.
               Choisissez votre mot de passe pour l'activer — le lien est valable
               <strong>${validiteHeures} heures</strong>.
@@ -57,6 +59,11 @@ export const emailService = {
     ticketId: number,
   ) {
     const lien = `${env.FRONTEND_URL}/tickets/${ticketId}`;
+    // sujet et message contiennent des valeurs libres (titre de ticket) : échappées
+    // pour le corps HTML afin d'empêcher toute injection de balises.
+    const sujetHtml = escapeHtml(sujet);
+    const prenomHtml = escapeHtml(prenom);
+    const messageHtml = escapeHtml(message);
 
     if (!smtpConfigured) {
       console.warn(`⚠️  SMTP non configuré — notification pour ${destinataire} : ${message} (${lien})`);
@@ -71,9 +78,9 @@ export const emailService = {
         text: `Bonjour ${prenom},\n\n${message}\n\nConsulter le ticket : ${lien}\n\nL'équipe support Metavoria`,
         html: `
           <div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;padding:24px">
-            <h2 style="color:#1e293b;margin:0 0 8px">${sujet}</h2>
+            <h2 style="color:#1e293b;margin:0 0 8px">${sujetHtml}</h2>
             <p style="color:#475569;font-size:14px;line-height:1.6;margin:0 0 20px">
-              Bonjour ${prenom},<br/>${message}
+              Bonjour ${prenomHtml},<br/>${messageHtml}
             </p>
             <p style="text-align:center;margin:0 0 20px">
               <a href="${lien}" style="display:inline-block;background:#4f46e5;color:#ffffff;

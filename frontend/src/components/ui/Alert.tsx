@@ -22,7 +22,7 @@ export function Alert({ variant = 'info', children, className }: AlertProps) {
   return (
     <div
       role={variant === 'danger' ? 'alert' : 'status'}
-      className={cn('flex items-start gap-2.5 rounded-lg border px-3.5 py-2.5 text-sm', box, className)}
+      className={cn('flex items-start gap-2.5 rounded-xl border px-3.5 py-2.5 text-sm', box, className)}
     >
       <Icon className="mt-0.5 size-4 shrink-0" aria-hidden />
       <div className="min-w-0">{children}</div>

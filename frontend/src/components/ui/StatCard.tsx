@@ -1,15 +1,28 @@
 import type { LucideIcon } from 'lucide-react';
+import { ArrowDownRight, ArrowUpRight, Minus } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Card } from './Card';
+import { AnimatedNumber } from './AnimatedNumber';
 
 type Tone = 'primary' | 'success' | 'warning' | 'danger' | 'neutral';
 
-const TONES: Record<Tone, string> = {
-  primary: 'bg-primary-50 text-primary-600',
-  success: 'bg-emerald-50 text-emerald-600',
-  warning: 'bg-amber-50 text-amber-600',
-  danger: 'bg-rose-50 text-rose-600',
-  neutral: 'bg-slate-100 text-slate-600',
+const TONES: Record<Tone, { chip: string; aura: string; glow: string }> = {
+  primary: { chip: 'from-primary-500 to-primary-600', aura: 'from-primary-500/15', glow: 'shadow-glow-sm' },
+  success: { chip: 'from-emerald-500 to-teal-600', aura: 'from-emerald-500/15', glow: '' },
+  warning: { chip: 'from-amber-500 to-orange-500', aura: 'from-amber-500/15', glow: '' },
+  danger: { chip: 'from-rose-500 to-rose-600', aura: 'from-rose-500/15', glow: '' },
+  neutral: { chip: 'from-slate-500 to-slate-600', aura: 'from-slate-500/10', glow: '' },
+};
+
+interface Trend {
+  direction: 'up' | 'down' | 'neutral';
+  label: string;
+}
+
+const TREND_STYLE = {
+  up: { cls: 'bg-emerald-50 text-emerald-700 ring-emerald-600/15', Icon: ArrowUpRight },
+  down: { cls: 'bg-rose-50 text-rose-700 ring-rose-600/15', Icon: ArrowDownRight },
+  neutral: { cls: 'bg-slate-100 text-slate-600 ring-slate-500/10', Icon: Minus },
 };
 
 interface StatCardProps {
@@ -18,20 +31,73 @@ interface StatCardProps {
   icon: LucideIcon;
   hint?: string;
   tone?: Tone;
+  decimals?: number;
+  suffix?: string;
+  trend?: Trend;
+  index?: number;
 }
 
-export function StatCard({ label, value, icon: Icon, hint, tone = 'primary' }: StatCardProps) {
+export function StatCard({
+  label,
+  value,
+  icon: Icon,
+  hint,
+  tone = 'primary',
+  decimals = 0,
+  suffix,
+  trend,
+  index = 0,
+}: StatCardProps) {
+  const t = TONES[tone];
+  const trendStyle = trend ? TREND_STYLE[trend.direction] : null;
+
   return (
-    <Card className="p-5 transition-shadow duration-200 hover:shadow-md">
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-sm text-slate-500">{label}</p>
-          <p className="mt-1.5 text-2xl font-semibold tabular-nums tracking-tight text-slate-900">
-            {value}
+    <Card
+      className="group animate-fade-up relative overflow-hidden p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
+      style={{ animationDelay: `${index * 70}ms` }}
+    >
+      {/* Halo décoratif discret en coin */}
+      <span
+        aria-hidden
+        className={cn(
+          'pointer-events-none absolute -right-8 -top-10 size-28 rounded-full bg-gradient-to-br to-transparent opacity-70 blur-2xl transition-opacity duration-300 group-hover:opacity-100',
+          t.aura,
+        )}
+      />
+      <div className="relative flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium text-slate-500">{label}</p>
+          <p className="mt-2 text-2xl font-semibold tabular-nums tracking-tight text-slate-900">
+            {typeof value === 'number' ? (
+              <AnimatedNumber value={value} decimals={decimals} suffix={suffix} />
+            ) : (
+              value
+            )}
           </p>
-          {hint && <p className="mt-1 text-xs text-slate-400">{hint}</p>}
+          {(hint || trend) && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {trendStyle && trend && (
+                <span
+                  className={cn(
+                    'inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-xs font-semibold ring-1 ring-inset',
+                    trendStyle.cls,
+                  )}
+                >
+                  <trendStyle.Icon className="size-3" aria-hidden />
+                  {trend.label}
+                </span>
+              )}
+              {hint && <span className="text-xs text-slate-400">{hint}</span>}
+            </div>
+          )}
         </div>
-        <span className={cn('flex size-10 shrink-0 items-center justify-center rounded-lg', TONES[tone])}>
+        <span
+          className={cn(
+            'flex size-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white ring-1 ring-inset ring-white/20',
+            t.chip,
+            t.glow,
+          )}
+        >
           <Icon className="size-5" aria-hidden />
         </span>
       </div>

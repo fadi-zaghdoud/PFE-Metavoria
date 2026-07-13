@@ -137,7 +137,7 @@ export function RegisterPage() {
           <PasswordInput
             id="motDePasse"
             required
-            minLength={8}
+            minLength={10}
             maxLength={128}
             autoComplete="new-password"
             value={motDePasse}

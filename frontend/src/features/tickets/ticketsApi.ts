@@ -3,6 +3,7 @@ import type {
   Categorie,
   Commentaire,
   CreerTicketPayload,
+  FiltresStatistiques,
   FiltresTickets,
   PrioriteTicket,
   StatistiquesTickets,
@@ -68,7 +69,17 @@ export const ticketsApi = {
       token,
     }),
 
-  statistiques: (token: string) => apiRequest<StatistiquesTickets>('/tickets/statistiques', { token }),
+  statistiques: (filtres: FiltresStatistiques, token: string) => {
+    const params = new URLSearchParams();
+    if (filtres.dateDebut) params.set('dateDebut', filtres.dateDebut);
+    if (filtres.dateFin) params.set('dateFin', filtres.dateFin);
+    if (filtres.technicienId) params.set('technicienId', String(filtres.technicienId));
+    if (filtres.categorieId) params.set('categorieId', String(filtres.categorieId));
+    if (filtres.service) params.set('service', filtres.service);
+    const query = params.toString();
+    const suffixe = query ? `?${query}` : '';
+    return apiRequest<StatistiquesTickets>(`/tickets/statistiques${suffixe}`, { token });
+  },
 
   listerCategories: (token: string) =>
     apiRequest<{ categories: Categorie[] }>('/categories', { token }),

@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { utilisateurRepository, type FiltresUtilisateurs } from '../repositories/utilisateur.repository';
 import { emailService } from './email.service';
-import { ConflictError, NotFoundError, ValidationError } from '../utils/AppError';
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../utils/AppError';
 import { toPublicUser } from '../utils/toPublicUser';
 import { sha256Hex } from '../utils/hash';
 import type { Role } from '../generated/prisma/enums';
@@ -102,19 +102,42 @@ export const utilisateurService = {
     return toPublicUser({ ...utilisateur, tokenInvitation: tokenHash, tokenInvitationExpire: expiration });
   },
 
-  async changerRole(id: number, role: Role) {
+  // acteurId = administrateur qui effectue l'action. Les gardes empêchent qu'un
+  // administrateur se retire ses propres droits (auto-verrouillage) ou que le
+  // DERNIER administrateur actif de la plateforme disparaisse.
+  async changerRole(acteurId: number, id: number, role: Role) {
     const existant = await utilisateurRepository.findById(id);
     if (!existant) {
       throw new NotFoundError('Utilisateur introuvable');
+    }
+    if (id === acteurId) {
+      throw new ForbiddenError('Vous ne pouvez pas modifier votre propre rôle');
+    }
+    // Rétrograder le dernier administrateur actif laisserait la plateforme sans admin.
+    if (existant.role === 'ADMINISTRATEUR' && existant.actif && role !== 'ADMINISTRATEUR') {
+      const admins = await utilisateurRepository.countAdminsActifs();
+      if (admins <= 1) {
+        throw new ConflictError('Au moins un administrateur actif doit subsister');
+      }
     }
     const utilisateur = await utilisateurRepository.update(id, { role });
     return toPublicUser(utilisateur);
   },
 
-  async changerStatutActif(id: number, actif: boolean) {
+  async changerStatutActif(acteurId: number, id: number, actif: boolean) {
     const existant = await utilisateurRepository.findById(id);
     if (!existant) {
       throw new NotFoundError('Utilisateur introuvable');
+    }
+    if (id === acteurId) {
+      throw new ForbiddenError('Vous ne pouvez pas modifier votre propre statut');
+    }
+    // Désactiver le dernier administrateur actif verrouillerait l'administration.
+    if (!actif && existant.role === 'ADMINISTRATEUR' && existant.actif) {
+      const admins = await utilisateurRepository.countAdminsActifs();
+      if (admins <= 1) {
+        throw new ConflictError('Au moins un administrateur actif doit subsister');
+      }
     }
     const utilisateur = await utilisateurRepository.update(id, { actif });
     return toPublicUser(utilisateur);

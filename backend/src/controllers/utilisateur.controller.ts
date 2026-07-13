@@ -6,7 +6,7 @@ import {
   invitationSchema,
   listeUtilisateursQuerySchema,
 } from '../validators/utilisateur.validator';
-import { ValidationError } from '../utils/AppError';
+import { UnauthorizedError, ValidationError } from '../utils/AppError';
 
 function parseIdParam(rawId: string | string[] | undefined): number {
   const id = Number(typeof rawId === 'string' ? rawId : Number.NaN);
@@ -14,6 +14,12 @@ function parseIdParam(rawId: string | string[] | undefined): number {
     throw new ValidationError("Identifiant d'utilisateur invalide");
   }
   return id;
+}
+
+// Id de l'administrateur qui effectue l'action (déjà authentifié par requireAuth).
+function acteurId(req: Request): number {
+  if (!req.user) throw new UnauthorizedError();
+  return req.user.sub;
 }
 
 export const utilisateurController = {
@@ -26,14 +32,14 @@ export const utilisateurController = {
   async changerRole(req: Request, res: Response) {
     const id = parseIdParam(req.params.id);
     const input = changerRoleSchema.parse(req.body);
-    const utilisateur = await utilisateurService.changerRole(id, input.role);
+    const utilisateur = await utilisateurService.changerRole(acteurId(req), id, input.role);
     res.status(200).json({ utilisateur });
   },
 
   async changerStatutActif(req: Request, res: Response) {
     const id = parseIdParam(req.params.id);
     const input = changerStatutActifSchema.parse(req.body);
-    const utilisateur = await utilisateurService.changerStatutActif(id, input.actif);
+    const utilisateur = await utilisateurService.changerStatutActif(acteurId(req), id, input.actif);
     res.status(200).json({ utilisateur });
   },
 

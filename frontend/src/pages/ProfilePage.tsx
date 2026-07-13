@@ -83,9 +83,9 @@ export function ProfilePage() {
       <PageHeader title="Mon profil" description="Gérez vos informations personnelles et votre mot de passe." />
 
       {/* Carte d'identité */}
-      <Card className="mb-6">
+      <Card className="mb-6 overflow-hidden bg-gradient-to-br from-white to-primary-50/50">
         <CardContent className="flex flex-wrap items-center gap-4">
-          <Avatar prenom={utilisateur.prenom} nom={utilisateur.nom} size="lg" />
+          <Avatar prenom={utilisateur.prenom} nom={utilisateur.nom} size="lg" className="ring-2 ring-white shadow-sm" />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-lg font-semibold tracking-tight text-slate-900">
@@ -171,7 +171,7 @@ export function ProfilePage() {
                 <PasswordInput
                   id="nouveauMotDePasse"
                   required
-                  minLength={8}
+                  minLength={10}
                   maxLength={128}
                   autoComplete="new-password"
                   value={nouveauMotDePasse}

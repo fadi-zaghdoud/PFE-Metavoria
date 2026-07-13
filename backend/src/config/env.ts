@@ -7,6 +7,11 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL est requis'),
   JWT_SECRET: z.string().min(32, 'JWT_SECRET doit contenir au moins 32 caractères'),
   JWT_EXPIRES_IN: z.string().default('7d'),
+  // Session courte (haute sécurité) : jeton d'accès JWT de courte durée + refresh
+  // token rotatif (cookie httpOnly). L'access token porte l'autorisation ; le
+  // refresh token, révocable, permet de renouveler sans reconnexion.
+  ACCESS_TOKEN_TTL: z.string().default('15m'),
+  REFRESH_TOKEN_TTL_DAYS: z.coerce.number().default(30),
   BCRYPT_SALT_ROUNDS: z.coerce.number().default(12),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
 

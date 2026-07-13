@@ -123,10 +123,21 @@ export const ticketRepository = {
     return prisma.evenementTicket.create({ data });
   },
 
-  // Statistiques agrégées sur un périmètre (tous les tickets, ou ceux d'un demandeur).
+  // Statistiques agrégées sur un périmètre (tous les tickets, ou un sous-ensemble filtré).
   async statistiques(scope: Prisma.TicketWhereInput) {
-    const [parStatut, agregat, repartition] = await Promise.all([
+    const [
+      parStatut,
+      parPriorite,
+      parCategorie,
+      satisfaction,
+      repartitionNotes,
+      chargeTechniciens,
+      clotures,
+      affectations,
+    ] = await Promise.all([
       prisma.ticket.groupBy({ by: ['statut'], where: scope, _count: { _all: true } }),
+      prisma.ticket.groupBy({ by: ['priorite'], where: scope, _count: { _all: true } }),
+      prisma.ticket.groupBy({ by: ['categorieId'], where: scope, _count: { _all: true } }),
       prisma.ticket.aggregate({
         where: { ...scope, satisfactionNote: { not: null } },
         _avg: { satisfactionNote: true },
@@ -137,7 +148,33 @@ export const ticketRepository = {
         where: { ...scope, satisfactionNote: { not: null } },
         _count: { _all: true },
       }),
+      // Charge courante : tickets encore ouverts, par technicien assigné.
+      prisma.ticket.groupBy({
+        by: ['technicienId'],
+        where: { ...scope, technicienId: { not: null }, statut: { in: ['NOUVEAU', 'EN_COURS', 'EN_ATTENTE'] } },
+        _count: { _all: true },
+      }),
+      // Pour le temps moyen de résolution (création -> clôture).
+      prisma.ticket.findMany({
+        where: { ...scope, dateCloture: { not: null } },
+        select: { dateCreation: true, dateCloture: true },
+      }),
+      // Pour le délai de première prise en charge (création -> 1re affectation).
+      prisma.evenementTicket.findMany({
+        where: { type: 'AFFECTATION', ticket: scope },
+        select: { ticketId: true, dateCreation: true, ticket: { select: { dateCreation: true } } },
+        orderBy: { dateCreation: 'asc' },
+      }),
     ]);
-    return { parStatut, agregat, repartition };
+    return {
+      parStatut,
+      parPriorite,
+      parCategorie,
+      satisfaction,
+      repartitionNotes,
+      chargeTechniciens,
+      clotures,
+      affectations,
+    };
   },
 };

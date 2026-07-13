@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   Design tokens — Smart Ticketing Design System
-   Échelle 8px, radius 12px (cartes), ombres douces, Inter Variable.
+   Design tokens — Smart Ticketing Design System « Premium »
+   Échelle 8px, cartes arrondies (16px), profondeur en couches, Inter Variable.
    ──────────────────────────────────────────────────────────────────────────── */
 @theme {
   --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -20,16 +20,35 @@
   --color-primary-900: #312e81;
   --color-primary-950: #1e1b4b;
 
+  /* Accent secondaire — violet (dégradés de marque) */
+  --color-accent-400: #a78bfa;
+  --color-accent-500: #8b5cf6;
+  --color-accent-600: #7c3aed;
+
   /* Ombres douces (elevation system) */
   --shadow-xs: 0 1px 2px 0 rgb(15 23 42 / 0.04);
   --shadow-sm: 0 1px 3px 0 rgb(15 23 42 / 0.06), 0 1px 2px -1px rgb(15 23 42 / 0.04);
   --shadow-md: 0 4px 12px -2px rgb(15 23 42 / 0.08), 0 2px 4px -2px rgb(15 23 42 / 0.04);
   --shadow-lg: 0 12px 32px -8px rgb(15 23 42 / 0.14), 0 4px 8px -4px rgb(15 23 42 / 0.06);
+  --shadow-xl: 0 24px 56px -16px rgb(15 23 42 / 0.22), 0 8px 20px -12px rgb(15 23 42 / 0.10);
+  /* Lueur colorée de marque — boutons et surfaces primaires */
+  --shadow-glow: 0 8px 24px -6px rgb(79 70 229 / 0.45);
+  --shadow-glow-sm: 0 2px 8px -2px rgb(79 70 229 / 0.35);
 }
 
 @layer base {
+  html {
+    scrollbar-gutter: stable;
+  }
+
   body {
-    @apply bg-slate-50 text-slate-900 antialiased;
+    @apply text-slate-900 antialiased;
+    background-color: #f6f7fb;
+    /* Halos de marque très diffus — profondeur sans distraction */
+    background-image:
+      radial-gradient(48rem 48rem at 100% -8%, rgb(99 102 241 / 0.07), transparent 60%),
+      radial-gradient(42rem 42rem at -12% 4%, rgb(139 92 246 / 0.05), transparent 55%);
+    background-attachment: fixed;
     font-feature-settings: "cv11", "ss01";
   }
 
@@ -39,6 +58,97 @@
 
   /* Focus visible cohérent sur toute l'application (WCAG 2.4.7) */
   :focus-visible {
-    @apply outline-none ring-2 ring-primary-500/50 ring-offset-1 ring-offset-white;
+    @apply outline-none ring-2 ring-primary-500/50 ring-offset-2 ring-offset-white;
+  }
+
+  /* Barre de défilement fine et discrète */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(203 213 225) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: rgb(203 213 225);
+    border-radius: 9999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(148 163 184);
+  }
+}
+
+@layer utilities {
+  /* Animations d'entrée et micro-interactions */
+  @keyframes fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes shimmer {
+    100% {
+      transform: translateX(100%);
+    }
+  }
+  @keyframes pop-in {
+    0% {
+      transform: scale(0.92);
+      opacity: 0;
+    }
+    60% {
+      transform: scale(1.015);
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+
+  .animate-fade-up {
+    animation: fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .animate-fade-in {
+    animation: fade-in 0.4s ease-out both;
+  }
+  .animate-pop-in {
+    animation: pop-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  /* Dégradé de texte de marque (titres, chiffres clés) */
+  .text-gradient {
+    background-image: linear-gradient(135deg, var(--color-primary-600), var(--color-accent-600));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Surface vitrée légère pour éléments flottants */
+  .glass {
+    background-color: rgb(255 255 255 / 0.75);
+    backdrop-filter: blur(12px) saturate(140%);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .animate-fade-up,
+    .animate-fade-in,
+    .animate-pop-in {
+      animation: none;
+    }
   }
 }

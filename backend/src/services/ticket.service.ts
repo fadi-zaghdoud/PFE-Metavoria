@@ -11,7 +11,43 @@ import { utilisateurRepository } from '../repositories/utilisateur.repository';
 import { notificationService } from './notification.service';
 import { ForbiddenError, NotFoundError, ValidationError } from '../utils/AppError';
 import { logAudit } from '../utils/logger';
+import { Prisma } from '../generated/prisma/client';
 import type { Priorite, Role, StatutTicket } from '../generated/prisma/enums';
+
+export interface StatistiquesFiltres {
+  dateDebut?: Date;
+  dateFin?: Date;
+  technicienId?: number;
+  categorieId?: number;
+  service?: string;
+}
+
+const TOUS_STATUTS: StatutTicket[] = ['NOUVEAU', 'EN_COURS', 'EN_ATTENTE', 'RESOLU', 'CLOTURE'];
+const TOUTES_PRIORITES: Priorite[] = ['FAIBLE', 'MOYENNE', 'HAUTE', 'CRITIQUE'];
+
+const arrondi = (n: number) => Math.round(n * 10) / 10;
+
+function moyenneHeures(dureesMs: number[]): number | null {
+  if (dureesMs.length === 0) return null;
+  const moyenne = dureesMs.reduce((a, b) => a + b, 0) / dureesMs.length;
+  return arrondi(moyenne / 3_600_000);
+}
+
+// Construit le filtre Prisma du tableau de bord : périmètre par rôle (employé =
+// ses tickets) + filtres de l'interface (période, technicien, catégorie, service).
+function construireScope(acteur: Acteur, filtres: StatistiquesFiltres): Prisma.TicketWhereInput {
+  const scope: Prisma.TicketWhereInput = {};
+  if (acteur.role === 'EMPLOYE') scope.demandeurId = acteur.id;
+  if (filtres.technicienId) scope.technicienId = filtres.technicienId;
+  if (filtres.categorieId) scope.categorieId = filtres.categorieId;
+  if (filtres.service) scope.demandeur = { service: filtres.service };
+  if (filtres.dateDebut || filtres.dateFin) {
+    const fin = filtres.dateFin ? new Date(filtres.dateFin) : undefined;
+    fin?.setHours(23, 59, 59, 999);
+    scope.dateCreation = { gte: filtres.dateDebut, lte: fin };
+  }
+  return scope;
+}
 
 export interface Acteur {
   id: number;
@@ -327,26 +363,79 @@ export const ticketService = {
     return misAJour;
   },
 
-  // Statistiques agrégées : global pour le support/admin, limité à ses propres
-  // tickets pour un employé. Alimente les indicateurs du tableau de bord.
-  async statistiques(acteur: Acteur) {
-    const scope = acteur.role === 'EMPLOYE' ? { demandeurId: acteur.id } : {};
-    const { parStatut, agregat, repartition } = await ticketRepository.statistiques(scope);
+  // Statistiques agrégées du tableau de bord : global pour le support/admin,
+  // limité à ses propres tickets pour un employé, filtrable (période, technicien,
+  // catégorie, service).
+  async statistiques(acteur: Acteur, filtres: StatistiquesFiltres = {}) {
+    const scope = construireScope(acteur, filtres);
+    const {
+      parStatut,
+      parPriorite,
+      parCategorie,
+      satisfaction,
+      repartitionNotes,
+      chargeTechniciens,
+      clotures,
+      affectations,
+    } = await ticketRepository.statistiques(scope);
 
     const compter = (s: StatutTicket) => parStatut.find((g) => g.statut === s)?._count._all ?? 0;
-    const moyenne = agregat._avg.satisfactionNote;
+
+    // Temps moyen de résolution (création -> clôture).
+    const tempsResolutionMoyenHeures = moyenneHeures(
+      clotures.map((t) => (t.dateCloture as Date).getTime() - t.dateCreation.getTime()),
+    );
+
+    // Délai moyen de première prise en charge (création -> 1re affectation).
+    const premiereAffectation = new Map<number, number>();
+    for (const a of affectations) {
+      if (!premiereAffectation.has(a.ticketId)) {
+        premiereAffectation.set(a.ticketId, a.dateCreation.getTime() - a.ticket.dateCreation.getTime());
+      }
+    }
+    const delaiPriseEnChargeMoyenHeures = moyenneHeures([...premiereAffectation.values()]);
+
+    // Noms lisibles pour les répartitions par catégorie et la charge par technicien.
+    const categories = await categorieRepository.findMany();
+    const nomCategorie = new Map(categories.map((c) => [c.id, c.nom]));
+    const idsTech = chargeTechniciens
+      .map((g) => g.technicienId)
+      .filter((id): id is number => id !== null);
+    const techniciens = idsTech.length ? await utilisateurRepository.findManyByIds(idsTech) : [];
+    const nomTechnicien = new Map(techniciens.map((u) => [u.id, `${u.prenom} ${u.nom}`]));
 
     return {
       totalTickets: parStatut.reduce((n, g) => n + g._count._all, 0),
       ticketsOuverts: compter('NOUVEAU') + compter('EN_COURS') + compter('EN_ATTENTE'),
       ticketsResolus: compter('RESOLU'),
       ticketsClotures: compter('CLOTURE'),
-      satisfactionMoyenne: moyenne != null ? Math.round(moyenne * 10) / 10 : null,
-      nombreEvaluations: agregat._count.satisfactionNote,
+      tempsResolutionMoyenHeures,
+      delaiPriseEnChargeMoyenHeures,
+      satisfactionMoyenne:
+        satisfaction._avg.satisfactionNote != null ? arrondi(satisfaction._avg.satisfactionNote) : null,
+      nombreEvaluations: satisfaction._count.satisfactionNote,
       repartitionSatisfaction: [1, 2, 3, 4, 5].map((note) => ({
         note,
-        count: repartition.find((r) => r.satisfactionNote === note)?._count._all ?? 0,
+        count: repartitionNotes.find((r) => r.satisfactionNote === note)?._count._all ?? 0,
       })),
+      repartitionStatut: TOUS_STATUTS.map((statut) => ({ statut, count: compter(statut) })),
+      repartitionPriorite: TOUTES_PRIORITES.map((priorite) => ({
+        priorite,
+        count: parPriorite.find((g) => g.priorite === priorite)?._count._all ?? 0,
+      })),
+      repartitionCategorie: parCategorie
+        .map((g) => ({
+          categorie:
+            g.categorieId != null ? nomCategorie.get(g.categorieId) ?? 'Inconnue' : 'Non classé',
+          count: g._count._all,
+        }))
+        .sort((a, b) => b.count - a.count),
+      chargeParTechnicien: chargeTechniciens
+        .map((g) => ({
+          technicien: g.technicienId != null ? nomTechnicien.get(g.technicienId) ?? 'Inconnu' : '—',
+          count: g._count._all,
+        }))
+        .sort((a, b) => b.count - a.count),
     };
   },
 };

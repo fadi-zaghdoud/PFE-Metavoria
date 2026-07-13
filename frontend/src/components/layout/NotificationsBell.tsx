@@ -126,8 +126,11 @@ export function NotificationsBell() {
       >
         <Bell className="size-5" aria-hidden />
         {nonLues > 0 && (
-          <span className="absolute right-1 top-1 flex min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-semibold leading-4 text-white">
-            {nonLues > 9 ? '9+' : nonLues}
+          <span className="absolute right-0.5 top-0.5 inline-flex">
+            <span aria-hidden className="absolute inset-0 animate-ping rounded-full bg-rose-400/70" />
+            <span className="relative flex min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-semibold leading-4 text-white shadow-sm ring-2 ring-white">
+              {nonLues > 9 ? '9+' : nonLues}
+            </span>
           </span>
         )}
       </button>
@@ -140,7 +143,7 @@ export function NotificationsBell() {
             exit={{ opacity: 0, y: -8, scale: 0.98 }}
             transition={{ duration: 0.15, ease: 'easeOut' }}
             role="menu"
-            className="absolute right-0 top-full z-40 mt-2 w-[min(92vw,22rem)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg"
+            className="absolute right-0 top-full z-40 mt-2 w-[min(92vw,22rem)] overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-xl"
           >
             <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
               <p className="text-sm font-semibold text-slate-900">Notifications</p>

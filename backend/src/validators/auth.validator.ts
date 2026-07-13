@@ -23,15 +23,42 @@ export const emailSchema = z
   .max(254, "L'email ne peut pas dépasser 254 caractères")
   .pipe(z.email('Format d\'email invalide'));
 
-// Politique de mot de passe : 8–128 caractères, au moins une minuscule,
-// une majuscule et un chiffre.
+// Mots de passe manifestement faibles/compromis à rejeter même s'ils respectent
+// la complexité formelle (ex. « Password123 »). Liste locale — aucun appel réseau.
+// `TERMES_INTERDITS` est recherché en sous-chaîne (attrape « Metavoria2024! »).
+const MOTS_DE_PASSE_COURANTS = new Set([
+  'password1', 'password123', 'motdepasse1', 'azerty123', 'qwerty123', 'passw0rd1',
+  'p@ssw0rd1', 'admin1234', 'welcome123', 'bienvenue1', 'changeme123', 'iloveyou1',
+  'soleil123', 'football1', 'sunshine1', 'princess1', 'superman1', 'monkey1234',
+]);
+const TERMES_INTERDITS = [
+  'password', 'motdepasse', 'azerty', 'qwerty', 'metavoria', 'smartticketing',
+  'welcome', 'bienvenue', 'iloveyou', 'letmein', 'changeme',
+];
+
+function estMotDePasseCompromis(mdp: string): boolean {
+  const bas = mdp.toLowerCase();
+  if (MOTS_DE_PASSE_COURANTS.has(bas)) return true;
+  if (TERMES_INTERDITS.some((terme) => bas.includes(terme))) return true;
+  // Un seul caractère répété (« Aaaaaaaaaa1 » réduit à sa base).
+  if (/^(.)\1+$/.test(mdp)) return true;
+  // Séquences numériques ou alphabétiques triviales.
+  const sequences = ['01234567890', 'abcdefghijklmnopqrstuvwxyz', 'azertyuiop', 'qwertyuiop'];
+  return sequences.some((seq) => seq.includes(bas) && bas.length >= 6);
+}
+
+// Politique de mot de passe : 10–128 caractères, au moins une minuscule, une
+// majuscule et un chiffre, et refus des mots de passe courants/compromis.
 export const motDePasseFortSchema = z
   .string('Le mot de passe est requis')
-  .min(8, 'Au moins 8 caractères')
+  .min(10, 'Au moins 10 caractères')
   .max(128, 'Au plus 128 caractères')
   .regex(/[a-z]/, 'Au moins une lettre minuscule')
   .regex(/[A-Z]/, 'Au moins une lettre majuscule')
-  .regex(/\d/, 'Au moins un chiffre');
+  .regex(/\d/, 'Au moins un chiffre')
+  .refine((mdp) => !estMotDePasseCompromis(mdp), {
+    message: 'Ce mot de passe est trop courant ou prévisible — choisissez-en un autre',
+  });
 
 export const champLibreSchema = (libelle: string) =>
   z.string().trim().max(100, `Le ${libelle} ne peut pas dépasser 100 caractères`).optional();

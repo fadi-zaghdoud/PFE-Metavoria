@@ -38,11 +38,19 @@ const NIVEAUX: Niveau[] = [
   { label: 'Excellent', barres: 4, couleur: 'bg-emerald-500', texte: 'text-emerald-600' },
 ];
 
-// Score aligné sur la politique backend : minuscule + majuscule + chiffre + longueur.
+// Termes trop prévisibles (rejetés aussi côté backend) : plafonnent la jauge.
+const TERMES_FAIBLES = [
+  'password', 'motdepasse', 'azerty', 'qwerty', 'metavoria', 'welcome', 'bienvenue', 'iloveyou',
+];
+
+// Score aligné sur la politique backend : longueur ≥ 10 + minuscule + majuscule
+// + chiffre, et pénalité pour les mots de passe manifestement courants.
 export function scoreMotDePasse(motDePasse: string): number {
   if (!motDePasse) return 0;
+  const bas = motDePasse.toLowerCase();
+  if (TERMES_FAIBLES.some((terme) => bas.includes(terme))) return 1;
   let score = 0;
-  if (motDePasse.length >= 8) score++;
+  if (motDePasse.length >= 10) score++;
   if (/[a-z]/.test(motDePasse) && /[A-Z]/.test(motDePasse)) score++;
   if (/\d/.test(motDePasse)) score++;
   if (motDePasse.length >= 12 && /[^a-zA-Z0-9]/.test(motDePasse)) score++;
@@ -69,7 +77,7 @@ export function PasswordStrength({ motDePasse }: { motDePasse: string }) {
         <span className={cn('ml-1 text-xs font-medium', niveau.texte)}>{niveau.label}</span>
       </div>
       <p className="mt-1 text-xs text-slate-400">
-        8 caractères minimum, avec au moins une majuscule, une minuscule et un chiffre.
+        10 caractères minimum, avec au moins une majuscule, une minuscule et un chiffre.
       </p>
     </div>
   );

@@ -659,17 +659,21 @@ export function TicketDetailPage() {
           </Card>
 
           {/* Assistant IA — à venir en Phase 5 */}
-          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 p-4">
-            <div className="flex items-center gap-2">
-              <span className="flex size-6 items-center justify-center rounded-md bg-slate-200 text-slate-500">
-                <Sparkles className="size-3.5" aria-hidden />
+          <div className="relative overflow-hidden rounded-2xl border border-dashed border-primary-200 bg-gradient-to-br from-primary-50/70 to-violet-50/50 p-4">
+            <span
+              aria-hidden
+              className="pointer-events-none absolute -right-8 -top-8 size-24 rounded-full bg-gradient-to-br from-primary-400/20 to-transparent blur-2xl"
+            />
+            <div className="relative flex items-center gap-2">
+              <span className="flex size-7 items-center justify-center rounded-lg bg-gradient-to-br from-primary-500 to-accent-600 text-white shadow-glow-sm ring-1 ring-inset ring-white/20">
+                <Sparkles className="size-4" aria-hidden />
               </span>
-              <h2 className="text-sm font-semibold text-slate-500">Assistant IA</h2>
-              <Badge variant="neutral" className="ml-auto">
+              <h2 className="text-sm font-semibold text-slate-700">Assistant IA</h2>
+              <Badge variant="primary" className="ml-auto">
                 Phase 5
               </Badge>
             </div>
-            <p className="mt-2 text-xs leading-relaxed text-slate-400">
+            <p className="relative mt-2 text-xs leading-relaxed text-slate-500">
               Classification automatique, suggestion de résolution et recherche de tickets similaires
               seront ajoutées avec le module d'intelligence artificielle.
             </p>

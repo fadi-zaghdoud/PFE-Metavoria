@@ -117,9 +117,9 @@ export function TicketsListPage() {
               aria-selected={vue === id}
               onClick={() => setVue(id)}
               className={cn(
-                'rounded-lg px-3 py-1.5 text-sm font-medium transition-colors duration-150',
+                'rounded-lg px-3 py-1.5 text-sm font-medium transition-all duration-150',
                 vue === id
-                  ? 'bg-primary-600 text-white shadow-xs'
+                  ? 'bg-primary-600 text-white shadow-glow-sm ring-1 ring-inset ring-white/15'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
               )}
             >

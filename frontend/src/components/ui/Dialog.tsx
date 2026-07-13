@@ -62,7 +62,7 @@ export function Dialog({ open, onClose, title, description, children, footer, cl
             exit={{ opacity: 0, scale: 0.96, y: 8 }}
             transition={{ duration: 0.18, ease: 'easeOut' }}
             className={cn(
-              'relative w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-lg outline-none',
+              'relative w-full max-w-md rounded-2xl border border-slate-200/80 bg-white shadow-xl outline-none',
               className,
             )}
           >

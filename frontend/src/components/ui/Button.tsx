@@ -7,11 +7,12 @@ type Size = 'sm' | 'md' | 'lg';
 
 const VARIANTS: Record<Variant, string> = {
   primary:
-    'bg-primary-600 text-white shadow-xs hover:bg-primary-700 active:bg-primary-800 disabled:hover:bg-primary-600',
+    'bg-primary-600 text-white shadow-glow-sm ring-1 ring-inset ring-white/15 hover:bg-primary-700 hover:shadow-glow active:translate-y-px active:bg-primary-800 disabled:hover:bg-primary-600 disabled:hover:shadow-glow-sm',
   secondary:
-    'border border-slate-300 bg-white text-slate-700 shadow-xs hover:bg-slate-50 active:bg-slate-100',
+    'border border-slate-200 bg-white text-slate-700 shadow-xs hover:border-slate-300 hover:bg-slate-50 active:bg-slate-100',
   ghost: 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
-  danger: 'bg-rose-600 text-white shadow-xs hover:bg-rose-700 active:bg-rose-800',
+  danger:
+    'bg-rose-600 text-white shadow-xs ring-1 ring-inset ring-white/15 hover:bg-rose-700 active:translate-y-px active:bg-rose-800',
 };
 
 const SIZES: Record<Size, string> = {
@@ -40,7 +41,7 @@ export function Button({
     <button
       disabled={disabled || loading}
       className={cn(
-        'inline-flex select-none items-center justify-center whitespace-nowrap rounded-lg font-medium transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50',
+        'inline-flex select-none items-center justify-center whitespace-nowrap rounded-lg font-medium transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-50',
         VARIANTS[variant],
         SIZES[size],
         className,

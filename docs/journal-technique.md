@@ -270,9 +270,15 @@ demande explicite.
     données de production).
   - **Arabizi hors périmètre** : registre FR + termes techniques EN uniquement (limite
     assumée).
-  - Reste à faire (Partie B, option A) : migration Prisma `synthetique` + loader
-    `loadSyntheticCorpus.ts` (charge le corpus en base, ne lie la résolution que pour
-    les tickets résolus).
+  - **Partie B réalisée (chargement en base)** : migration Prisma `synthetique`
+    (`20260715105910_ajout_ticket_synthetique`) + loader `backend/prisma/loadSyntheticCorpus.ts`
+    (`npm run db:load-corpus`, idempotent). **852 tickets chargés**, marqués
+    `synthetique=true` (exclus des KPI réels §6.4) ; 723 résolutions liées en
+    `Commentaire`, 129 tickets ouverts sans résolution liée (backlog de démo, fermables
+    à la demande). Enrichissements pour une démo crédible : **3 techniciens** (charge par
+    technicien), **31 demandeurs par service** (répartition par service), **dates étalées
+    sur ~90 j** + dateCloture (temps moyen de résolution), **178 évaluations de
+    satisfaction**. → le tableau de bord (§6.4) est alimenté.
 
 ---
 

@@ -115,6 +115,8 @@ model Ticket {
   description      String
   statut           StatutTicket @default(NOUVEAU)
   priorite         Priorite     @default(MOYENNE)
+  // Ticket issu du corpus synthétique (bootstrap IA) : exclu des KPI réels (§6.4).
+  synthetique      Boolean      @default(false)
   dateCreation     DateTime     @default(now()) @map("date_creation")
   dateCloture      DateTime?    @map("date_cloture")
   satisfactionNote        Int?      @map("satisfaction_note") // 1..5, renseignée à la clôture

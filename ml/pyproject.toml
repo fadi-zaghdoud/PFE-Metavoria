@@ -15,6 +15,7 @@ ml = [
     "scikit-learn>=1.4",
     "numpy>=1.26",
     "matplotlib>=3.8",
+    "openpyxl>=3.1",         # lecture de la feuille de relecture du gold set (J2)
 ]
 
 [build-system]

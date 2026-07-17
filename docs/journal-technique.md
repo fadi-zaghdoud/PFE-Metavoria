@@ -157,7 +157,8 @@ demande explicite.
 > Phase en cours. Conception détaillée : `docs/epic-4-module-ia-conception.md`.
 > Ordre des jalons (non négociable) : J1 corpus → J2 gold set → J3 harnais d'éval +
 > baselines → J4 microservice embeddings → J5 classification + calibration → J6 RAG
-> hybride + reranker → J7 priorité scorecard → J8 confiance + abstention + résumé → J9 flywheel.
+> hybride + reranker → J7 priorité scorecard → J8 confiance + abstention + résumé →
+> **J8bis pièces jointes (extraction/OCR)** → J9 flywheel.
 
 ### Conception du module IA (document de conception)
 - **Date** : 14/07/2026. `[établi en séance]`
@@ -279,6 +280,87 @@ demande explicite.
     technicien), **31 demandeurs par service** (répartition par service), **dates étalées
     sur ~90 j** + dateCloture (temps moyen de résolution), **178 évaluations de
     satisfaction**. → le tableau de bord (§6.4) est alimenté.
+
+### J2 — Gold set de test (scellé)
+- **Date** : 15/07/2026 (candidats) → **17/07/2026 (scellement)**. `[établi en séance]`
+- **Statut** : **scellé.** Relecture manuelle de Fedi faite (`gold_final.xlsx`),
+  ingérée → `ml/gold/gold.jsonl` **versionné** (102 tickets). **Jamais utilisé à
+  l'entraînement.**
+- **Contexte** : le gold set valide le module IA sur des tickets **non vus**. Exigences :
+  **étanche** (disjoint du corpus d'entraînement) et **relu à la main**.
+- **Décision + alternative écartée + justification** :
+  - **Modèle des candidats : qwen2.5:7b** (≠ le 14B de l'entraînement). Justification :
+    réduit le **biais « même générateur »** — si train et test venaient du même modèle,
+    on mesurerait surtout la capacité du système à reproduire son propre générateur.
+    **Nuance importante** : 7B et 14B restent la **même famille Qwen** → biais **réduit,
+    pas éliminé**. Le **vrai garant de qualité, c'est la relecture manuelle de Fedi**.
+    Alternative écartée : 14B (même qualité que le train mais **même distribution** →
+    biais same-generator plus fort).
+  - **Anti-fuite en deux contrôles** : (1) **dédup exacte** — tout candidat dont la
+    description normalisée existe déjà dans le train est **écarté** ; (2) **chevauchement
+    sémantique de surface** — Jaccard (mots de titre+description) avec le ticket
+    d'entraînement le plus proche, **signalé** (pas supprimé) dans le CSV, seuil d'alerte
+    0,6, tri décroissant → les quasi-copies remontent en tête pour la relecture.
+- **Mesures et chiffres** : **119 candidats retenus** (7B, seed 2026 ; ~30 perdus sur
+  150 = lots 7B en échec, sans conséquence pour un gold set). **1 écarté** en dédup
+  exacte (chevauchement quasi nul avec le train, comme attendu). **13 signalés
+  « quasi-copie »** (Jaccard ≥ 0,6 vs train). **4 descriptions suspectes** (défaut 7B :
+  le profil du demandeur remplace le symptôme, ex. « RH/gestionnaire paie. ») → colonne
+  `desc_suspecte` du CSV pour les repérer/écarter en relecture.
+- **Enseignement** : le 7B est nettement plus fragile que le 14B (descriptions
+  dégénérées, métadonnées inventées type « Last Boot ») — acceptable ici car la
+  relecture humaine filtre, et cela **conforte le choix du 14B pour l'entraînement**.
+- **Limite (à documenter au rapport)** : gold set **synthétique** faute de données
+  réelles ; il valide la généralisation *dans* la distribution synthétique, pas la
+  performance sur données de production.
+- **Scellement (17/07/2026)** — ingestion de la feuille relue (`gold_final.xlsx`)
+  par `ml/smart_ticketing_ml/data/ingest_gold.py` (lecture openpyxl ; ne garde que
+  les lignes validées « O » ; applique les corrections `catégorie/priorité` quand
+  renseignées, sinon le label généré). Résultats :
+  - **102 tickets retenus sur 119** (17 écartés en relecture).
+  - **42 corrections de priorité, 5 de catégorie** (mesurées sur le fichier ; ma
+    dictée initiale « 33 / 3 » était erronée → **le fichier fait foi**).
+  - **Répartition** : Logiciel 32 / Matériel 25 / Réseau 22 / Accès 18 / Autre 5.
+  - **Résolutions intégrales** : la colonne « Résolution (extrait) » du xlsx est
+    tronquée à l'affichage (« … ») ; la résolution **complète** est **récupérée
+    depuis `gold_candidates_*.jsonl`** par jointure exacte titre+description
+    (102/102 appariés) → aucun extrait amputé n'est scellé.
+  - Sortie : `ml/gold/gold.jsonl` + `ml/gold/gold_manifest.json` (provenance,
+    comptes, SHA-256 pour la reproductibilité).
+- **Enseignement** : le générateur **sous-évaluait plutôt l'urgence** — sur les
+  42 corrections de priorité (~41 % des tickets), **31 relèvent** la priorité contre
+  **11 qui l'abaissent** (≈ 3 sur 4 vers le haut). À réutiliser au J7 (priorisation)
+  comme signal que les *a priori* de priorité par catégorie étaient trop prudents.
+- **Limite (à documenter au rapport)** : catégorie **Autre sous-représentée (n=5)**
+  → macro-F1 fragile sur cette classe ; renforce la logique d'**abstention** sur le
+  fourre-tout `autre` (§5 de la conception) plutôt que de forcer une prédiction.
+
+### J8bis — Pièces jointes dans le pipeline IA (extension validée par l'encadrant)
+- **Date** : 17/07/2026. `[établi en séance]`
+- **Contexte / nouvelle exigence** : l'encadrant demande d'**intégrer les pièces
+  jointes** (PDF, captures d'écran) au pipeline IA — l'information utile d'un ticket
+  réel est souvent dans la pièce jointe (log PDF, capture d'erreur), pas seulement
+  dans le texte saisi. Nouveau jalon **J8bis**, inséré **après J8, avant J9**.
+- **Ce qui est décidé** :
+  - **PDF texte** → extraction directe (**pdfplumber**), sans OCR.
+  - **PDF scanné / images** → **OCR Tesseract** local, langue `fra`.
+  - Le texte extrait est **AJOUTÉ à la description** avant classification et RAG —
+    il **complète** la description, ne la **remplace** pas.
+  - **Seuil de confiance OCR** : sous le seuil, le texte n'est **pas injecté**
+    (éviter d'introduire du bruit d'OCR dans les embeddings / la classification).
+- **Décisions + justification** :
+  1. **Tesseract local vs OCR cloud (Azure/Google Vision)** → **local retenu**.
+     Open-source, gratuit, hors-ligne → **conforme CDC §10** (« outils open-source
+     ou offre gratuite ») et aucune donnée Metavoria ne sort de la machine (même
+     logique que le choix Ollama en J1).
+  2. **Ajout vs substitution** → **ajout**. Substituer effacerait ce qu'a écrit le
+     demandeur ; l'OCR est un signal *complémentaire*, bruité, à traiter comme tel.
+  3. **Seuil de confiance** → garde-fou contre l'OCR dégradé (captures floues) qui
+     polluerait le classifieur — mieux vaut ne rien injecter que du bruit.
+- **Dépendance à lever** : l'upload/stockage des pièces jointes avait été **reporté**
+  en Epic 2 (modèle `PieceJointe` présent au schéma, mais bouton d'upload retiré de
+  l'UI). J8bis **suppose ce lot réactivé** — à cadrer avant de coder J8bis.
+- **Statut** : **planifié** (non codé). Détail de conception : `docs/epic-4-module-ia-conception.md` §7 bis.
 
 ---
 

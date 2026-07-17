@@ -6,7 +6,7 @@
 
 ### Périmètre confirmé
 
-- **Inclus :** microservice Python (FastAPI + bge-m3), reranker cross-encoder, data flywheel, recherche hybride, calibration, harnais d'évaluation, résumé automatique.
+- **Inclus :** microservice Python (FastAPI + bge-m3), reranker cross-encoder, data flywheel, recherche hybride, calibration, harnais d'évaluation, résumé automatique, **extraction de texte / OCR des pièces jointes** (J8bis, validé par l'encadrant).
 - **Exclu :** support **arabizi** (arabe latinisé). La langue de travail est **français + termes techniques anglais uniquement**. → à documenter comme **limite assumée** dans le rapport (extension possible en travaux futurs).
 
 ---
@@ -160,6 +160,21 @@ model ParametreIA {
 
 ---
 
+## 7 bis. Pièces jointes — extraction de texte & OCR (J8bis)
+
+> **Extension validée par l'encadrant.** Beaucoup de tickets réels arrivent avec une **pièce jointe** (PDF de log, capture d'écran d'erreur) qui porte l'information utile. Le module IA doit donc **lire ces pièces jointes** et en verser le texte au pipeline.
+
+| Étape | Choix | Pourquoi |
+|---|---|---|
+| **PDF texte** | extraction directe via **pdfplumber** | pas d'OCR quand le texte est déjà sélectionnable → rapide, fidèle |
+| **PDF scanné / images** (PNG/JPG) | **OCR Tesseract** local, langue `fra` | open-source, gratuit, hors-ligne → **conforme CDC §10** ; aucune donnée ne sort de la machine |
+| **Injection** | le texte extrait est **AJOUTÉ à la description** (jamais substitué) avant classification et RAG | l'OCR **complète** le signal, ne le remplace pas ; garde la trace de ce qu'a écrit le demandeur |
+| **Seuil de confiance OCR** | sous le seuil (confiance Tesseract par bloc), le texte **n'est pas injecté** | l'OCR bruité (captures floues) dégraderait embeddings et classification → mieux vaut ne rien injecter que du bruit |
+
+**Vigilance :** (1) **dépendance** — J8bis suppose que l'upload/stockage des pièces jointes existe réellement (modèle `PieceJointe` présent au schéma, mais l'upload avait été **reporté** en Epic 2) ; à réactiver avant J8bis. (2) Le texte OCR injecté doit être **tracé** (d'où vient le signal) pour l'explicabilité. (3) Registre FR + termes techniques EN → OCR configuré en `fra` (le latin technique passe sans pack dédié).
+
+---
+
 ## 8. Confiance & calibration
 
 - **Choix : probabilités *calibrées* par tâche, prouvées par un diagramme de fiabilité + ECE.**
@@ -227,6 +242,7 @@ C'est la frontière entre une démo statique et un produit ML. Cela unifie l'inf
 | **J6** | RAG : recherche hybride (pgvector + full-text, RRF) + reranker cross-encoder + seuil calibré + génération citée | Recall@k / nDCG@k + qualité suggestion |
 | **J7** | Scorecard priorité (features via Claude, décision glass-box) + UI de décomposition | kappa pondéré vs gold |
 | **J8** | Politique de confiance 3 niveaux + **abstention** + **résumé** automatique + « tableau de confiance » (remplace le placeholder « Assistant IA ») | UX technicien complète |
+| **J8bis** | **Pièces jointes → texte** (pdfplumber pour PDF texte, OCR Tesseract `fra` pour PDF scanné/images) ajouté à la description avant classification/RAG, avec seuil de confiance OCR | texte extrait injecté (au-dessus du seuil) + mesure de gain sur les tickets avec pièce jointe |
 | **J9** | Flywheel : capture des validations → 1 cycle de ré-entraînement + §6.5 seuils admin | courbe macro-F1 X → Y |
 
 ---
@@ -238,6 +254,7 @@ C'est la frontière entre une démo statique et un produit ML. Cela unifie l'inf
 - ✅ **Microservice Python séparé** (FastAPI).
 - ✅ **Registre linguistique** : FR + termes techniques EN ; **arabizi exclu** (limite documentée au rapport).
 - ✅ **Ordre de build** : J1→J9 (§12), harnais d'éval avant tout modèle.
+- ✅ **Pièces jointes dans le pipeline IA (J8bis)** — extension **validée par l'encadrant** : pdfplumber (PDF texte) + OCR Tesseract `fra` (PDF scanné/images), texte **ajouté** à la description (jamais substitué), **seuil de confiance OCR** (sous le seuil → non injecté). Local/gratuit → conforme CDC §10. Détail en §7 bis.
 
 **Restant à caler avant/pendant J1 :**
 1. **Volume du corpus synthétique** (cible ~1 000–3 000) et budget de relecture humaine du gold set (~150).

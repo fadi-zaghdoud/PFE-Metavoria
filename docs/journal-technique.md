@@ -335,6 +335,81 @@ demande explicite.
   → macro-F1 fragile sur cette classe ; renforce la logique d'**abstention** sur le
   fourre-tout `autre` (§5 de la conception) plutôt que de forcer une prédiction.
 
+### Jeu de validation externe (tickets réels — Kaggle, CC BY 4.0)
+- **Date** : 17/07/2026. `[établi en séance]`
+- **Attribution / licence** : **Kaggle « Customer IT Support Ticket Dataset »**
+  (Tobias Bueck), **CC BY 4.0**. **46 tickets FR** sélectionnés puis **ré-étiquetés
+  à la main** dans notre taxonomie (catégorie + priorité).
+- **Motif** : jusqu'ici tout est **synthétique** (limite majeure du projet). Un
+  jeu de **vrais e-mails de support** apporte la **validation externe** qui manquait
+  — le test le plus honnête du module IA, sur du langage humain réel.
+- **Décisions de scellement + justification** :
+  1. **`text` de prédiction = Sujet + Corps, JAMAIS la réponse de l'agent.** La
+     réponse n'existe pas au moment de la prédiction en production ; l'inclure serait
+     une **fuite**. Elle est conservée à part (`reponse_agent`) pour valider le RAG
+     au **J6** (paires problème→réponse).
+  2. **Périmètre = lignes validées « O » ET sujet non vide (46).** 4 tickets « O »
+     sans sujet (corps seul) sont écartés du périmètre relu ; 1 ligne non tranchée
+     ignorée. Étiquette d'or = correction si renseignée, sinon la valeur du dataset.
+  3. **Jamais utilisé à l'entraînement** (drapeau `reel=true`, `synthetique=false`).
+- **Mesures et chiffres** : **46 tickets**. **26 corrections de priorité (57 %)** —
+  dont **24 à la hausse / 2 à la baisse** → **le dataset source sous-évaluait
+  l'urgence** (même tendance que le corpus synthétique en J2, sur des données
+  indépendantes : le signal se confirme). **10 corrections de catégorie.**
+  Répartition : **Logiciel 21 / Réseau 10 / Matériel 8 / Accès 5 / Autre 2**.
+- **Limites (à documenter au rapport)** : (a) **biais produit grand public** — le
+  dataset vient d'un support client généraliste, pas d'une DSI interne, donc le
+  vocabulaire (noms de produits, ton) diffère du cas Metavoria ; (b) **`Autre` n=2**
+  → non significatif ; (c) **n=46** → tendances **indicatives**, pas de conclusion
+  statistique par classe. Sortie : `ml/gold/validation_externe.jsonl` + manifeste.
+
+### J3 — Harnais d'évaluation + baselines (le comparatif synthétique → réel)
+- **Date** : 17/07/2026. `[établi en séance]`
+- **Règle respectée** : le harnais arrive **AVANT tout modèle appris** (conception
+  §12). Il charge le train, **vérifie l'étanchéité**, entraîne chaque baseline une
+  fois, puis l'évalue sur **deux jeux** — gold synthétique (102) et validation
+  externe réelle (46) — et produit un **rapport versionné** (Markdown + JSON +
+  matrices de confusion) sous `ml/eval/reports/j3/`. Baselines J3 (sans modèle
+  appris) : **classe majoritaire** (plancher) et **TF-IDF + SVM linéaire**.
+
+- **RÉSULTAT CENTRAL (le chiffre clé du projet)** : macro-F1 du **TF-IDF + SVM**
+  = **0,944 sur le gold synthétique → 0,388 sur le réel externe**, soit une **chute
+  de 0,556**. **Étanchéité** : **0 chevauchement, même approximatif**, entre le train
+  et le jeu réel → les données réelles sont **vraiment indépendantes** (la chute
+  n'est pas un artefact de fuite).
+
+- **Enseignement principal** : le **0,944 mesurait la séparabilité lexicale
+  artificielle** du corpus synthétique — chaque catégorie ayant été générée depuis un
+  prompt distinct, le vocabulaire est quasi disjoint et un simple TF-IDF « résout »
+  la tâche. Sur du **vrai langage humain** (« MacBook Air », « Jira », « PostgreSQL »,
+  tournures polies, e-mails longs), un TF-IDF **entraîné sur le synthétique ne
+  transfère pas**. → la performance synthétique est un **plafond trompeur**.
+
+- **Détail méthodologique fort** : sur le réel, l'**accuracy du SVM (0,391) passe
+  SOUS le plancher majoritaire (0,457)** — le modèle « savant » fait **pire que
+  “toujours Logiciel”** en accuracy ; il ne surnage en macro-F1 (0,388 vs 0,125) que
+  parce qu'il répartit sur les classes. → justifie **macro-F1 comme métrique de tête**
+  et la **méfiance envers l'accuracy** sur données déséquilibrées.
+
+- **Par classe (réel)** : **Réseau tient** (F1 0,667 — vocabulaire technique stable :
+  VPN, routeur, Cisco), **Logiciel s'effondre** (rappel 0,333), **`Autre` = bruit**
+  (n=2, précision 0,056). Le modèle synthétique ne connaît pas les entités réelles.
+
+- **Nouvelle cible pour J5** : non plus « **battre 0,944 sur le synthétique** »
+  (facile et **trompeur**) mais **RÉDUIRE l'écart synthétique → réel** via les
+  **embeddings `bge-m3` sémantiques** (multilingues) plutôt que lexicaux. Le harnais
+  mesure désormais exactement cet écart — chaque modèle suivant s'y compare.
+
+- **Limite** : **n=46** → significativité **par classe limitée**, tendances
+  **indicatives** et non des conclusions statistiques. Mais la **direction** (chute
+  massive synthétique→réel) est robuste et suffit à cadrer la suite.
+
+- **Livrables** : `ml/smart_ticketing_ml/eval/` (dataset + étanchéité, metrics,
+  baselines, report ; **stubs `retrieval.py` J6 et `priority.py` J7** pour figer la
+  forme du harnais). Rapport de référence daté versionné (preuve de progression pour
+  le rapport, la soutenance et le flywheel J9) ; les runs quotidiens vont dans
+  `artifacts/eval/` (gitignored, régénérable).
+
 ### J8bis — Pièces jointes dans le pipeline IA (extension validée par l'encadrant)
 - **Date** : 17/07/2026. `[établi en séance]`
 - **Contexte / nouvelle exigence** : l'encadrant demande d'**intégrer les pièces

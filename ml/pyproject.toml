@@ -17,10 +17,22 @@ ml = [
     "matplotlib>=3.8",
     "openpyxl>=3.1",         # lecture de la feuille de relecture du gold set (J2)
 ]
+# Microservice d'embeddings (J4) : bge-m3 auto-hébergé + API FastAPI. Séparé pour
+# ne pas imposer torch aux jalons qui n'en ont pas besoin (J1/J2).
+service = [
+    "sentence-transformers>=2.7",  # sert bge-m3 (tête dense 1024d)
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+]
 
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["smart_ticketing_ml", "smart_ticketing_ml.data", "smart_ticketing_ml.eval"]
+packages = [
+    "smart_ticketing_ml",
+    "smart_ticketing_ml.data",
+    "smart_ticketing_ml.eval",
+    "smart_ticketing_ml.service",
+]

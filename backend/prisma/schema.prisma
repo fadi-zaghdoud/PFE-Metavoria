@@ -124,8 +124,10 @@ model Ticket {
   satisfactionDate        DateTime? @map("satisfaction_date") // horodatage de l'évaluation
 
   // Embedding du ticket pour la recherche de similarité (module IA, phase 5).
-  // Dimension 1536 = standard des modèles d'embedding actuels ; ajustable via migration.
-  embedding Unsupported("vector(1536)")?
+  // Dimension 1024 = bge-m3 (modèle retenu J4). L'index HNSW cosinus est créé en
+  // SQL brut dans la migration (Prisma ne sait pas exprimer un index HNSW).
+  embedding       Unsupported("vector(1024)")?
+  embeddingModele String?                      @map("embedding_modele") // repro : modèle/version ayant produit le vecteur
 
   categorieId Int? @map("categorie_id")
   categorie   Categorie? @relation(fields: [categorieId], references: [id], onDelete: SetNull)

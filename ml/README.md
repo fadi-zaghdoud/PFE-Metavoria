@@ -51,6 +51,34 @@ Sortie : `artifacts/corpus/corpus_train_<horodatage>.jsonl` + `manifest_<horodat
 Chaque ticket porte sa `resolution` dans le JSONL ; le loader (à venir) ne la
 liera **pas** en base pour les tickets ouverts (fermables à la demande en démo).
 
+## J4 — Microservice d'embeddings (`bge-m3`, 1024d)
+
+Le modèle d'embeddings est **auto-hébergé** (thèse §1/§3 : pas un simple appel
+d'API). Une seule implémentation d'embedding (`service/embedder.py`), deux points
+d'entrée : le service HTTP et le backfill batch. Vecteurs **L2-normalisés** →
+similarité **cosinus** (index HNSW `vector_cosine_ops`).
+
+```bash
+# Deps du service (torch, sentence-transformers, fastapi) — séparées de J1/J2 :
+cd ml && pip install -e ".[service]"
+
+# 1) Migration base (depuis backend/) : vector(1024) + colonne embedding_modele + index HNSW
+cd backend && npx prisma migrate deploy
+
+# 2) Backfill des embeddings de tous les tickets (idempotent)
+cd ml && python -m smart_ticketing_ml.service.backfill          # --dry-run pour compter sans écrire
+
+# 3) Service HTTP (appelé par le backend Node aux jalons suivants)
+cd ml && uvicorn smart_ticketing_ml.service.app:app --host 127.0.0.1 --port 8000
+#   GET  /sante            -> état + modèle + device
+#   POST /embed  {"textes": ["..."]} -> {modele, dimension, vecteurs}
+```
+
+Backfill **idempotent** : ne (ré)encode que les tickets à `embedding IS NULL` ou
+dont `embedding_modele` diffère du modèle courant (un changement de modèle relance
+tout). Chaque run écrit un manifeste (`artifacts/embeddings/backfill_<horodatage>.json`
+— provenance, comptes, débit, latence unitaire).
+
 ## Limites (à documenter au rapport)
 
 - **Pas d'historique réel** chez Metavoria (confirmé par l'encadrant) : tout

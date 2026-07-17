@@ -410,6 +410,108 @@ demande explicite.
   le rapport, la soutenance et le flywheel J9) ; les runs quotidiens vont dans
   `artifacts/eval/` (gitignored, régénérable).
 
+### J4 — Microservice d'embeddings (`bge-m3`, 1024d) + migration `vector(1024)` + index HNSW
+- **Date** : 17/07/2026. `[établi en séance]`
+
+- **Contexte / ce qui a été fait** : première brique du microservice Python (§3.1) —
+  un service **FastAPI** qui **charge et sert lui-même** `bge-m3` (tête dense, 1024d),
+  primitive `/embed` + `/sante`. La colonne `Ticket.embedding` (placeholder
+  `vector(1536)`) est migrée en **`vector(1024)`**, une colonne `embedding_modele`
+  est ajoutée (reproductibilité), et un **index HNSW cosinus** est créé. Les **861
+  tickets** en base sont **embeddés** (backfill idempotent). Livrables :
+  `ml/smart_ticketing_ml/service/` (`embedder.py`, `app.py`, `backfill.py`), migration
+  Prisma `20260717183932_ajout_embedding_1024_hnsw`.
+
+- **Décisions + alternatives écartées + justification** :
+  1. **Modèle auto-hébergé (FastAPI + sentence-transformers) vs délégation à Ollama**
+     → **auto-hébergé retenu**. Justification : c'est le **cœur de la thèse directrice**
+     (§1/§3) — servir soi-même le modèle d'embeddings **démontre la maîtrise ML**.
+     Ollama sait servir `bge-m3`, mais déléguer réduirait l'embedding à un simple
+     appel d'API et contredirait la frontière de service. Le coût (dépendance `torch`)
+     est négligeable face à cet argument.
+  2. **`bge-m3` (1024d) vs OpenAI/1536d (le placeholder)** → **bge-m3**. Multilingue,
+     **meilleur sur le français**, open-source, hybride dense+sparse (seule la tête
+     **dense** est utilisée ici ; la sparse est réservée à la recherche hybride J6).
+     Le `1536` du schéma était un **placeholder** → aligné sur la vraie dimension du
+     modèle (Flag #4 de la conception).
+  3. **Métrique cosinus (`vector_cosine_ops`)** → vecteurs **L2-normalisés** à
+     l'encodage (`normalize_embeddings=True`), donc cosinus = produit scalaire ;
+     métrique naturelle pour `bge-m3` et cohérente avec la recherche dense (§7).
+  4. **DROP+ADD de la colonne vs `ALTER TYPE`** → **recréation**. pgvector ne permet
+     pas de changer la dimension d'une colonne `vector` en place ; **0/861 ligne
+     peuplée** au moment de la migration → aucune donnée perdue.
+  5. **Index HNSW aux paramètres explicites** (`m=16, ef_construction=64`, = défauts) :
+     écrits en clair pour **documenter le choix** et préparer l'échelle.
+     - `m` = nombre de liens par nœud dans le graphe : plus haut → **meilleur rappel**,
+       plus de **mémoire** et construction plus lente.
+     - `ef_construction` = taille de la liste de candidats à la **construction** : plus
+       haut → index de **meilleure qualité/rappel**, construction plus lente.
+     - Le rappel **à la requête** se règle après coup via `hnsw.ef_search` (défaut 40),
+       **sans reconstruire** l'index. Sur 861 vecteurs les défauts suffisent largement.
+     - **Alternative écartée : IVFFlat** — exige un jeu déjà peuplé pour l'entraînement
+       des listes et se re-tune mal quand le corpus grandit ; HNSW n'a pas ce prérequis.
+  6. **Backfill : script Python en écriture directe pgvector vs passage par l'API Node**
+     → **script direct**. J4 est un travail **batch hors ligne** ; l'intégration Node
+     (embed à la création d'un ticket) n'a de sens qu'à **J5** (quand le classifieur
+     consomme les embeddings) → l'inclure empièterait sur J5. Le service HTTP et le
+     backfill partagent **une seule implémentation d'embedding** (`embedder.embed_textes`).
+  7. **Unité encodée = titre + description** — même unité que la **requête RAG** (§7,
+     côté requête) et que le `text` des jeux d'éval J2/J3 → cohérence de bout en bout.
+
+- **Mesures et chiffres** :
+  - **Backfill** : **861/861** tickets peuplés en **94,3 s** (**9,1 tickets/s**), CPU.
+    (852 synthétiques + **9 tickets de test** de dev Epic 1/2, ids 1-8 et 861 — « Test
+    SSE temps reel », « test de prob »… : bruit de dev, `synthetique=false` ; embeddés
+    par complétude, leur exclusion éventuelle du RAG est un point **J6**.)
+  - **Latence d'un embed unitaire (CPU, modèle chaud) ≈ 107–118 ms** → **très en-deçà
+    du budget CDC < 5 s/ticket**. Chiffre à réutiliser en section « dimensionnement
+    production » : l'embed à la volée est viable en CPU ; bascule GPU seulement si un
+    besoin de débit massif apparaît.
+  - **Vérification HNSW (EXPLAIN ANALYZE)** — requête de similarité
+    (`ORDER BY embedding <=> sonde LIMIT 5`) : plan =
+    `Index Scan using tickets_embedding_hnsw_idx` (**pas de seq scan**),
+    `Order By: (embedding <=> …::vector)`, **Execution Time 1,06 ms**. L'index est
+    effectivement emprunté malgré la petite taille de table.
+
+- **Problèmes rencontrés + solutions** :
+  1. **Enfer de dépendances `transformers`** : `pip install "sentence-transformers>=2.7"`
+     a tiré `transformers 5.14` / `sentence-transformers 5.6`, **incompatibles avec
+     `torch 2.2.0`** (`NameError: name 'torch' is not defined` à l'import). **Solution** :
+     **épingler** des versions compatibles torch 2.2 — `sentence-transformers==2.7.0`,
+     `transformers==4.40.2`, `tokenizers==0.19.1`, `huggingface-hub==0.23.5`.
+     Enseignement pour la repro : **figer** ces versions (fait dans `pyproject.toml`).
+  2. **Warning symlink Windows** au 1ᵉʳ téléchargement HF (Developer Mode non activé) :
+     **bénin** — HF copie les poids au lieu de les lier, sans impact fonctionnel.
+  3. **Changement de type sur colonne `Unsupported`** : `prisma migrate dev` ne détecte
+     pas le passage `vector(1536)→1024` (type opaque pour Prisma) ni l'index HNSW.
+     **Solution** : migration en `--create-only` puis **SQL édité à la main** (DROP+ADD
+     + `CREATE INDEX … USING hnsw …`) — pattern documenté §4.1 de la conception.
+
+- **Enseignements / limites** :
+  - **Auto-héberger le modèle a un coût d'intégration** (torch, ~2,3 Go de poids, enfer
+    de versions) mais reste **conforme CDC §10** (open-source, hors-ligne, aucune donnée
+    sortante) et **défendable** au jury (vraie ingénierie ML, pas un appel d'API).
+  - Le **backfill est idempotent** : ne (ré)encode que `embedding IS NULL` ou
+    `embedding_modele` ≠ modèle courant → un **changement de modèle relance tout**
+    proprement (utile au flywheel J9 et à toute évolution d'embeddings).
+  - **Reproductibilité** : chaque run écrit un manifeste
+    (`artifacts/embeddings/backfill_<horodatage>.json` — modèle, device, comptes, débit,
+    latence). Les poids et versions de libs sont figés.
+
+- **À anticiper (J6) — choix conscient, pas dette cachée** : le service utilise
+  **`SentenceTransformer` (tête dense uniquement)**. Pour J4 (dense seul) c'est
+  parfait, mais la **recherche hybride J6 (§7)** combine dense + un signal lexical.
+  Deux options à trancher en J6 :
+  1. **Full-text Postgres (BM25-like)** pour le lexical — c'est déjà la voie prévue au
+     §7 (« pgvector dense + full-text Postgres, fusion RRF ») ; **aucun changement
+     d'embedder** requis, le sparse vit dans Postgres.
+  2. **Passer à `FlagEmbedding`** — seule lib qui **expose la sortie sparse de bge-m3**
+     (lexical weights natifs du modèle), au prix d'une dépendance plus lourde et d'un
+     stockage/scoring sparse dédié.
+  → **Décision reportée à J6.** L'option 1 (full-text Postgres) est la voie par défaut
+  de la conception ; l'option 2 n'est à retenir que si le sparse natif de bge-m3
+  surpasse nettement BM25 sur notre mélange FR + termes techniques EN.
+
 ### J8bis — Pièces jointes dans le pipeline IA (extension validée par l'encadrant)
 - **Date** : 17/07/2026. `[établi en séance]`
 - **Contexte / nouvelle exigence** : l'encadrant demande d'**intégrer les pièces

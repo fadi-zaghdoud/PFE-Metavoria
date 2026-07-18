@@ -512,6 +512,94 @@ demande explicite.
   de la conception ; l'option 2 n'est à retenir que si le sparse natif de bge-m3
   surpasse nettement BM25 sur notre mélange FR + termes techniques EN.
 
+### J5 — Classification par embeddings + Régression Logistique + calibration
+- **Date** : 18/07/2026. `[établi en séance]`
+
+- **Contexte / ce qui a été fait** : le 3ᵉ barreau de l'échelle de baselines (§5) —
+  embeddings `bge-m3` (réutilisés du J4, tête dense 1024d) → **Régression Logistique**.
+  Exploration d'abord en notebook (`ml/notebooks/j5_classification.ipynb` : comparatif,
+  matrices de confusion, reliability diagram), **puis code figé** dans
+  `ml/smart_ticketing_ml/training/` (`classifier.py` = `EmbeddingLogReg` conforme au
+  Protocol du harnais + save/load joblib + abstention ; `train_classifier.py` = gel +
+  rapport). Le harnais J3 est **réutilisé** et **étendu** (ECE + fiabilité dans
+  `eval/metrics.py`, `plot_reliability` dans `eval/report.py`). Rapport de référence
+  versionné `ml/eval/reports/j5/` ; modèle figé + manifeste sous `artifacts/models/`.
+
+- **Cible J5 (rappel, fixée en J3)** : **non pas** battre le 0,944 synthétique (facile et
+  trompeur) mais **réduire l'écart synthétique → réel** (réf. TF-IDF+SVM = **0,556**),
+  prioritairement en **remontant le réel** grâce au sémantique multilingue.
+
+- **RÉSULTAT CENTRAL — le fil rouge : la limite synthétique→réel se propage à TROIS
+  niveaux.**
+  1. **Classification** (déjà vu J3) : 0,944 → 0,388.
+  2. **Calibration** (nouveau) : **calibrer sur un dev synthétique dégrade l'ECE réel**
+     (non calibré **0,054** → Platt **0,282** → isotonique **0,495**), alors même que
+     l'ECE *synthétique* s'améliore (0,257 → 0,069 → 0,057). La variante **non calibrée
+     est la mieux calibrée sur le vrai**.
+  3. **Abstention** (nouveau) : un seuil réglé sur le dev synthétique (précision cible
+     0,80) **descend au plancher** (le dev est trop facile, précision ~0,96) → **~0
+     abstention utile** sur le réel (couverture 87 % à précision 52 %).
+  → **Enseignement central du projet** : le corpus synthétique est un **plafond
+  trompeur à tous les niveaux** ; seul le **flywheel sur données réelles (J9)** peut
+  combler l'écart. C'est une planche de soutenance, **pas un échec**.
+
+- **Décisions + alternatives écartées + justification** :
+  1. **Modèle de production = LogReg-embeddings NON calibrée** vs version calibrée
+     (Platt/isotonique) → **non calibrée retenue**. Figer une variante calibrée
+     reviendrait à **choisir sciemment un modèle moins bien calibré sur le vrai**
+     (ECE réel 0,282 vs 0,054) — absurde. **Mais** toute la machinerie de calibration
+     (Platt, isotonique, ECE, reliability) est **conservée dans le harnais comme
+     PREUVE** du non-transfert. La vraie calibration attend un dev réel (J9). La lettre
+     de la conception §8 (Platt/isotonique) est ainsi **respectée dans la méthode**,
+     mais la *décision de gel* suit la mesure, pas le plan.
+  2. **Abstention : mécanisme codé, seuil paramétrable NON figé** vs seuil en dur.
+     Le mécanisme (proba max < seuil → abstention) est une **exigence CDC §6.5** → le
+     code existe, exposé comme **paramètre admin**. Mais figer une valeur serait
+     malhonnête (elle vient d'un dev synthétique inopérant sur le réel) → **non figé**,
+     réglage renvoyé au J9 (dev réel). Livrable : la **courbe couverture/précision**.
+  3. **Règle d'or méthodologique — split dev depuis le train** vs réglage sur le gold.
+     La calibration et le seuil sont réglés sur un **dev stratifié ~15 % découpé du
+     train** (724 train' / 128 dev) ; le **gold (102) et l'externe (46) restent du TEST
+     PUR**, jamais touchés. Régler sur le gold le disqualifierait comme test vierge et
+     gonflerait les scores — **on ne mesure jamais sur ce qui a servi à régler**.
+  4. **LogReg vs SVM sur embeddings** : le contrôle SVM-embeddings (macro-F1 réel
+     **0,428**) vs LogReg-embeddings (**0,438**) montre que **le gain vient des
+     embeddings, pas du choix de tête** — et LogReg offre en plus `predict_proba`
+     (indispensable à la calibration et à l'abstention), d'où son choix (§5).
+  5. **Baseline Claude few-shot (§5 barreau 4) reportée** à un mini-jalon séparé →
+     préserve la cohérence **local-first** (aucun appel API, aucune donnée sortante) et
+     garde J5 net.
+
+- **Mesures et chiffres** :
+  - **Écart réduit** : TF-IDF+SVM 0,556 → **LogReg-embeddings 0,506** ; surtout
+    **l'accuracy réelle passe de 0,391 à 0,500** (le TF-IDF faisait *pire* que le
+    plancher majoritaire 0,457 ; le sémantique **repasse au-dessus**).
+  - **Par classe (réel)** : Logiciel se redresse (rappel 0,333 → **0,381**, précision
+    0,889), Matériel/Réseau solides (F1 ~**0,63**), Accès/Autre restent faibles (n=5/2).
+  - Split : 724 train' / 128 dev ; embeddings en cache `.npy` (réutilisés entre notebook
+    et script) ; latence négligeable (LogReg sur 1024d).
+
+- **Problèmes rencontrés + solutions** :
+  1. **Le kernel Jupyter ne trouvait pas le package** (`smart_ticketing_ml`) : lancé
+     depuis `notebooks/`, la racine `ml/` n'était pas sur `sys.path`. **Solution** :
+     la 1ʳᵉ cellule localise la racine `ml/` et l'ajoute à `sys.path` (marche que l'on
+     lance depuis `ml/` ou `ml/notebooks/`).
+  2. **Isotonique dégénère** (macro-F1 synth 0,897, ECE réel 0,495) : trop peu de points
+     par classe au dev (~128 répartis sur 5 classes, Autre ~13) → sur-ajustement de la
+     courbe isotonique. Confirme que Platt (paramétrique) est plus robuste en petit
+     régime — **et surtout que ni l'un ni l'autre ne transfère au réel**.
+
+- **Enseignements / limites** :
+  - **La calibration est une mesure, pas un pansement** : sans données réelles, on ne
+    peut pas calibrer honnêtement ; on peut seulement **prouver** que le synthétique n'y
+    suffit pas. Cadre exactement le rôle du flywheel (J9).
+  - **n=46 réel** → tendances **indicatives** (ECE bruité par bin), mais la **direction**
+    (non-transfert à trois niveaux) est robuste et concordante entre classification,
+    calibration et abstention.
+  - **Livrables** : `training/` (classifieur + gel), harnais étendu (ECE/fiabilité),
+    rapport `ml/eval/reports/j5/`, modèle+manifeste (`artifacts/`, gitignored,
+    régénérable), notebook d'exploration.
+
 ### J8bis — Pièces jointes dans le pipeline IA (extension validée par l'encadrant)
 - **Date** : 17/07/2026. `[établi en séance]`
 - **Contexte / nouvelle exigence** : l'encadrant demande d'**intégrer les pièces

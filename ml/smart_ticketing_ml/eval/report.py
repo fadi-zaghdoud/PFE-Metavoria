@@ -80,6 +80,33 @@ def _plot_confusion(res: ResultatMetrique, path: Path, titre: str) -> None:
     plt.close(fig)
 
 
+def plot_reliability(
+    courbes: dict[str, tuple[list[float], list[float], float]],
+    path: Path,
+    titre: str,
+) -> None:
+    """Reliability diagram (J5) — confiance moyenne (x) vs justesse empirique (y).
+
+    `courbes` : {label -> (confiances_moy, justesses_moy, ece)}. La diagonale est
+    le calibrage parfait. Sert à prouver visuellement que la calibration apprise
+    sur le synthétique s'écarte de la diagonale sur le réel.
+    """
+    fig, ax = plt.subplots(figsize=(6, 6))
+    ax.plot([0, 1], [0, 1], "--", color="gray", label="parfait")
+    for label, (xs, ys, e) in courbes.items():
+        ax.plot(xs, ys, "o-", label=f"{label} (ECE={e:.3f})")
+    ax.set_xlabel("confiance moyenne (top-1)")
+    ax.set_ylabel("justesse empirique")
+    ax.set_title(titre)
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.legend(loc="upper left")
+    ax.grid(alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(path, dpi=120)
+    plt.close(fig)
+
+
 def _markdown(meta: dict, jeux: list[dict], figs: dict[str, str]) -> str:
     L: list[str] = []
     L.append("# Harnais d'évaluation — J3 (baselines de classification)\n")

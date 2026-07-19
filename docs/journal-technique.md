@@ -600,6 +600,88 @@ demande explicite.
     rapport `ml/eval/reports/j5/`, modèle+manifeste (`artifacts/`, gitignored,
     régénérable), notebook d'exploration.
 
+### J5+ — Adaptation de domaine : ajouter du réel à l'entraînement (tentative, négatif)
+- **Date** : 18-19/07/2026. `[établi en séance]`
+
+- **Contexte / hypothèse** : le J5 laisse un écart synthétique→réel de 0,506.
+  Piste la plus prometteuse pour le combler : **injecter de vrais tickets à
+  l'entraînement** (adaptation de domaine). Le dataset Kaggle contient **476 FR**,
+  dont **291 en queues IT** (Technical + Product + IT Support) ; les **46** du test
+  externe en proviennent. On ajoute **~242 AUTRES** au train et on mesure sur les
+  **mêmes 46 intouchés**. Deux axes : **AXE1** (synth + réel), **AXE2** (réglages
+  `class_weight`/`C` sélectionnés sur le **dev synthétique**).
+
+- **Règle d'interprétation — PRÉ-ENREGISTRÉE (avant de voir les résultats)**, pour
+  éviter toute rationalisation *a posteriori* : gain macro-F1 réel vs référence
+  (0,438) **> +0,05** → effet solide → AXE1 en production + section « adaptation de
+  domaine » ; **+0,02..+0,05** → ambigu (bruit d'étiquetage plausible) → perspective,
+  production inchangée ; **< +0,02 ou négatif** → pas d'effet exploitable → J5 conservé.
+
+- **RÉSULTAT — négatif et net** : AXE1 **−0,043**, AXE2 **−0,041**, AXE1+2 **−0,043**
+  (réel 0,438 → 0,395). Verdict : **< +0,02 → J5 conservé**, production **inchangée**.
+
+- **1. Le verdict est nuancé — non pas « l'adaptation échoue » mais « non testable
+  ici »** : les 242 réels sont **le même domaine** que les 46 du test → en données
+  **propres**, en ajouter **devrait aider**. Ça **nuit** (−0,043) → le **bruit
+  d'étiquetage** de l'auto-mapping (~13-27 %) **domine** l'effet de domaine.
+  L'hypothèse d'adaptation n'est donc **pas réfutée**, elle est **non testable avec
+  cet étiquetage auto** ; seule une **relecture manuelle** des 242 pourrait trancher.
+
+- **2. L'enseignement transposable** : **la qualité de l'étiquetage prime sur la
+  proximité du domaine.** 242 tickets du **bon** domaine mais **mal étiquetés** font
+  plus de mal que de bien → **mieux vaut peu de données propres que beaucoup de
+  bruitées.** (À réutiliser pour justifier le flywheel J9, dont les étiquettes sont
+  **validées par le technicien** — propres par construction.)
+
+- **3. Le fil rouge synthétique→réel atteint QUATRE niveaux** — quatre démonstrations
+  **indépendantes et mesurées** que le corpus synthétique **échoue** à :
+  1. **mesurer la performance réelle** — J3 : macro-F1 **0,944 → 0,388** ;
+  2. **calibrer la confiance** — J5 : calibrer sur synthétique porte l'ECE réel de
+     **0,054 → 0,282** ;
+  3. **régler l'abstention** — J5 : un seuil réglé sur le dev synthétique donne
+     **~0 abstention utile** sur le réel ;
+  4. **sélectionner les hyperparamètres** — J5+ : le dev **saturé (0,970-0,991)**
+     choisit `class_weight=balanced` / `C=1.0`, qui **dégradent le réel (−0,041)**.
+  → **Enseignement central du projet, désormais étayé quatre fois** : le synthétique
+  valide la *chaîne* et les *mécanismes*, jamais la *performance de production* ; seul
+  le flywheel sur données réelles (J9) peut combler l'écart.
+
+- **Décisions + méthode (défendables)** :
+  1. **Étanchéité renforcée — Jaccard ≥ 0,5** (vs 0,6 standard du harnais).
+     Justification : train et test viennent du **même CSV** → c'est le scénario le
+     plus risqué pour une fuite ; l'asymétrie des coûts (perdre quelques tickets
+     d'entraînement ≪ conclure un gain sur de la contamination) impose la prudence.
+     Contrôles : exact **et** approximatif, dédup interne, **fail dur** si un exact
+     subsiste. Mesuré : sur 291, **exclus 46 exact** (= exactement le test → preuve),
+     3 approx, 0 dédup → **242 retenus**, 0 résiduel.
+  2. **Étiquetage automatique d'abord (spot-check avant de payer la relecture)**.
+     Mapping tags Kaggle + **lexique d'entités produits** + mots-clés → 5 catégories.
+     **Deux itérations**, contrôlées sur échantillons **disjoints** (le seul contrôle
+     honnête) : **r1 = 53 % strict / 70 % défendable** → corrections → **r2 = 73 % /
+     87 %**. Corrections apportées : (a) **lexique d'entités** (Jira/Zoom→Logiciel,
+     MacBook/Dell/Surface/Epson→Matériel, Cisco/AWS→Réseau) pesant autant qu'un tag —
+     règle le fourre-tout `Autre` sur titres courts ; (b) **veto visioconférence** :
+     `Login Issue`/`Account Assistance` ne déclenchent plus `Accès` sur du Zoom/Teams
+     (connectivité) ; (c) **Hardware Failure > Software Bug** (écran tactile → Matériel).
+  3. **Une seule itération de mapping** (convenu) : au-delà, on ajusterait les règles
+     en regardant les mêmes cas → sur-ajustement du contrôle.
+- **Erreur résiduelle identifiée (non corrigée, assumée)** : les tags `Account*`
+  (`Account Security`/`Account Assistance`) **sur-déclenchent `Accès`** sur des tickets
+  **cloud / facturation / vagues** (3 des 4 fautes du r2). Corrigeable (contexte
+  cloud/billing → dévaloriser ces tags), mais **non corrigée** (itération unique).
+- **Limites (à documenter au rapport)** : (a) le négatif vaut **pour cet étiquetage
+  auto** — il ne dit pas que l'adaptation de domaine échoue, mais que **des étiquettes
+  bruitées nuisent** ; (b) **n=46** au test → tendance indicative.
+- **Perspective explicite (non réalisée, priorisée après J6-J9)** : **relecture
+  manuelle des 242** (coût estimé **~3-4 h**) pour trancher l'hypothèse d'adaptation
+  de domaine sur des étiquettes propres. Non faite ici : la priorité va au RAG (J6) et
+  aux jalons suivants ; le flywheel (J9) apportera de toute façon des étiquettes
+  **validées par le technicien**, ce qui est la voie durable pour combler l'écart.
+- **Livrables** : `data/ingest_kaggle_train.py` (ingestion + étanchéité + auto-map),
+  `training/experiment_domain_adaptation.py` (4 configs, grille dev, règle pré-enregistrée),
+  `ml/real/real_train_kaggle.jsonl` (+ manifeste, spot-checks r1/r2 versionnés),
+  rapport `ml/eval/reports/j5_adaptation/`. **Production reste le modèle J5** (non calibré).
+
 ### J8bis — Pièces jointes dans le pipeline IA (extension validée par l'encadrant)
 - **Date** : 17/07/2026. `[établi en séance]`
 - **Contexte / nouvelle exigence** : l'encadrant demande d'**intégrer les pièces

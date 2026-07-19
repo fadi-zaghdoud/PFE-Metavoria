@@ -1,0 +1,164 @@
+{
+  "jalon": "J5+ (adaptation de domaine)",
+  "date": "2026-07-19T20:43:10Z",
+  "seed": 42,
+  "embedding_modele": "BAAI/bge-m3",
+  "n_train_synth": 852,
+  "n_train_fit": 724,
+  "n_dev": 128,
+  "n_reel_ajoute": 242,
+  "n_gold": 102,
+  "n_externe": 46,
+  "etancheite_reel": {
+    "vs_externe_exact": 0,
+    "vs_externe_approx": 0,
+    "vs_gold_exact": 0,
+    "vs_gold_approx": 0
+  },
+  "regle_preenregistree": {
+    "solide": ">+0.05",
+    "ambigu": "+0.02..+0.05",
+    "nul": "<+0.02"
+  },
+  "selection_dev": {
+    "synth": {
+      "params": {
+        "C": 1.0,
+        "class_weight": "balanced"
+      },
+      "dev_macro_f1": 0.9702,
+      "grille": [
+        {
+          "C": 0.1,
+          "class_weight": "none",
+          "dev_macro_f1": 0.6769
+        },
+        {
+          "C": 0.3,
+          "class_weight": "none",
+          "dev_macro_f1": 0.912
+        },
+        {
+          "C": 1.0,
+          "class_weight": "none",
+          "dev_macro_f1": 0.9478
+        },
+        {
+          "C": 0.1,
+          "class_weight": "balanced",
+          "dev_macro_f1": 0.9311
+        },
+        {
+          "C": 0.3,
+          "class_weight": "balanced",
+          "dev_macro_f1": 0.9606
+        },
+        {
+          "C": 1.0,
+          "class_weight": "balanced",
+          "dev_macro_f1": 0.9702
+        }
+      ]
+    },
+    "synth_reel": {
+      "params": {
+        "C": 1.0,
+        "class_weight": "balanced"
+      },
+      "dev_macro_f1": 0.9908,
+      "grille": [
+        {
+          "C": 0.1,
+          "class_weight": "none",
+          "dev_macro_f1": 0.6208
+        },
+        {
+          "C": 0.3,
+          "class_weight": "none",
+          "dev_macro_f1": 0.7908
+        },
+        {
+          "C": 1.0,
+          "class_weight": "none",
+          "dev_macro_f1": 0.9351
+        },
+        {
+          "C": 0.1,
+          "class_weight": "balanced",
+          "dev_macro_f1": 0.9291
+        },
+        {
+          "C": 0.3,
+          "class_weight": "balanced",
+          "dev_macro_f1": 0.9516
+        },
+        {
+          "C": 1.0,
+          "class_weight": "balanced",
+          "dev_macro_f1": 0.9908
+        }
+      ]
+    }
+  },
+  "resultats": [
+    {
+      "f1_synth": 0.9438340142381063,
+      "f1_reel": 0.4380329611908559,
+      "ecart": 0.5058010530472504,
+      "acc_synth": 0.9509803921568627,
+      "acc_reel": 0.5,
+      "config": "Référence J5 (synth, C=1.0)",
+      "entrainement": "synthétique 724",
+      "params": {
+        "C": 1.0,
+        "class_weight": null
+      },
+      "gain_reel": 0.0
+    },
+    {
+      "f1_synth": 0.919039641943734,
+      "f1_reel": 0.39479181044398437,
+      "ecart": 0.5242478314997496,
+      "acc_synth": 0.9411764705882353,
+      "acc_reel": 0.6086956521739131,
+      "config": "AXE1 (synth + réel)",
+      "entrainement": "synth 724 + réel 242",
+      "params": {
+        "C": 1.0,
+        "class_weight": null
+      },
+      "gain_reel": -0.0432
+    },
+    {
+      "f1_synth": 0.9152872503840246,
+      "f1_reel": 0.39717826033615505,
+      "ecart": 0.5181089900478695,
+      "acc_synth": 0.9313725490196079,
+      "acc_reel": 0.43478260869565216,
+      "config": "AXE2 (synth, C=1.0, cw=balanced)",
+      "entrainement": "synthétique 724",
+      "params": {
+        "C": 1.0,
+        "class_weight": "balanced"
+      },
+      "gain_reel": -0.0409
+    },
+    {
+      "f1_synth": 0.9152872503840246,
+      "f1_reel": 0.3945926196565583,
+      "ecart": 0.5206946307274662,
+      "acc_synth": 0.9313725490196079,
+      "acc_reel": 0.6086956521739131,
+      "config": "AXE1+2 (synth + réel, C=1.0, cw=balanced)",
+      "entrainement": "synth 724 + réel 242",
+      "params": {
+        "C": 1.0,
+        "class_weight": "balanced"
+      },
+      "gain_reel": -0.0434
+    }
+  ],
+  "gain_reel_axe1": -0.0432,
+  "gain_reel_axe1_2": -0.0434,
+  "verdict": "NUL/NÉGATIF (<+0.02) → J5 conservé, AXE1 en perspective"
+}

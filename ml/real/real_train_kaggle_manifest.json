@@ -1,0 +1,43 @@
+{
+  "genere_le": "2026-07-18T21:33:39Z",
+  "source": "Kaggle « Customer IT Support Ticket Dataset » (Tobias Bueck), CC BY 4.0",
+  "licence": "CC BY 4.0",
+  "source_csv": "C:\\Users\\LOQ\\Downloads\\archive (1)\\dataset-tickets-multi-lang3-4k.csv",
+  "perimetre": "FR + queues IT ['IT Support', 'Product Support', 'Technical Support']",
+  "role": "ENRICHISSEMENT DE L'ENTRAÎNEMENT (adaptation de domaine) — jamais du test",
+  "etiquetage": "automatique (entités + tags + mots-clés) → spot-check manuel",
+  "n_candidats_fr_it": 291,
+  "n_retenus": 242,
+  "etancheite": {
+    "test_ref": "gold/validation_externe.jsonl",
+    "n_test": 46,
+    "seuil_approx_jaccard": 0.5,
+    "seuil_renforce_vs_harnais": "0.5 (< 0.6 standard) — justif. : source commune train/test",
+    "exclus_exact": 46,
+    "exclus_approx": 3,
+    "exclus_dedup_interne": 0,
+    "exact_residuel_apres_exclusion": 0,
+    "exemples_approx_exclus": [
+      [
+        "Support urgent nécessaire",
+        0.87
+      ],
+      [
+        "Aide urgente requise : problèmes avec le MacBook Air M1",
+        0.922
+      ],
+      [
+        "",
+        0.5
+      ]
+    ]
+  },
+  "repartition_categorie_auto": {
+    "Matériel": 76,
+    "Réseau": 71,
+    "Logiciel": 82,
+    "Accès": 11,
+    "Autre": 2
+  },
+  "sha256": "3eb4d7755c5fba4dfc86bff6dcb9445ac4bb4ba9e792fb49f4cdc6633763c460"
+}

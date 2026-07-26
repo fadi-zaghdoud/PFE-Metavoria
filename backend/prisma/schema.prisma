@@ -129,6 +129,12 @@ model Ticket {
   embedding       Unsupported("vector(1024)")?
   embeddingModele String?                      @map("embedding_modele") // repro : modèle/version ayant produit le vecteur
 
+  // Recherche plein-texte (module IA, J6 — arm lexical de la recherche hybride RRF).
+  // Colonne tsvector GÉNÉRÉE STORED (titre + description, config 'french') + index GIN,
+  // créées en SQL brut dans la migration : Prisma ne sait exprimer ni une colonne
+  // générée ni un index GIN sur tsvector. Toujours en phase, jamais écrite par Node.
+  rechercheTexte  Unsupported("tsvector")?     @map("recherche_texte")
+
   categorieId Int? @map("categorie_id")
   categorie   Categorie? @relation(fields: [categorieId], references: [id], onDelete: SetNull)
 

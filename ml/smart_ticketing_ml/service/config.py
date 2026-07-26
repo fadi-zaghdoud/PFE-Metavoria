@@ -25,6 +25,19 @@ DEVICE = os.environ.get("EMBED_DEVICE", "cpu")
 # Taille de lot pour l'encodage (compromis débit / mémoire).
 TAILLE_LOT = int(os.environ.get("EMBED_TAILLE_LOT", "32"))
 
+# Reranker cross-encoder (J6 — étape de reranking de la recherche hybride).
+# `bge-reranker-v2-m3` : même famille que bge-m3, multilingue, adapté FR + termes EN.
+MODELE_RERANKER = os.environ.get("RERANK_MODELE", "BAAI/bge-reranker-v2-m3")
+# torch est CPU-only ici (cf. J6) → reranker sur CPU. Un GPU/torch-CUDA ramènerait
+# ~368 ms/paire à ~30-50 ms et lèverait la contrainte de profondeur (perspective).
+RERANK_DEVICE = os.environ.get("RERANK_DEVICE", "cpu")
+# Longueur max de la paire (requête+doc). Nos tickets ≈ 18 mots médian (J1) → 512 est
+# probablement du gaspillage ; 256 halve la latence. Défaut prudent 512 tant que
+# l'égalité de qualité 256 vs 512 n'est pas confirmée par l'ablation J6a.
+RERANK_MAX_LENGTH = int(os.environ.get("RERANK_MAX_LENGTH", "512"))
+# Taille de lot pour le scoring des paires.
+RERANK_TAILLE_LOT = int(os.environ.get("RERANK_TAILLE_LOT", "32"))
+
 # Adresse d'écoute du service FastAPI.
 HOTE = os.environ.get("EMBED_HOTE", "127.0.0.1")
 PORT = int(os.environ.get("EMBED_PORT", "8000"))

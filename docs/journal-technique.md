@@ -682,6 +682,92 @@ demande explicite.
   `ml/real/real_train_kaggle.jsonl` (+ manifeste, spot-checks r1/r2 versionnés),
   rapport `ml/eval/reports/j5_adaptation/`. **Production reste le modèle J5** (non calibré).
 
+### J6 — RAG : recherche hybride + reranker + juge de pertinence validé
+- **Date** : 20–26/07/2026. `[établi en séance]`
+
+- **Contexte / ce qui a été fait** : le 4ᵉ barreau (§7) — recherche **hybride** (dense
+  pgvector + full-text Postgres, fusion RRF) + **reranker** cross-encoder
+  `bge-reranker-v2-m3`, sur la base des tickets résolus. Livrables : migration full-text
+  (`20260720225847_ajout_fulltext_tickets` : colonne `tsvector` **générée STORED** +
+  index GIN), service `/rerank`, module `retrieval/` (dense/lexical/rrf/rrf_rerank +
+  garde anti-fuite), harnais retrieval (Recall@k/MRR/nDCG gradées), **juge de pertinence
+  LLM** validé humainement, et **J6b** (génération citée + abstention).
+
+- **Décisions + alternatives + justification** :
+  1. **Filtre du corpus indexable = `synthetique AND statut ∈ {RESOLU,CLOTURE}`** (723 docs).
+     *Finding de rigueur* : **7 des 9 tickets de bruit de dev sont RESOLU/CLOTURE** → un
+     filtre statut SEUL les aurait injectés dans la KB ; c'est le **drapeau `synthetique`**
+     qui rend l'exclusion propre.
+  2. **Lexical = full-text Postgres** (vs sparse natif bge-m3/FlagEmbedding) → défaut
+     conception, aucune dépendance lourde, évite un re-enfer de versions (J4). *Finding* :
+     `websearch_to_tsquery` fait du **AND** (0 résultat sur requête multi-mots) → passage à
+     une **requête OR des lexèmes** (recall façon BM25, même stemming `french` que la colonne
+     générée). GIN emprunté (Bitmap Index Scan, ~3 ms, pas de seq scan).
+  3. **RRF 50/50, k=60, NON pondéré** (Cormack 2009). Anti-contamination : régler le poids
+     dense/lexical sur le gold le contaminerait ET ajouterait un cas « réglé sur synthétique
+     → ne transfère pas ». **3 systèmes rapportés séparément** (dense/lexical/RRF) pour montrer
+     la contribution de chaque composant.
+  4. **Reranker — découplage ORDRE / SCORE** : le rerank **ne réordonne PAS** l'affichage par
+     défaut (`RERANK_ACTIF_DEFAUT=False`) ; il ne sert qu'à **scorer la porte d'abstention**
+     (top-1). Réactivable en paramètre (reranker réentraîné au flywheel). Motif mesuré à
+     l'ablation (voir « en cours ») : l'ordre fin du rerank aide le synthétique mais nuit au
+     réel — à confirmer sur le tableau final.
+
+- **Mesures — dimensionnement production (reranker)** : leçon « **mesurer deux fois,
+  système au repos** ». Une 1ʳᵉ mesure donnait **17 s** à K=10/max_length 256 → **artefact**
+  (contention CPU juste après chargement du modèle) ; deux runs propres concordent :
+  **K=10 @ 256 = 4,08 s** (min 4,05 / max 4,28, **stable**) — **sous le budget CDC < 5 s**,
+  même sur requête longue. K=20 @ 256 = 10,6 s ; **max_length 512** = ~2-3× plus lent **et
+  instable** (pic 31 s) → **256 retenu**. ≈ **410 ms/paire** sur ce CPU (**torch 2.2 CPU-only** ;
+  perspective : GPU/torch-CUDA ≈ 30-50 ms/paire, écarté — rouvrirait l'enfer de versions J4).
+  **Décision NFR** : `K_prod=10`, `max_length=256`, rerank **off par défaut** (RRF seul immédiat).
+
+- **Juge de pertinence — validé humainement (le verrou avant les métriques)** :
+  - Corpus **sans structure de récurrence** (99 % descriptions uniques) → aucune vérité-terrain
+    de pertinence naturelle → on juge la pertinence gradée (0/1/2) par **LLM local**
+    (`qwen2.5:14b`, température 0, sortie structurée), **validé contre 25 jugements humains**
+    (sinon circulaire, §10).
+  - **Protocole défendable** : notation **aveugle** (κ honnête), **rubrique identique mot pour
+    mot** juge/humain (source unique `RUBRIQUE` + exemple d'ancrage grade-1), **25 paires
+    construites depuis le retrieval** (rang/catégorie), **anti-circularité** (le niveau attendu
+    ne vient jamais de la note du juge). Construction **équilibrée 8/9/8** — L1 tiré au **rang
+    intermédiaire du dense** (un 1ᵉʳ essai « même catégorie au hasard » donnait surtout des 0 :
+    corrigé **avant** collecte des labels humains).
+  - **Résultat** : **κ_w quadratique = 0,954** (« quasi-parfait » Landis-Koch ; seuil
+    pré-enregistré 0,60) → **juge VALIDÉ**. κ non pondéré 0,866 ; **23/25** accords exacts ;
+    **2 désaccords**, tous deux d'un cran (humain 2 / juge 1) sur des **quasi-doublons**,
+    **aucun désaccord franc 2↔0** (juge légèrement plus conservateur = biais sûr).
+  - **Limite honnête** : distribution humaine {0:10, 1:2, 2:13} — **grade-1 peu échantillonné**
+    → le κ valide surtout **pertinent / non-pertinent** (κ binaire = 1,000, ce qui importe pour
+    le RAG) ; la nuance intermédiaire est moins testée. Validé sur requêtes **internes courtes** ;
+    extrapolation aux e-mails longs supposée (garde-fou : relire des paires externes pendant le
+    run). Rapport versionné `ml/eval/reports/j6/judge_validation.{md,json}`.
+
+- **J6b — génération citée + abstention (mécanisme, validé à l'exécution)** :
+  - **Génération** : `qwen2.5:14b` local (local-first, CDC §10) synthétise une résolution
+    **ancrée** dans les tickets retrouvés, avec **citation des #id** ; **contrôle
+    anti-hallucination** (ne garde que les #id réellement fournis).
+  - **Abstention** : mécanisme codé, **seuil NEUTRE par défaut (`None`)** → montre tout, aucun
+    silence arbitraire ; **cohérence J5** (aucun seuil figé sur synthétique, réglage = flywheel).
+    Deux chemins : (a) confiance < seuil (inactif tant que seuil=null) ; (b) **grounding** — si
+    la génération ne cite aucune source valide → « aucune suggestion pertinente » **plutôt
+    qu'inventer**.
+  - **Démo (3 requêtes externes réelles)** : **imprimante HP** (stries) → **abstention** ;
+    **écran Dell** (clignotement) → **abstention** ; **Wi-Fi MacBook** → **suggestion citée**
+    `[#753, #239]`. Les deux abstentions viennent de la **porte de grounding** (le RRF a bien
+    retrouvé des tickets, mais le générateur a refusé de citer/inventer) — **comportement de
+    sécurité central** : suggère quand il sait, se tait quand il ne sait pas. Latence génération
+    ~15-30 s (14B local) → **suggestion à calculer en asynchrone** (hors chemin synchrone < 5 s).
+
+- **EN COURS (prochain commit)** : **métriques d'ablation** (Recall@k/MRR/nDCG@5 ×
+  {dense, lexical, RRF, +rerank} × {gold synthétique, externe réel}) — **run du juge de nuit**
+  (1486 paires, resumable) → `report_retrieval` → **tableau final** → décision rerank confirmée
+  **sur la mesure** + enrichissement éventuel du fil rouge (hypothèse à valider : « ce qui
+  *décide* ne transfère pas / ce qui *compare par le sens* transfère »). **Aucun chiffre
+  d'ablation n'est écrit ici tant que le tableau n'est pas mesuré.**
+  - **J6c** : courbe **couverture/précision** de l'abstention (gold + externe) comme **artefact**
+    (montre le compromis sans figer de point ; seuil opérationnel = flywheel) → puis **J6 clos**.
+
 ### J8bis — Pièces jointes dans le pipeline IA (extension validée par l'encadrant)
 - **Date** : 17/07/2026. `[établi en séance]`
 - **Contexte / nouvelle exigence** : l'encadrant demande d'**intégrer les pièces

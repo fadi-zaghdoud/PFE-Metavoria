@@ -759,14 +759,40 @@ demande explicite.
     sécurité central** : suggère quand il sait, se tait quand il ne sait pas. Latence génération
     ~15-30 s (14B local) → **suggestion à calculer en asynchrone** (hors chemin synchrone < 5 s).
 
-- **EN COURS (prochain commit)** : **métriques d'ablation** (Recall@k/MRR/nDCG@5 ×
-  {dense, lexical, RRF, +rerank} × {gold synthétique, externe réel}) — **run du juge de nuit**
-  (1486 paires, resumable) → `report_retrieval` → **tableau final** → décision rerank confirmée
-  **sur la mesure** + enrichissement éventuel du fil rouge (hypothèse à valider : « ce qui
-  *décide* ne transfère pas / ce qui *compare par le sens* transfère »). **Aucun chiffre
-  d'ablation n'est écrit ici tant que le tableau n'est pas mesuré.**
-  - **J6c** : courbe **couverture/précision** de l'abstention (gold + externe) comme **artefact**
-    (montre le compromis sans figer de point ; seuil opérationnel = flywheel) → puis **J6 clos**.
+- **J6a — Ablation retrieval (CLÔTURE, 28/07/2026)** : le tableau final, mesuré sur la
+  pertinence gradée jugée par LLM (1486 jugements en cache, juge validé κ_w 0,954) via
+  `eval/run_retrieval.py` (classements re-calculés puis **cachés** → régénération instantanée).
+  **Qualité de la mesure** : couverture du pool top-5 **gold 100 % / réel 98,5 %**, **0 fuite
+  exacte** → fiable. *Caveat réel* : seules **25/46** requêtes réelles ont un doc pertinent
+  dans la KB synthétique (21 sans analogue → territoire d'abstention J6b) → n=25, indicatif.
+
+  | Variante | nDCG@5 gold | nDCG@5 **réel** | R@5 réel | MRR réel |
+  |---|---|---|---|---|
+  | dense | 0,953 | **0,518** | 0,520 | 0,589 |
+  | lexical | 0,885 | **0,196** | 0,177 | 0,277 |
+  | rrf | 0,940 | **0,478** | 0,512 | **0,615** |
+  | rrf_rerank | 0,951 | **0,487** | 0,534 | 0,555 |
+
+  - **Effet rerank FAIBLE et AMBIGU** (Δ = rrf_rerank − rrf) : gain marginal sur nDCG/Recall
+    (**même réel** : +0,009 nDCG, +0,023 Recall) mais **perte sur MRR réel (−0,060)**. Pas de
+    « nuit clairement ». → **Décision `RERANK_ACTIF_DEFAUT=False` motivée non par « le rerank
+    nuit » mais par un rapport bénéfice/coût défavorable** : gain minuscule (~0,01) vs coût
+    latence élevé (~8 s/requête, dépasse le budget CDC sur requête longue). Le rerank reste
+    disponible pour le **score d'abstention** (top-1). **Corrige l'hypothèse J6a antérieure
+    (« rerank nuit sur réel »)**, qui était basée sur moins de données (commentaire
+    `retrieval/config.py` mis à jour en conséquence).
+  - **Ce que l'ablation confirme fortement, c'est le fil rouge** (sémantique vs surface,
+    cf. J7) : le **lexical (surface) s'effondre sur le réel** (nDCG@5 **0,885 → 0,196**,
+    MRR 0,277) tandis que le **dense (sémantique) porte le réel** (0,518). La **fusion RRF**
+    ≈ dense sur gold, un peu sous dense en nDCG réel (le lexical mort le dilue) mais **meilleur
+    MRR réel** (0,615) → robustesse du 1er hit à coût nDCG minime. Le **synthétique reste un
+    plancher trompeur** (nDCG gold ~0,94 pour tous, réel bien plus bas).
+  - **J6c** : courbe **couverture/précision** de l'abstention (gold + externe) livrée comme
+    **artefact** (compromis montré sans figer de seuil ; opérationnel = flywheel).
+
+- **J6 CLOS** (28/07/2026) : retrieval hybride + reranker + juge validé + génération citée/
+  abstention (J6b) + **ablation mesurée (J6a)** + courbe d'abstention (J6c). Livrable
+  d'ablation : `eval/run_retrieval.py`, rapport versionné `ml/eval/reports/j6/retrieval_ablation.*`.
 
 ### J7 — Priorisation : scorecard glass-box vs LLM (le fil rouge se NUANCE)
 - **Date** : 27/07/2026. `[établi en séance]`

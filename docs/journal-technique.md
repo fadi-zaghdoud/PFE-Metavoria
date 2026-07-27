@@ -768,6 +768,98 @@ demande explicite.
   - **J6c** : courbe **couverture/précision** de l'abstention (gold + externe) comme **artefact**
     (montre le compromis sans figer de point ; seuil opérationnel = flywheel) → puis **J6 clos**.
 
+### J7 — Priorisation : scorecard glass-box vs LLM (le fil rouge se NUANCE)
+- **Date** : 27/07/2026. `[établi en séance]`
+
+- **Contexte / ce qui a été fait** : 5ᵉ barreau (§6) — priorité en **scorecard additif
+  explicable** (`ml/smart_ticketing_ml/priority/` : `lexicon.py` config gelée +
+  `scorecard.py` moteur pur), livré comme composant de production, et **mesuré contre
+  un foil LLM boîte-noire**. Harnais J7 (`eval/priority.py` = κ pondéré + accuracy ±1 ;
+  `eval/priority_llm.py` = prédicteur few-shot local ; `eval/run_priority.py` =
+  orchestrateur + rapport). **Quatre prédicteurs** comparés sur **deux jeux** (gold
+  synthétique 102 · externe réel 46), métrique de tête **κ pondéré quadratique** (accord
+  ordinal avec les labels relus main de Fedi). Rapport versionné `ml/eval/reports/j7/`.
+
+- **RÉSULTAT CENTRAL — mon hypothèse est RÉFUTÉE, et c'est le résultat le plus
+  précieux du jalon.** Tableau κ pondéré (gold synthétique → externe réel) :
+  | Prédicteur | gold | réel | écart |
+  |---|---|---|---|
+  | Classe majoritaire (MOYENNE, plancher) | 0,000 | 0,000 | +0,000 |
+  | Priorité-source (label amont brut) | 0,604 | 0,612 | −0,008 |
+  | **Scorecard glass-box (surface littérale)** | **0,226** | **0,158** | +0,068 |
+  | **LLM few-shot (sémantique, qwen2.5:14b)** | **0,456** | **0,784** | **−0,329** |
+  L'hypothèse pré-enregistrée « **les règles explicites transfèrent mieux que
+  l'apprentissage** » est **fausse pour la priorité** : en niveau absolu sur le réel, le
+  LLM (0,784) **écrase** le scorecard (0,158). Le LLM est même **meilleur sur le réel que
+  sur le synthétique** (acc±1 = **1,000**, **0 désaccord ≥ 2 crans**, distribution prédite
+  collée à la vérité → vérifié non-artefact).
+
+- **Le fil rouge s'AFFINE — le clivage du transfert n'est pas appris/explicite mais
+  SÉMANTIQUE/SUPERFICIEL.** Ce qui saisit le **sens contextuel** transfère (retrieval
+  `bge-m3` J6 ; LLM de priorité) ; ce qui traite la **surface** échoue (classification sur
+  vocabulaire synthétique J3/J5 ; scorecard sur mots-clés **littéraux**). Nuance de
+  rigueur : sur l'axe de l'**écart**, le scorecard explicite **ne s'effondre pas** (+0,068,
+  vs classifieur *appris* de J3 : +0,556) — il est **uniformément faible**. Ce qui est
+  réfuté, c'est « explicite = *compétitif* sur le réel ».
+
+- **Le synthétique est un proxy NON FIABLE — il trompe dans les DEUX sens.** « Le
+  synthétique cache la difficulté » vaut pour le **scorecard** (0,226 > 0,158) mais
+  **s'inverse pour le LLM** (0,456 < 0,784 : le réel lui est *plus facile*, emails riches
+  en contexte vs tickets synthétiques one-liners ambigus). Le synthétique ne prédit donc
+  pas la performance réelle **ni à la hausse ni à la baisse** — raffinement du fil rouge
+  (jusqu'ici il n'était vu que comme *plafond* trompeur).
+
+- **Mode d'échec du scorecard (mesuré, pas supposé)** : **sous-prédiction** dominante —
+  **24/46** vrais HAUTE/CRITIQUE tombent en MOYENNE car la gravité réelle s'exprime **par
+  le contexte** (« écran qui affecte gravement l'utilisabilité », « authentification AWS »)
+  sans mes mots-clés littéraux → base seule. Effet secondaire : déclenchement **fortuit**
+  (un mot-clé présent dans le boilerplate d'un email ≠ le problème). **Pas** de
+  sur-prédiction sur « urgent » : ce piège (tout email poli dit « urgent ») a été
+  **pré-empté par conception** — urgence auto-déclarée pondérée +0,5 seulement.
+
+- **Décisions + alternatives écartées + justification** :
+  1. **Scorecard glass-box en production vs LLM-décideur** → **glass-box conservé**.
+     Le technicien voit **pourquoi** (décomposition facteur par facteur, §6.5) et peut
+     **corriger** — valeur produit. Le LLM, plus juste, est **opaque**. **Arbitrage
+     transparence vs robustesse** = planche de soutenance de premier ordre. Le LLM est
+     gardé comme **foil de mesure**, pas mis en production décisionnelle.
+  2. **Poids/seuils posés A PRIORI, jamais optimisés sur le test** (`lexicon.py` gelé,
+     en-tête daté). Chaque poids = justification **métier** (impact large → fort ; urgence
+     auto-déclarée → faible car sur-utilisée ; etc.). **Catégorie = mapping bon-sens IT
+     indépendant** (pas les priors liés à la génération synthétique → évite un confond
+     same-origin). **Seuils ronds** (1,0 / 2,5 / 4,0) par répartition IT attendue.
+     Alternative écartée : caler poids/seuils sur des quantiles du gold → **optimisation
+     sur le test**, refusée (6ᵉ fois que le piège se présente dans le projet).
+  3. **Analyse de sensibilité ±1 sur les seuils** (artefact de robustesse) : **aucun
+     décalage ne sauve** le scorecard (meilleur = −1,0 → 0,289, loin du LLM) → l'échec
+     n'est **pas** un artefact de seuil.
+  4. **Plafonnement par famille explicable** (urgence [−1, +4], impact [0, +3]) : borne le
+     score sans masquer la décomposition (« CRITIQUE (plafonné) car … »).
+  5. **Catégorie VRAIE en entrée** (pas la prédite J5) → isole la logique de priorité de
+     l'erreur du classifieur.
+  6. **Foil LLM local-first** (qwen2.5:14b, temp 0, sortie structurée, caché/reprenable) —
+     cohérent CDC §10, aucun appel externe. **4 exemples few-shot ÉCRITS À LA MAIN** (pas
+     du train, ni du gold, ni des 46 externes ; étanchéité vérifiée), ancrés sur la
+     **source unique** `taxonomy.PRIORITY_DEFINITIONS` (mêmes critères que la relecture
+     du gold et que le scorecard).
+
+- **Décision de production** : **scorecard conservé** (explicabilité), **NON réparé** — le
+  réparer reviendrait à optimiser sur le test. Poids/seuils exposables en **paramètres
+  admin** (§6.5) ; le **réglage sur données réelles est délégué au flywheel J9** (mêmes
+  posture qu'en J5 pour la calibration/abstention).
+
+- **Enseignements / limites** :
+  - **n=46** au réel → tendances **indicatives**, pas de conclusion statistique par classe.
+  - **Rubrique partagée** : le LLM et Fedi appliquent les **mêmes** `PRIORITY_DEFINITIONS`
+    → l'accord élevé (0,784) est **en partie attendu** (légitime, cf. validation du juge
+    J6 ; **non circulaire** : Fedi n'a jamais vu les sorties du LLM).
+  - **Valeur soutenance** : le contraste **glass-box transparent mais fragile** vs **LLM
+    opaque mais robuste** est une planche de premier ordre, et le fil rouge affiné
+    (sémantique vs surface) unifie J3, J5, J6 et J7.
+  - **Livrables** : `priority/` (scorecard + config gelée), harnais J7 (`eval/priority.py`,
+    `priority_llm.py`, `run_priority.py`), rapport de référence `ml/eval/reports/j7/`
+    (4 prédicteurs × 2 jeux, matrices, sensibilité, décompositions, démo SLA).
+
 ### J8bis — Pièces jointes dans le pipeline IA (extension validée par l'encadrant)
 - **Date** : 17/07/2026. `[établi en séance]`
 - **Contexte / nouvelle exigence** : l'encadrant demande d'**intégrer les pièces

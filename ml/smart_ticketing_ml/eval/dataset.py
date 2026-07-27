@@ -38,6 +38,10 @@ class Exemple:
     categorie: str
     priorite: str
     statut: str
+    # Priorité du LABEL D'ORIGINE (avant relecture main) : `priorite_generee` côté
+    # gold synthétique, `priorite_source` côté validation externe réelle. Sert de
+    # baseline « label amont brut » au J7 (à comparer au gold relu).
+    priorite_source: str = ""
 
     @property
     def texte(self) -> str:
@@ -67,6 +71,7 @@ def _to_exemple(rec: dict) -> Exemple:
         categorie=rec["categorie"],
         priorite=rec.get("priorite", ""),
         statut=rec.get("statut", ""),
+        priorite_source=rec.get("priorite_generee") or rec.get("priorite_source") or "",
     )
 
 

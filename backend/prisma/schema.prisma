@@ -225,12 +225,20 @@ model EvenementTicket {
   @@map("evenements_ticket")
 }
 
-// Prévu dans le schéma dès maintenant ; la logique IA sera implémentée en phase 5.
+// Suggestion produite par le module IA (Greffe 1 : CLASSIFICATION, PRIORISATION ;
+// Greffes suivantes : SOLUTION, RESUME). L'IA SUGGÈRE, elle n'impose pas : le
+// technicien valide/corrige (via changerCategorie/changerPriorite), ce qui alimente
+// le flywheel J9 (comparaison « suggéré X / choisi Y »).
 model SuggestionIA {
   id             Int      @id @default(autoincrement())
   typeSuggestion String   @map("type_suggestion") // CLASSIFICATION | PRIORISATION | SOLUTION | RESUME
-  contenu        String
-  scoreConfiance Float    @map("score_confiance") // 0..1, affiché au technicien (validation humaine obligatoire)
+  contenu        String   // valeur suggérée : nom de catégorie, niveau de priorité, …
+  // Proba top-1 (classification) ; NULL pour la scorecard déterministe (priorité :
+  // règle glass-box sans probabilité — on ne fabrique pas de fausse confiance).
+  scoreConfiance Float?   @map("score_confiance")
+  // Détail structuré : probabilités par classe (classification) OU décomposition
+  // glass-box de la scorecard (priorité, `Decision.to_dict()` — « HAUTE car … »).
+  details        Json?
   valideeParTechnicien Boolean? @map("validee_par_technicien")
   dateCreation   DateTime @default(now()) @map("date_creation")
 

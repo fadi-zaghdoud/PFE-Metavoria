@@ -7,7 +7,6 @@ import type {
   FiltresTickets,
   PrioriteTicket,
   StatistiquesTickets,
-  StatutTicket,
   TicketDetail,
   TicketResume,
 } from '../../types/ticket';
@@ -34,17 +33,29 @@ export const ticketsApi = {
   creer: (payload: CreerTicketPayload, token: string) =>
     apiRequest<{ ticket: TicketDetail }>('/tickets', { method: 'POST', body: payload, token }),
 
-  changerStatut: (id: number, statut: StatutTicket, token: string) =>
-    apiRequest<{ ticket: TicketDetail }>(`/tickets/${id}/statut`, {
-      method: 'PATCH',
-      body: { statut },
-      token,
-    }),
+  // Transitions du cycle de vie (voir ticket.service.ts) — corps vide, l'action
+  // est portée par l'URL et l'acteur (contrôle des droits côté serveur).
+  prendreEnCharge: (id: number, token: string) =>
+    apiRequest<{ ticket: TicketDetail }>(`/tickets/${id}/prise-en-charge`, { method: 'POST', token }),
+
+  resoudre: (id: number, token: string) =>
+    apiRequest<{ ticket: TicketDetail }>(`/tickets/${id}/resolution`, { method: 'POST', token }),
+
+  cloturer: (id: number, token: string) =>
+    apiRequest<{ ticket: TicketDetail }>(`/tickets/${id}/cloture`, { method: 'POST', token }),
 
   changerPriorite: (id: number, priorite: PrioriteTicket, token: string) =>
     apiRequest<{ ticket: TicketDetail }>(`/tickets/${id}/priorite`, {
       method: 'PATCH',
       body: { priorite },
+      token,
+    }),
+
+  // Correction de la catégorie (socle du flywheel J9).
+  changerCategorie: (id: number, categorieId: number, token: string) =>
+    apiRequest<{ ticket: TicketDetail }>(`/tickets/${id}/categorie`, {
+      method: 'PATCH',
+      body: { categorieId },
       token,
     }),
 

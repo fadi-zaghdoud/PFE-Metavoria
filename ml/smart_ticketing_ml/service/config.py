@@ -38,6 +38,11 @@ RERANK_MAX_LENGTH = int(os.environ.get("RERANK_MAX_LENGTH", "512"))
 # Taille de lot pour le scoring des paires.
 RERANK_TAILLE_LOT = int(os.environ.get("RERANK_TAILLE_LOT", "32"))
 
+# Classifieur de catégorie figé (J5, LogReg non calibrée). Défaut : le dernier
+# `artifacts/models/classifier_*.joblib` (résolu dans `predictors`) — surchargez
+# pour épingler une version précise. Absent → `/classify` répond 503 (Node dégrade).
+CLASSIFIER_PATH = os.environ.get("CLASSIFIER_PATH")
+
 # Adresse d'écoute du service FastAPI.
 HOTE = os.environ.get("EMBED_HOTE", "127.0.0.1")
 PORT = int(os.environ.get("EMBED_PORT", "8000"))

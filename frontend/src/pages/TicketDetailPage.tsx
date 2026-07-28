@@ -5,13 +5,16 @@ import {
   CheckCheck,
   Clock,
   Flag,
+  Lock,
   RefreshCw,
   Send,
   Sparkles,
   Star,
+  Tag,
   Ticket,
   UserMinus,
   UserPlus,
+  Wrench,
   type LucideIcon,
 } from 'lucide-react';
 import { ticketsApi } from '../features/tickets/ticketsApi';
@@ -21,14 +24,15 @@ import {
   LABEL_STATUT,
   PRIORITE_OPTIONS,
   PrioriteLabel,
-  STATUT_OPTIONS,
   StatutBadge,
 } from '../features/tickets/ticket-ui';
 import { useAuthStore } from '../store/authStore';
 import { ApiError } from '../lib/apiClient';
 import { tempsRelatif, dateLongue } from '../lib/format';
 import type {
+  Categorie,
   Commentaire,
+  DetailPrioriteIA,
   EvenementTicket,
   PrioriteTicket,
   StatutTicket,
@@ -86,14 +90,16 @@ function decrireEvenement(e: EvenementTicket): string {
       return `a changé le statut : ${labelStatut(e.ancienneValeur)} → ${labelStatut(e.nouvelleValeur)}`;
     case 'CHANGEMENT_PRIORITE':
       return `a changé la priorité : ${labelPriorite(e.ancienneValeur)} → ${labelPriorite(e.nouvelleValeur)}`;
+    case 'CHANGEMENT_CATEGORIE':
+      return `a changé la catégorie : ${e.ancienneValeur ?? 'Non classé'} → ${e.nouvelleValeur ?? '—'}`;
+    case 'PRISE_EN_CHARGE':
+      return 'a pris le ticket en charge';
     case 'AFFECTATION':
-      return e.nouvelleValeur === `${e.auteur.prenom} ${e.auteur.nom}`
-        ? 'a pris le ticket en charge'
-        : `a assigné le ticket à ${e.nouvelleValeur}`;
+      return `a assigné le ticket à ${e.nouvelleValeur}`;
     case 'DESAFFECTATION':
       return "a retiré l'affectation";
     case 'EVALUATION':
-      return `a évalué la résolution : ${e.nouvelleValeur ?? ''}`;
+      return `a validé la résolution : ${e.nouvelleValeur ?? ''}`;
     default:
       return 'a mis à jour le ticket';
   }
@@ -102,8 +108,10 @@ function decrireEvenement(e: EvenementTicket): string {
 const ICONE_EVENEMENT: Record<TypeEvenement, LucideIcon> = {
   CHANGEMENT_STATUT: RefreshCw,
   CHANGEMENT_PRIORITE: Flag,
+  CHANGEMENT_CATEGORIE: Tag,
   AFFECTATION: UserPlus,
   DESAFFECTATION: UserMinus,
+  PRISE_EN_CHARGE: Wrench,
   EVALUATION: Star,
 };
 
@@ -151,19 +159,20 @@ function BlocSatisfaction({
   enCours: boolean;
 }) {
   const dejaEvalue = ticket.satisfactionNote != null;
-  const [edition, setEdition] = useState(false);
-  const [note, setNote] = useState(ticket.satisfactionNote ?? 0);
+  const [note, setNote] = useState(0);
   const [survol, setSurvol] = useState(0);
-  const [commentaire, setCommentaire] = useState(ticket.satisfactionCommentaire ?? '');
+  const [commentaire, setCommentaire] = useState('');
 
-  const montrerFormulaire = estDemandeur && (!dejaEvalue || edition);
+  // Le demandeur valide UNE fois, depuis l'état RESOLU (la validation clôture le
+  // ticket). Après clôture, l'évaluation est verrouillée côté serveur → lecture seule.
+  const peutValider = estDemandeur && ticket.statut === 'RESOLU' && !dejaEvalue;
 
-  if (montrerFormulaire) {
+  if (peutValider) {
     return (
       <Card>
         <CardHeader
-          title="Votre satisfaction"
-          description="Le problème a-t-il été résolu à votre convenance ?"
+          title="Valider la résolution"
+          description="Le problème a-t-il été résolu à votre convenance ? Votre validation clôturera le ticket."
         />
         <CardContent className="space-y-3">
           <div className="flex items-center gap-1" onMouseLeave={() => setSurvol(0)}>
@@ -196,22 +205,14 @@ function BlocSatisfaction({
             aria-label="Commentaire de satisfaction"
             maxLength={2000}
           />
-          <div className="flex justify-end gap-2">
-            {dejaEvalue && (
-              <Button variant="secondary" size="sm" disabled={enCours} onClick={() => setEdition(false)}>
-                Annuler
-              </Button>
-            )}
+          <div className="flex justify-end">
             <Button
               size="sm"
               loading={enCours}
               disabled={note < 1 || enCours}
-              onClick={() => {
-                onEvaluer(note, commentaire);
-                setEdition(false);
-              }}
+              onClick={() => onEvaluer(note, commentaire)}
             >
-              Envoyer mon évaluation
+              Valider et clôturer
             </Button>
           </div>
         </CardContent>
@@ -233,28 +234,24 @@ function BlocSatisfaction({
               « {ticket.satisfactionCommentaire} »
             </p>
           )}
-          <p className="text-xs text-slate-400">
-            {ticket.satisfactionDate && `Évalué ${tempsRelatif(ticket.satisfactionDate)}`}
-            {estDemandeur && (
-              <button
-                onClick={() => setEdition(true)}
-                className="ml-2 font-medium text-primary-600 hover:underline"
-              >
-                Modifier
-              </button>
-            )}
-          </p>
+          {ticket.satisfactionDate && (
+            <p className="text-xs text-slate-400">Validé {tempsRelatif(ticket.satisfactionDate)}</p>
+          )}
         </CardContent>
       </Card>
     );
   }
 
-  // Support/admin : ticket résolu mais pas encore évalué par le demandeur.
+  // Reste deux cas : RESOLU en attente de validation (vue support), ou CLOTURE sans note (clôture admin).
   return (
     <Card>
       <CardHeader title="Satisfaction du demandeur" />
       <CardContent>
-        <p className="text-sm text-slate-400">En attente de l'évaluation du demandeur.</p>
+        <p className="text-sm text-slate-400">
+          {ticket.statut === 'RESOLU'
+            ? 'En attente de la validation du demandeur.'
+            : 'Ticket clôturé sans évaluation du demandeur.'}
+        </p>
       </CardContent>
     </Card>
   );
@@ -271,10 +268,11 @@ export function TicketDetailPage() {
   const [chargement, setChargement] = useState(true);
   const [introuvable, setIntrouvable] = useState(false);
   const [techniciens, setTechniciens] = useState<Utilisateur[]>([]);
+  const [categories, setCategories] = useState<Categorie[]>([]);
 
   const [reponse, setReponse] = useState('');
   const [envoiCommentaire, setEnvoiCommentaire] = useState(false);
-  const [action, setAction] = useState(false); // statut / priorité / affectation en cours
+  const [action, setAction] = useState(false); // transition / priorité / catégorie / affectation en cours
   const [envoiSatisfaction, setEnvoiSatisfaction] = useState(false);
 
   useEffect(() => {
@@ -299,6 +297,18 @@ export function TicketDetailPage() {
       .then(({ utilisateurs }) => setTechniciens(utilisateurs.filter((u) => u.actif)))
       .catch(() => {
         /* l'affectation reste possible manuellement plus tard */
+      });
+  }, [token, utilisateur?.role]);
+
+  // Liste des catégories pour la recatégorisation (technicien assigné ou admin).
+  useEffect(() => {
+    if (!token) return;
+    if (utilisateur?.role !== 'ADMINISTRATEUR' && utilisateur?.role !== 'TECHNICIEN') return;
+    ticketsApi
+      .listerCategories(token)
+      .then(({ categories: cats }) => setCategories(cats))
+      .catch(() => {
+        /* la recatégorisation reste indisponible sans bloquer la page */
       });
   }, [token, utilisateur?.role]);
 
@@ -335,6 +345,11 @@ export function TicketDetailPage() {
   const montrerSatisfaction =
     ticket.statut === 'RESOLU' || ticket.statut === 'CLOTURE' || ticket.satisfactionNote != null;
 
+  // Suggestions IA (Greffe 1) — affichage minimal glass-box sur le détail.
+  const suggestionCategorie = ticket.suggestionsIA.find((s) => s.typeSuggestion === 'CLASSIFICATION');
+  const suggestionPriorite = ticket.suggestionsIA.find((s) => s.typeSuggestion === 'PRIORISATION');
+  const detailPriorite = suggestionPriorite?.details as DetailPrioriteIA | undefined;
+
   // Fil unifié : commentaires + événements (changements), triés chronologiquement.
   type ElementFil =
     | { cle: string; date: string; kind: 'message'; commentaire: Commentaire }
@@ -361,15 +376,36 @@ export function TicketDetailPage() {
     }
   }
 
-  async function handleChangerStatut(statut: StatutTicket) {
-    if (!token || statut === ticket!.statut) return;
+  async function handlePrendreEnCharge() {
+    if (!token) return;
     const res = await withAction(
-      () => ticketsApi.changerStatut(ticket!.id, statut, token),
-      'Le statut n\'a pas pu être modifié',
+      () => ticketsApi.prendreEnCharge(ticket!.id, token),
+      'La prise en charge a échoué',
     );
     if (res) {
       setTicket(res.ticket);
-      toast.success('Statut mis à jour', `Le ticket est désormais « ${LABEL_STATUT[statut]} ».`);
+      toast.success('Ticket pris en charge', 'Le ticket est passé « En cours ».');
+    }
+  }
+
+  async function handleResoudre() {
+    if (!token) return;
+    const res = await withAction(
+      () => ticketsApi.resoudre(ticket!.id, token),
+      "Le ticket n'a pas pu être marqué résolu",
+    );
+    if (res) {
+      setTicket(res.ticket);
+      toast.success('Ticket résolu', 'Le demandeur va être invité à valider la résolution.');
+    }
+  }
+
+  async function handleCloturer() {
+    if (!token) return;
+    const res = await withAction(() => ticketsApi.cloturer(ticket!.id, token), 'La clôture a échoué');
+    if (res) {
+      setTicket(res.ticket);
+      toast.success('Ticket clôturé', 'Le ticket est désormais clôturé.');
     }
   }
 
@@ -382,6 +418,18 @@ export function TicketDetailPage() {
     if (res) {
       setTicket(res.ticket);
       toast.success('Priorité mise à jour', `Priorité « ${LABEL_PRIORITE[priorite]} ».`);
+    }
+  }
+
+  async function handleChangerCategorie(categorieId: number) {
+    if (!token || categorieId === ticket!.categorie?.id) return;
+    const res = await withAction(
+      () => ticketsApi.changerCategorie(ticket!.id, categorieId, token),
+      "La catégorie n'a pas pu être modifiée",
+    );
+    if (res) {
+      setTicket(res.ticket);
+      toast.success('Catégorie mise à jour', `Catégorie « ${res.ticket.categorie?.nom ?? '—'} ».`);
     }
   }
 
@@ -434,7 +482,16 @@ export function TicketDetailPage() {
     }
   }
 
-  const peutResoudre = estGestionnaire && ticket.statut !== 'RESOLU' && !estCloture;
+  // Action principale contextuelle de l'en-tête, selon rôle × statut du cycle de vie.
+  type ActionPrincipale = { label: string; icon: LucideIcon; onClick: () => void };
+  let actionPrincipale: ActionPrincipale | null = null;
+  if (estTechnicienAssigne && ticket.statut === 'EN_ATTENTE') {
+    actionPrincipale = { label: 'Prendre en charge', icon: Wrench, onClick: handlePrendreEnCharge };
+  } else if (estTechnicienAssigne && ticket.statut === 'EN_COURS') {
+    actionPrincipale = { label: 'Marquer résolu', icon: CheckCheck, onClick: handleResoudre };
+  } else if (estAdmin && ticket.statut === 'RESOLU') {
+    actionPrincipale = { label: 'Clôturer le ticket', icon: Lock, onClick: handleCloturer };
+  }
 
   return (
     <div>
@@ -460,10 +517,10 @@ export function TicketDetailPage() {
               Créé {tempsRelatif(ticket.dateCreation)}
             </p>
           </div>
-          {peutResoudre && (
-            <Button variant="secondary" disabled={action} onClick={() => handleChangerStatut('RESOLU')}>
-              <CheckCheck className="size-4" aria-hidden />
-              Marquer résolu
+          {actionPrincipale && (
+            <Button disabled={action} onClick={actionPrincipale.onClick}>
+              <actionPrincipale.icon className="size-4" aria-hidden />
+              {actionPrincipale.label}
             </Button>
           )}
         </div>
@@ -548,24 +605,10 @@ export function TicketDetailPage() {
             <CardContent className="space-y-3.5">
               <div className="grid grid-cols-[90px_1fr] items-center gap-2">
                 <p className="text-xs text-slate-400">Statut</p>
-                {estGestionnaire ? (
-                  <Select
-                    value={ticket.statut}
-                    disabled={action}
-                    onChange={(e) => handleChangerStatut(e.target.value as StatutTicket)}
-                    aria-label="Statut du ticket"
-                  >
-                    {STATUT_OPTIONS.map((s) => (
-                      <option key={s} value={s}>
-                        {LABEL_STATUT[s]}
-                      </option>
-                    ))}
-                  </Select>
-                ) : (
-                  <div>
-                    <StatutBadge statut={ticket.statut} />
-                  </div>
-                )}
+                {/* Lecture seule : le statut avance via les actions du cycle de vie (en-tête). */}
+                <div>
+                  <StatutBadge statut={ticket.statut} />
+                </div>
               </div>
 
               <div className="grid grid-cols-[90px_1fr] items-center gap-2">
@@ -613,11 +656,6 @@ export function TicketDetailPage() {
                       {ticket.technicien.prenom} {ticket.technicien.nom}
                     </span>
                   </div>
-                ) : utilisateur?.role === 'TECHNICIEN' ? (
-                  <Button size="sm" variant="secondary" disabled={action} onClick={() => handleAffecter(utilisateur.id)}>
-                    <UserPlus className="size-3.5" aria-hidden />
-                    Prendre en charge
-                  </Button>
                 ) : (
                   <span className="text-sm text-slate-400">Non assigné</span>
                 )}
@@ -625,7 +663,25 @@ export function TicketDetailPage() {
 
               <div className="grid grid-cols-[90px_1fr] items-center gap-2">
                 <p className="text-xs text-slate-400">Catégorie</p>
-                {ticket.categorie ? (
+                {(estAdmin || estTechnicienAssigne) && !estCloture ? (
+                  <Select
+                    value={ticket.categorie?.id ?? ''}
+                    disabled={action || categories.length === 0}
+                    onChange={(e) => e.target.value && handleChangerCategorie(Number(e.target.value))}
+                    aria-label="Catégorie du ticket"
+                  >
+                    {!ticket.categorie && (
+                      <option value="" disabled>
+                        Choisir une catégorie…
+                      </option>
+                    )}
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nom}
+                      </option>
+                    ))}
+                  </Select>
+                ) : ticket.categorie ? (
                   <Badge variant="neutral">{ticket.categorie.nom}</Badge>
                 ) : (
                   <span className="text-sm text-slate-400">Non classé</span>
@@ -658,8 +714,8 @@ export function TicketDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Assistant IA — à venir en Phase 5 */}
-          <div className="relative overflow-hidden rounded-2xl border border-dashed border-primary-200 bg-gradient-to-br from-primary-50/70 to-violet-50/50 p-4">
+          {/* Assistant IA — suggestions à la création (Greffe 1, glass-box : montre sa confiance) */}
+          <div className="relative overflow-hidden rounded-2xl border border-primary-200/70 bg-gradient-to-br from-primary-50/70 to-violet-50/50 p-4">
             <span
               aria-hidden
               className="pointer-events-none absolute -right-8 -top-8 size-24 rounded-full bg-gradient-to-br from-primary-400/20 to-transparent blur-2xl"
@@ -670,13 +726,47 @@ export function TicketDetailPage() {
               </span>
               <h2 className="text-sm font-semibold text-slate-700">Assistant IA</h2>
               <Badge variant="primary" className="ml-auto">
-                Phase 5
+                Suggestions
               </Badge>
             </div>
-            <p className="relative mt-2 text-xs leading-relaxed text-slate-500">
-              Classification automatique, suggestion de résolution et recherche de tickets similaires
-              seront ajoutées avec le module d'intelligence artificielle.
-            </p>
+
+            {suggestionCategorie || suggestionPriorite ? (
+              <div className="relative mt-3 space-y-3">
+                {suggestionCategorie && (
+                  <div>
+                    <p className="text-xs text-slate-400">Catégorie suggérée</p>
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <Badge variant="neutral">{suggestionCategorie.contenu}</Badge>
+                      {suggestionCategorie.scoreConfiance != null && (
+                        <span className="text-xs text-slate-500">
+                          confiance {Math.round(suggestionCategorie.scoreConfiance * 100)} %
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {suggestionPriorite && (
+                  <div>
+                    <p className="text-xs text-slate-400">Priorité suggérée</p>
+                    <div className="mt-1">
+                      <PrioriteLabel priorite={suggestionPriorite.contenu as PrioriteTicket} />
+                    </div>
+                    {detailPriorite?.explication && (
+                      <p className="mt-1.5 text-xs leading-relaxed text-slate-600">
+                        {detailPriorite.explication}
+                      </p>
+                    )}
+                  </div>
+                )}
+                <p className="text-[11px] leading-relaxed text-slate-400">
+                  Suggestions non contraignantes — à valider ou corriger par le support.
+                </p>
+              </div>
+            ) : (
+              <p className="relative mt-2 text-xs leading-relaxed text-slate-500">
+                Aucune suggestion IA pour ce ticket (service indisponible à la création).
+              </p>
+            )}
           </div>
         </div>
       </div>

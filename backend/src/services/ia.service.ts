@@ -1,0 +1,157 @@
+import { env } from '../config/env';
+import { prisma } from '../config/prisma';
+import { Prisma } from '../generated/prisma/client';
+import { categorieRepository } from '../repositories/categorie.repository';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pont Node → microservice IA (Python/FastAPI). Contrats alignés sur `service/app.py`.
+// PRINCIPE : l'IA SUGGÈRE et est NON bloquante. `enrichirTicket` n'échoue jamais —
+// toute erreur (service down, timeout, écriture) est absorbée et journalisée, comme
+// `notification.service.ts`. La création du ticket a déjà été committée en amont.
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface ReponseClassify {
+  categorie: string; // nom de catégorie (= classe du modèle figé, accentuée)
+  confiance: number; // proba top-1 (0..1), NON seuillée
+  probabilites: Record<string, number>;
+  modele_embedding: string;
+  embedding: number[]; // 1024d L2-normalisé — à persister côté Node
+}
+
+interface ReponsePriority {
+  niveau: string; // FAIBLE | MOYENNE | HAUTE | CRITIQUE
+  score: number;
+  plafonne: boolean;
+  explication: string;
+  contributions: Array<Record<string, unknown>>;
+  plafonnements: string[];
+}
+
+// Appel HTTP borné par timeout (AbortController) : au-delà de IA_TIMEOUT_MS, on
+// abandonne → traité comme un échec d'étage → dégradation (pas de suggestion).
+async function appelerIA<T>(chemin: string, corps: unknown): Promise<T> {
+  const controleur = new AbortController();
+  const minuteur = setTimeout(() => controleur.abort(), env.IA_TIMEOUT_MS);
+  try {
+    const reponse = await fetch(`${env.SERVICE_IA_URL}${chemin}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(corps),
+      signal: controleur.signal,
+    });
+    if (!reponse.ok) {
+      throw new Error(`IA ${chemin} → HTTP ${reponse.status}`);
+    }
+    return (await reponse.json()) as T;
+  } finally {
+    clearTimeout(minuteur);
+  }
+}
+
+const classifier = (titre: string, description: string) =>
+  appelerIA<ReponseClassify>('/classify', { titre, description });
+
+const prioriser = (titre: string, description: string, categorie: string) =>
+  appelerIA<ReponsePriority>('/priority', { titre, description, categorie });
+
+// Écrit l'embedding renvoyé par /classify. Prisma ne sait pas écrire le type
+// `Unsupported("vector(1024)")` → SQL brut paramétré : le vecteur part en littéral
+// pgvector `[...]` casté ::vector. Le service ne touche jamais la DB (Node le fait).
+async function ecrireEmbedding(ticketId: number, embedding: number[], modele: string): Promise<void> {
+  const litteral = `[${embedding.join(',')}]`;
+  await prisma.$executeRaw`
+    UPDATE tickets
+    SET embedding = ${litteral}::vector, embedding_modele = ${modele}
+    WHERE id = ${ticketId}`;
+}
+
+const journaliser = (etape: string, ticketId: number, err: unknown) =>
+  console.error(`[IA] ${etape} ticket #${ticketId} :`, err instanceof Error ? err.message : err);
+
+// Orchestration synchrone embed → classify → priority, étage par étage. Chaque
+// étage dégrade proprement (cf. tableau de dégradation gracieuse du plan).
+async function enrichir(ticket: { id: number; titre: string; description: string }): Promise<void> {
+  const { id, titre, description } = ticket;
+
+  // ── Étage 1 : classification (le vecteur d'embedding est renvoyé au passage) ──
+  let classification: ReponseClassify;
+  try {
+    classification = await classifier(titre, description);
+  } catch (err) {
+    // Service down / /classify KO / timeout → aucune suggestion, priorité sautée
+    // (décision : soit le couple catégorie+priorité, soit rien). Ticket déjà créé.
+    journaliser('classify', id, err);
+    return;
+  }
+
+  // ── Étage 1b : persistance de l'embedding (indépendante des suggestions) ──
+  try {
+    await ecrireEmbedding(id, classification.embedding, classification.modele_embedding);
+  } catch (err) {
+    journaliser('embedding', id, err); // rattrapable par backfill.py — on continue
+  }
+
+  // ── Résolution nom → catégorie réelle (catégories dynamiques) ──
+  // Label absent en base = modèle périmé (catégorie renommée/supprimée) → abstention :
+  // pas de couple exploitable → on n'écrit ni classification ni priorité.
+  const categorie = await categorieRepository.findByNom(classification.categorie).catch(() => null);
+  if (!categorie) {
+    console.warn(
+      `[IA] catégorie « ${classification.categorie} » absente en base (modèle périmé ?) — suggestion écartée (ticket #${id})`,
+    );
+    return;
+  }
+
+  // ── Étage 2 : suggestion CLASSIFICATION ──
+  try {
+    await prisma.suggestionIA.create({
+      data: {
+        ticketId: id,
+        typeSuggestion: 'CLASSIFICATION',
+        contenu: categorie.nom,
+        scoreConfiance: classification.confiance, // proba top-1
+        details: {
+          categorieId: categorie.id, // permet au technicien d'accepter (changerCategorie)
+          probabilites: classification.probabilites,
+          modeleEmbedding: classification.modele_embedding,
+        },
+      },
+    });
+  } catch (err) {
+    journaliser('persistance CLASSIFICATION', id, err);
+  }
+
+  // ── Étage 3 : priorité (dépend de la catégorie — dépendance J7) ──
+  let priorite: ReponsePriority;
+  try {
+    priorite = await prioriser(titre, description, categorie.nom);
+  } catch (err) {
+    journaliser('priority', id, err); // classification déjà persistée ; pas de priorité
+    return;
+  }
+  try {
+    await prisma.suggestionIA.create({
+      data: {
+        ticketId: id,
+        typeSuggestion: 'PRIORISATION',
+        contenu: priorite.niveau,
+        scoreConfiance: null, // scorecard déterministe : pas de proba (on ne fabrique rien)
+        details: priorite as unknown as Prisma.InputJsonValue, // niveau + décomposition glass-box
+      },
+    });
+  } catch (err) {
+    journaliser('persistance PRIORISATION', id, err);
+  }
+}
+
+export const iaService = {
+  // Point d'entrée non bloquant : ne rejette jamais (filet de sécurité + étages internes).
+  async enrichirTicket(ticket: { id: number; titre: string; description: string }): Promise<void> {
+    if (!env.IA_ACTIVE) return;
+    try {
+      await enrichir(ticket);
+    } catch (err) {
+      journaliser('enrichissement (interrompu)', ticket.id, err);
+    }
+  },
+};

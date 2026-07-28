@@ -886,6 +886,159 @@ demande explicite.
     `priority_llm.py`, `run_priority.py`), rapport de référence `ml/eval/reports/j7/`
     (4 prédicteurs × 2 jeux, matrices, sensibilité, décompositions, démo SLA).
 
+### J7b (préparation de l'intégration IA) — Alignement du workflow métier du ticket
+- **Date** : 28/07/2026. `[établi en séance]`
+- **Contexte** : bascule du module IA (labo `ml/`) vers son **intégration dans l'application**.
+  Avant de brancher l'IA, le workflow du ticket est **aligné sur le processus métier cible**
+  — l'IA se greffera sur ces étapes (classification/priorité à la création, RAG au traitement,
+  validation technicien → flywheel à la résolution).
+- **Inventaire préalable (état des lieux, mesuré)** : à ce stade, **aucun pont IA** n'existait
+  — le microservice FastAPI n'exposait que `/embed`, `/rerank`, `/sante` ; les modules
+  classification / priorité / RAG vivaient comme **librairies** appelées par les harnais d'éval,
+  **jamais servies en HTTP ni appelées par Node** (le RAG `suggerer` prend même un
+  `psycopg.Cursor` en argument) ; la table `SuggestionIA` (au schéma) restait **inutilisée** ;
+  l'UI n'affichait qu'un **placeholder** « Assistant IA — Phase 5 ». Aucun `SERVICE_IA_URL`,
+  aucune route `/ia`, le service `ml/` **absent du docker-compose**.
+- **Workflow cible (décidé en séance, machine à états LINÉAIRE)** :
+  `NOUVEAU ──assignation(admin)──▶ EN_ATTENTE ──prise en charge(tech. assigné)──▶ EN_COURS
+  ──résolution(tech. assigné)──▶ RESOLU ──validation(demandeur) | clôture(admin)──▶ CLOTURE`
+- **Écarts corrigés par rapport au code Epic 2** :
+  1. L'assignation par l'admin pose **EN_ATTENTE** (auparavant : passage direct EN_COURS).
+     Réassignation → repasse EN_ATTENTE ; désassignation → repasse NOUVEAU.
+  2. Nouvelle action **« prendre en charge »** (technicien assigné) : EN_ATTENTE→EN_COURS,
+     **distincte** de l'assignation. L'auto-assignation par le technicien est **retirée**
+     (désormais l'admin assigne).
+  3. **CLOTURE découplée de la résolution** : le technicien pose RESOLU ; la CLOTURE est un
+     acte séparé — validation du demandeur **ou** clôture directe de l'admin (client absent).
+     Un **technicien seul ne clôture pas**.
+  4. Nouvelle action **« corriger la catégorie »** (technicien assigné ou admin, hors CLOTURE) :
+     trace un événement `CHANGEMENT_CATEGORIE` (ancienne→nouvelle) → **socle du flywheel J9**
+     (capture « l'IA suggérait X, l'humain a choisi Y »).
+- **Permissions cibles** (contrôle en couche service) : créer = employé (devient demandeur) ;
+  assigner = admin seul ; prendre / résoudre = technicien assigné seul ; valider→CLOTURE =
+  demandeur seul ; clôturer directement = admin seul ; corriger catégorie = technicien assigné
+  ou admin ; commenter = demandeur / technicien assigné / admin (supervision).
+- **Décisions notables + justification (formulées en séance)** :
+  1. **Graphe linéaire strict** (retrait des sauts type NOUVEAU→RESOLU et de toute réouverture).
+     **CLOTURE terminal** → **limite assumée : un problème récurrent donne lieu à un NOUVEAU
+     ticket** (simplicité de raisonnement, pas de retour arrière dans le cycle).
+  2. **Note de satisfaction verrouillée après CLOTURE** → intégrité des données (une évaluation
+     ne se réécrit pas après archivage).
+  3. **Actions nommées par intention** plutôt qu'un endpoint générique `PATCH /statut` : chaque
+     arête a un acteur et des effets de bord propres ; le endpoint générique laissait un
+     technicien poser CLOTURE (contournement des droits) → **retiré**.
+  4. **3 rôles conservés** : le « client » = l'EMPLOYE demandeur (pas de 4ᵉ rôle).
+- **Réalisation** :
+  - **Backend** : machine à états resserrée (`TRANSITIONS_STATUT` linéaire + garde
+    `verifierTransition`) + prédicats de permission atomiques
+    (`estAdmin` / `estTechnicienAssigne` / `estDemandeur`) ; actions `prendreEnCharge` /
+    `resoudre` / `cloturer` / `changerCategorie` ; `affecter` réécrit (admin seul, →EN_ATTENTE,
+    réassign→EN_ATTENTE, désassign→NOUVEAU) ; `evaluerSatisfaction` verrouillé après clôture ;
+    endpoints `POST /:id/prise-en-charge|resolution|cloture`, `PATCH /:id/categorie` ;
+    `PATCH /:id/statut` **retiré** ; nouveaux événements `PRISE_EN_CHARGE` / `CHANGEMENT_CATEGORIE`.
+    **Zéro migration** (enums, colonne `categorieId` et type `EvenementTicket` string déjà présents).
+  - **Statistiques** : le « délai de prise en charge » se calcule désormais sur l'événement
+    `PRISE_EN_CHARGE` (et non plus `AFFECTATION`).
+  - **Frontend** : action principale **contextuelle** (rôle × statut) dans l'en-tête ; statut en
+    **lecture seule** (piloté par les actions) ; sélecteur de catégorie éditable (recatégorisation) ;
+    bloc satisfaction « Valider et clôturer » sans édition post-clôture ; auto-attribution
+    technicien retirée ; fil d'historique enrichi des deux nouveaux événements.
+- **Vérification** : type-check backend + frontend au vert ; **parcours bout-en-bout**
+  (NOUVEAU → EN_ATTENTE → EN_COURS → RESOLU → CLOTURE) validé manuellement en séance.
+- **Limites / à compléter** : `[À COMPLÉTER PAR FEDI]` — justification métier fine du choix
+  « workflow linéaire strict » vs. graphe flexible (au-delà de la simplicité de raisonnement) ;
+  opportunité d'une réouverture encadrée si l'exploitation en fait apparaître le besoin.
+- **Suite (greffe IA sur ce socle)** : classification + priorité à la création (NOUVEAU),
+  suggestion RAG au traitement (EN_COURS), capture de la validation technicien → flywheel (RESOLU).
+
+### Greffe 1 (intégration IA) — Classification + priorité à la création
+- **Date** : 28/07/2026. `[établi en séance]`
+- **Contexte** : première greffe de l'IA **dans l'application** (le module `ml/` cesse
+  d'être un labo). Point d'accroche = l'étape **NOUVEAU** (création) : à la création,
+  l'IA **suggère** une catégorie et une priorité, visibles immédiatement sur le détail
+  du ticket (effet synchrone démontrable).
+- **Posture structurante — SUGGÈRE, pas impose** : l'IA écrit des lignes `SuggestionIA` ;
+  le technicien valide/corrige (via `changerCategorie`/`changerPriorite`). Ce n'est pas
+  cosmétique : le **flywheel J9 repose sur la comparaison « IA a suggéré X / humain a
+  choisi Y »** — imposer la catégorie supprimerait la suggestion à comparer, donc le
+  signal, donc J9. « Suggère » est **indispensable au mécanisme**, pas un choix de style.
+- **Architecture — frontière de service** : le microservice Python reçoit du **TEXTE**,
+  renvoie du **JSON**, ne touche **jamais** la base. Deux endpoints ajoutés :
+  - `POST /classify` (titre, description) → catégorie top-1 + confiance + probabilités
+    par classe + **embedding 1024d** (renvoyé pour que **Node** le persiste — le service
+    reste sans DB). **Pas d'abstention appliquée** (seuil non figé, posture J5) ; modèle
+    figé absent → 503.
+  - `POST /priority` (titre, description, catégorie) → décision **scorecard glass-box**
+    (niveau + score + décomposition + explication). `age=0` à la création → pas de terme
+    d'ancienneté.
+  - *Correction de rigueur (trouvée en séance)* : le classifieur sort des noms
+    **accentués** (« Réseau »…) ; la scorecard indexe `BASE_CATEGORIE` sur ces **mêmes**
+    noms → base correcte (Réseau = 1.5) vérifiée de bout en bout sur HTTP. Un décalage
+    d'accent aurait silencieusement fait retomber **chaque** priorité sur la base par défaut.
+- **Pont Node → Python** (`ia.service.ts`) : client HTTP avec **AbortController**
+  (timeout `IA_TIMEOUT_MS`, défaut 4 s) ; `enrichirTicket` **best-effort** — ne rejette
+  **jamais** (même patron que `notification.service`). Inséré dans `creer()` : **ticket
+  committé d'abord**, puis enrichissement **non bloquant**, puis refetch.
+- **Ordre synchrone** : classify → **Node écrit l'embedding** (`$executeRaw`,
+  `'[…]'::vector` — Prisma ne sait pas écrire le type `Unsupported`) → résolution
+  nom→`categorieId` (catégories **dynamiques** ; label absent = modèle périmé →
+  abstention) → `SuggestionIA(CLASSIFICATION)` → priority (avec la catégorie,
+  **dépendance J7**) → `SuggestionIA(PRIORISATION)`.
+- **Dégradation gracieuse par étage (le point critique)** : le ticket **se crée
+  toujours**. Service down/timeout ou `/classify` KO → 0 suggestion, priorité **sautée**
+  (« le couple catégorie+priorité, ou rien »). Nom introuvable → abstention. Écriture
+  embedding KO → log + on continue (rattrapable par `backfill.py`). `/priority` KO → la
+  CLASSIFICATION reste persistée. Filet global : `enrichirTicket` enveloppé try/catch.
+  Un service **arrêté** échoue **immédiatement** (connexion refusée) → la création
+  n'attend pas le timeout ; celui-ci ne joue que si le service **pend**.
+- **Migration `SuggestionIA`** (`20260728090000_ajout_details_suggestion_ia`, appliquée
+  par `migrate deploy`, **non destructive**) : `scoreConfiance` rendu **nullable** (la
+  scorecard déterministe n'a **pas** de probabilité → on n'en **fabrique pas** une fausse)
+  + colonne **`details Json?`** (foyer de la décomposition glass-box §6.5 et des
+  probabilités par classe — sans quoi l'explicabilité serait perdue).
+  - CLASSIFICATION : `contenu`=nom catégorie ; `scoreConfiance`=proba top-1 ;
+    `details`={categorieId, probabilites, modeleEmbedding}.
+  - PRIORISATION : `contenu`=niveau ; `scoreConfiance`=**null** ; `details`=décomposition
+    complète (niveau, score, explication, contributions, plafonnements).
+- **Affichage minimal** (détail ticket) : panneau « Assistant IA » réel (remplace le
+  placeholder « Phase 5 ») — catégorie suggérée + **confiance affichée telle quelle**
+  (glass-box : l'IA dit honnêtement son incertitude) + priorité + décomposition
+  « … car : production +2 · Réseau +1.5 » + mention « suggestions non contraignantes,
+  à valider ou corriger ».
+- **Vérification bout-en-bout (à l'écran, en séance)** : création d'un ticket VPN → le
+  panneau affiche **Réseau (confiance 63 %)** + **Critique** avec la décomposition
+  complète (« CRITIQUE (plafonné) car : production +2 · en production +2 · tout le
+  service +2 · Réseau +1.5 · bloqué +1 »). Serving prouvé en réel (import sans cycle,
+  `/classify` + `/priority` sur HTTP), pont type-check OK, dégradation raisonnée par étage.
+- **Dimensionnement production** :
+  - **Warm-up** : bge-m3 (~2,3 Go) + classifieur se chargent **paresseusement au 1ᵉʳ
+    `/classify`** → première requête lente (**30-60 s à froid** ; mesuré **8 s** en séance,
+    poids déjà en cache disque). **Consigne soutenance** : **préchauffer** le service au
+    démarrage (un `/classify` à vide) pour que le premier ticket présenté au jury soit
+    instantané.
+  - **À chaud** : embed CPU ~100-400 ms (cf. J4) + scorecard ~ms + 2 écritures DB →
+    **bien sous le budget CDC < 5 s**. Le timeout `IA_TIMEOUT_MS` borne le pire cas ; un
+    service arrêté échoue immédiatement (pas d'attente de 4 s).
+- **Limites / à compléter** :
+  - **Confiance modeste** sur texte réel court (63 % ici ; ~0,35-0,44 sur d'autres essais)
+    — **attendu** : le classifieur est entraîné sur le synthétique (fil rouge J3/J5). La
+    confiance affichée est **honnête**, pas un défaut ; le seuil d'abstention reste **non
+    figé** (J9, dev réel).
+  - **Dockerisation du microservice reportée** à la phase DevOps (Dockerfile lourd :
+    torch + modèle ~2,3 Go + artefact `classifier_*.joblib` gitignored à monter/produire).
+    En dev : `uvicorn` lancé à part. `docker-compose` a `ollama` mais pas encore le
+    service FastAPI. `[À COMPLÉTER PAR FEDI : Dockerfile service IA + stratégie modèle]`
+- **Suite** : **Greffe 2** — suggestion RAG **asynchrone** à l'étape EN_COURS (génération
+  15-30 s, hors chemin synchrone) ; **Greffe 3** — capture de la validation technicien →
+  flywheel (triplet `SuggestionIA` + événement `CHANGEMENT_CATEGORIE`/`CHANGEMENT_PRIORITE`
+  + `valideeParTechnicien`).
+- **Livrables** : `service/predictors.py`, `service/app.py` (`/classify`, `/priority`,
+  `/sante` enrichi), `service/config.py` (`CLASSIFIER_PATH`), migration
+  `…_ajout_details_suggestion_ia`, `services/ia.service.ts`, `config/env.ts`
+  (`SERVICE_IA_URL`/`IA_TIMEOUT_MS`/`IA_ACTIVE`), `repositories/categorie.repository.ts`
+  (`findByNom`), include détail étendu (`suggestionsIA`), panneau UI (`TicketDetailPage.tsx`),
+  types front (`SuggestionIA`, `DetailPrioriteIA`).
+
 ### J8bis — Pièces jointes dans le pipeline IA (extension validée par l'encadrant)
 - **Date** : 17/07/2026. `[établi en séance]`
 - **Contexte / nouvelle exigence** : l'encadrant demande d'**intégrer les pièces

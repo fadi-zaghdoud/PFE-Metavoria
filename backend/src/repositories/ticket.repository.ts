@@ -32,6 +32,10 @@ const ticketDetailInclude = {
     orderBy: { dateCreation: 'asc' },
     include: { auteur: { select: utilisateurPublicSelect } },
   },
+  // Suggestions IA (Greffe 1) — les plus récentes d'abord ; affichées sur le détail.
+  suggestionsIA: {
+    orderBy: { dateCreation: 'desc' },
+  },
 } satisfies Prisma.TicketInclude;
 
 export type TicketListe = Prisma.TicketGetPayload<{ include: typeof ticketListeInclude }>;
@@ -43,7 +47,9 @@ export type CommentaireAvecAuteur = Prisma.CommentaireGetPayload<{
 export interface CreerEvenementData {
   ticketId: number;
   auteurId: number;
-  type: string; // CHANGEMENT_STATUT | CHANGEMENT_PRIORITE | AFFECTATION | DESAFFECTATION
+  // CHANGEMENT_STATUT | CHANGEMENT_PRIORITE | CHANGEMENT_CATEGORIE | AFFECTATION |
+  // DESAFFECTATION | PRISE_EN_CHARGE | EVALUATION
+  type: string;
   ancienneValeur?: string | null;
   nouvelleValeur?: string | null;
 }
@@ -69,6 +75,7 @@ export interface CreerTicketData {
 export interface MettreAJourTicketData {
   statut?: StatutTicket;
   priorite?: Priorite;
+  categorieId?: number | null;
   technicienId?: number | null;
   dateCloture?: Date | null;
   satisfactionNote?: number | null;
@@ -133,7 +140,7 @@ export const ticketRepository = {
       repartitionNotes,
       chargeTechniciens,
       clotures,
-      affectations,
+      prisesEnCharge,
     ] = await Promise.all([
       prisma.ticket.groupBy({ by: ['statut'], where: scope, _count: { _all: true } }),
       prisma.ticket.groupBy({ by: ['priorite'], where: scope, _count: { _all: true } }),
@@ -159,9 +166,9 @@ export const ticketRepository = {
         where: { ...scope, dateCloture: { not: null } },
         select: { dateCreation: true, dateCloture: true },
       }),
-      // Pour le délai de première prise en charge (création -> 1re affectation).
+      // Pour le délai de prise en charge (création -> 1re prise en charge par le technicien).
       prisma.evenementTicket.findMany({
-        where: { type: 'AFFECTATION', ticket: scope },
+        where: { type: 'PRISE_EN_CHARGE', ticket: scope },
         select: { ticketId: true, dateCreation: true, ticket: { select: { dateCreation: true } } },
         orderBy: { dateCreation: 'asc' },
       }),
@@ -174,7 +181,7 @@ export const ticketRepository = {
       repartitionNotes,
       chargeTechniciens,
       clotures,
-      affectations,
+      prisesEnCharge,
     };
   },
 };

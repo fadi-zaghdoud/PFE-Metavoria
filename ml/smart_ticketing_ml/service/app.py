@@ -2,7 +2,8 @@
 Service FastAPI — primitives ML appelées par le backend Node (frontière §3.1).
 
 J4 a exposé `/embed` (bge-m3, 1024d) + `/sante`. J6 ajoute `/rerank`
-(cross-encoder bge-reranker-v2-m3). La route `/classify` viendra plus tard.
+(cross-encoder bge-reranker-v2-m3). Greffe 1 ajoute `/classify` (catégorie +
+embedding) et `/priority` (scorecard glass-box).
 
 Lancement (dév) :
     cd ml && uvicorn smart_ticketing_ml.service.app:app --host 127.0.0.1 --port 8000
@@ -13,7 +14,7 @@ from __future__ import annotations
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from . import config, embedder, reranker
+from . import config, embedder, predictors, reranker
 
 app = FastAPI(
     title="Service IA — Smart Ticketing (Metavoria)",
@@ -48,6 +49,9 @@ def sante() -> dict:
             "device": config.RERANK_DEVICE,
             "max_length": config.RERANK_MAX_LENGTH,
             "modele_charge": reranker.modele_charge(),
+        },
+        "classifieur": {
+            "modele_charge": predictors.classifieur_charge(),
         },
     }
 
@@ -86,3 +90,57 @@ def rerank(req: RequeteRerank) -> ReponseRerank:
         raise HTTPException(status_code=422, detail="Document vide dans la requête.")
     scores = reranker.scorer(req.requete, req.documents)
     return ReponseRerank(modele=config.MODELE_RERANKER, scores=scores)
+
+
+# ── Greffe 1 : classification de catégorie + priorité (à la création) ────────────
+
+class RequeteClassify(BaseModel):
+    titre: str = Field(..., description="Titre du ticket entrant.")
+    description: str = Field(..., description="Description du ticket entrant.")
+
+
+class ReponseClassify(BaseModel):
+    categorie: str                       # top-1 (nom de catégorie = classe du modèle figé)
+    confiance: float                     # proba top-1 (predict_proba), NON seuillée ici
+    probabilites: dict[str, float]       # proba par classe (pour l'affichage / un seuil aval)
+    modele_embedding: str
+    # Embedding 1024d L2-normalisé — RENVOYÉ pour que Node le persiste (le service ne
+    # touche pas la DB). Un seul embed pour la prédiction et la persistance.
+    embedding: list[float]
+
+
+@app.post("/classify", response_model=ReponseClassify)
+def classify(req: RequeteClassify) -> ReponseClassify:
+    """Catégorie suggérée + confiance + embedding. L'IA SUGGÈRE : la décision revient
+    au technicien (validation humaine → flywheel)."""
+    if not (req.titre.strip() or req.description.strip()):
+        raise HTTPException(status_code=422, detail="Titre et description vides.")
+    try:
+        resultat = predictors.classer(req.titre, req.description)
+    except RuntimeError as exc:  # classifieur figé absent → Node dégrade (503)
+        raise HTTPException(status_code=503, detail=str(exc))
+    return ReponseClassify(**resultat)
+
+
+class RequetePriority(BaseModel):
+    titre: str = Field(..., description="Titre du ticket entrant.")
+    description: str = Field(..., description="Description du ticket entrant.")
+    # Nom de catégorie issu de /classify (dépendance J7 : la base de score en dépend).
+    categorie: str = Field(..., description="Catégorie (nom) — issue de la classification.")
+
+
+class ReponsePriority(BaseModel):
+    niveau: str                          # FAIBLE | MOYENNE | HAUTE | CRITIQUE
+    score: float
+    plafonne: bool
+    explication: str                     # « HAUTE car : production +2 · Réseau +1.5 »
+    contributions: list[dict]            # décomposition facteur par facteur (glass-box §6.5)
+    plafonnements: list[str]
+
+
+@app.post("/priority", response_model=ReponsePriority)
+def priority(req: RequetePriority) -> ReponsePriority:
+    """Priorité suggérée par la scorecard glass-box (déterministe), avec sa décomposition."""
+    if not (req.titre.strip() or req.description.strip()):
+        raise HTTPException(status_code=422, detail="Titre et description vides.")
+    return ReponsePriority(**predictors.prioriser(req.titre, req.description, req.categorie))

@@ -18,6 +18,17 @@ const envSchema = z.object({
   // URL du frontend, utilisée pour construire le lien de réinitialisation de mot de passe.
   FRONTEND_URL: z.string().default('http://localhost:5173'),
 
+  // Module IA (Greffe 1) — microservice Python (FastAPI). L'IA est un enrichissement
+  // NON bloquant : si le service est indisponible ou lent, le ticket se crée quand même.
+  SERVICE_IA_URL: z.string().default('http://127.0.0.1:8000'),
+  // Budget par appel IA (ms) : borne la latence ajoutée à la création (AbortController).
+  IA_TIMEOUT_MS: z.coerce.number().default(4000),
+  // Interrupteur : IA_ACTIVE=false coupe toute la greffe (actif par défaut).
+  IA_ACTIVE: z
+    .string()
+    .optional()
+    .transform((v) => v !== 'false'),
+
   // SMTP — optionnels au démarrage (l'app doit pouvoir booter sans e-mail configuré) ;
   // le service d'e-mail échoue explicitement à l'envoi si ces valeurs sont absentes.
   SMTP_HOST: z.string().default('smtp.gmail.com'),

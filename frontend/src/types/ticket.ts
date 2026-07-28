@@ -32,8 +32,10 @@ export interface Commentaire {
 export type TypeEvenement =
   | 'CHANGEMENT_STATUT'
   | 'CHANGEMENT_PRIORITE'
+  | 'CHANGEMENT_CATEGORIE'
   | 'AFFECTATION'
   | 'DESAFFECTATION'
+  | 'PRISE_EN_CHARGE'
   | 'EVALUATION';
 
 // Entrée d'historique d'un ticket (changement de statut, priorité, affectation),
@@ -90,6 +92,31 @@ export interface TicketDetail {
   technicien: PersonnePublique | null;
   commentaires: Commentaire[];
   evenements: EvenementTicket[];
+  suggestionsIA: SuggestionIA[];
+}
+
+// Décomposition glass-box de la scorecard (details d'une suggestion PRIORISATION).
+export interface DetailPrioriteIA {
+  niveau: string;
+  score: number;
+  plafonne: boolean;
+  explication: string; // « CRITIQUE car : production +2 · Réseau +1.5 »
+  contributions: { famille: string; facteur: string; points: number; preuve: string }[];
+  plafonnements: string[];
+}
+
+// Suggestion produite par le module IA (Greffe 1 : CLASSIFICATION, PRIORISATION).
+// L'IA suggère, le technicien valide/corrige. `details` dépend du type :
+// CLASSIFICATION → { categorieId, probabilites, … } ; PRIORISATION → DetailPrioriteIA.
+export interface SuggestionIA {
+  id: number;
+  typeSuggestion: 'CLASSIFICATION' | 'PRIORISATION' | 'SOLUTION' | 'RESUME';
+  contenu: string;
+  scoreConfiance: number | null; // proba (classification) ; null pour la scorecard déterministe
+  details: unknown; // cast au point d'usage : DetailPrioriteIA pour une PRIORISATION
+  valideeParTechnicien: boolean | null;
+  dateCreation: string;
+  ticketId: number;
 }
 
 export interface Notification {

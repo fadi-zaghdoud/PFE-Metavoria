@@ -2,8 +2,8 @@ import type { Request, Response } from 'express';
 import { ticketService, type Acteur } from '../services/ticket.service';
 import {
   affectationSchema,
+  changerCategorieSchema,
   changerPrioriteSchema,
-  changerStatutSchema,
   commentaireSchema,
   creerTicketSchema,
   listeTicketsQuerySchema,
@@ -44,10 +44,28 @@ export const ticketController = {
     res.status(200).json({ ticket });
   },
 
-  async changerStatut(req: Request, res: Response) {
+  async prendreEnCharge(req: Request, res: Response) {
     const id = parseIdParam(req.params.id);
-    const { statut } = changerStatutSchema.parse(req.body);
-    const ticket = await ticketService.changerStatut(acteur(req), id, statut);
+    const ticket = await ticketService.prendreEnCharge(acteur(req), id);
+    res.status(200).json({ ticket });
+  },
+
+  async resoudre(req: Request, res: Response) {
+    const id = parseIdParam(req.params.id);
+    const ticket = await ticketService.resoudre(acteur(req), id);
+    res.status(200).json({ ticket });
+  },
+
+  async cloturer(req: Request, res: Response) {
+    const id = parseIdParam(req.params.id);
+    const ticket = await ticketService.cloturer(acteur(req), id);
+    res.status(200).json({ ticket });
+  },
+
+  async changerCategorie(req: Request, res: Response) {
+    const id = parseIdParam(req.params.id);
+    const { categorieId } = changerCategorieSchema.parse(req.body);
+    const ticket = await ticketService.changerCategorie(acteur(req), id, categorieId);
     res.status(200).json({ ticket });
   },
 

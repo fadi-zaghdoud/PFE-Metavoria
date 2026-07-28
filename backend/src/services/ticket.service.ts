@@ -9,6 +9,7 @@ import {
 import { categorieRepository } from '../repositories/categorie.repository';
 import { utilisateurRepository } from '../repositories/utilisateur.repository';
 import { notificationService } from './notification.service';
+import { iaService } from './ia.service';
 import { ForbiddenError, NotFoundError, ValidationError } from '../utils/AppError';
 import { logAudit } from '../utils/logger';
 import { Prisma } from '../generated/prisma/client';
@@ -61,14 +62,22 @@ export interface CreerTicketInput {
   priorite?: Priorite;
 }
 
-// Transitions de statut autorisées (cycle de vie du ticket). Un ticket clôturé
-// ou résolu peut être rouvert (retour « En cours »).
+// Cycle de vie LINÉAIRE du ticket (workflow métier). Chaque arête est déclenchée
+// par une action nommée portée par un acteur précis :
+//
+//   NOUVEAU ──assignation (admin)──▶ EN_ATTENTE ──prise en charge (tech. assigné)──▶
+//   EN_COURS ──résolution (tech. assigné)──▶ RESOLU ──validation (demandeur) | clôture (admin)──▶ CLOTURE
+//
+// CLOTURE est TERMINAL : aucune réouverture. Limite assumée — un problème
+// récurrent donne lieu à un NOUVEAU ticket (pas de retour arrière dans le cycle).
+// NB : l'(dé)assignation n'emprunte PAS cette table (elle force EN_ATTENTE ou
+// NOUVEAU depuis plusieurs états) ; sa légalité est gérée dans `affecter`.
 const TRANSITIONS_STATUT: Record<StatutTicket, StatutTicket[]> = {
-  NOUVEAU: ['EN_COURS', 'EN_ATTENTE', 'RESOLU', 'CLOTURE'],
-  EN_COURS: ['EN_ATTENTE', 'RESOLU', 'CLOTURE'],
-  EN_ATTENTE: ['EN_COURS', 'RESOLU', 'CLOTURE'],
-  RESOLU: ['EN_COURS', 'CLOTURE'],
-  CLOTURE: ['EN_COURS'],
+  NOUVEAU: ['EN_ATTENTE'],
+  EN_ATTENTE: ['EN_COURS'],
+  EN_COURS: ['RESOLU'],
+  RESOLU: ['CLOTURE'],
+  CLOTURE: [],
 };
 
 const LABEL_STATUT: Record<StatutTicket, string> = {
@@ -79,17 +88,41 @@ const LABEL_STATUT: Record<StatutTicket, string> = {
   CLOTURE: 'Clôturé',
 };
 
+// Garde-fou de la machine à états : rejette toute transition hors du cycle linéaire.
+// Appelé par chaque action de progression (prise en charge, résolution, clôture).
+function verifierTransition(actuel: StatutTicket, cible: StatutTicket): void {
+  if (!TRANSITIONS_STATUT[actuel].includes(cible)) {
+    throw new ValidationError(
+      `Transition impossible de « ${LABEL_STATUT[actuel]} » vers « ${LABEL_STATUT[cible]} »`,
+    );
+  }
+}
+
 // Un employé ne voit que ses propres tickets ; technicien et administrateur voient tout.
 function peutVoir(acteur: Acteur, ticket: { demandeurId: number }): boolean {
   return acteur.role !== 'EMPLOYE' || ticket.demandeurId === acteur.id;
 }
 
-// Peut modifier (statut / priorité) : l'administrateur, ou le technicien assigné au ticket.
+// Peut modifier la priorité : l'administrateur, ou le technicien assigné au ticket.
 function estGestionnaire(acteur: Acteur, ticket: { technicienId: number | null }): boolean {
   return (
     acteur.role === 'ADMINISTRATEUR' ||
     (acteur.role === 'TECHNICIEN' && ticket.technicienId === acteur.id)
   );
+}
+
+// Prédicats d'autorisation atomiques — chaque action du workflow appelle celui de
+// sa ligne dans le tableau des permissions (un acteur par transition).
+function estAdmin(acteur: Acteur): boolean {
+  return acteur.role === 'ADMINISTRATEUR';
+}
+
+function estTechnicienAssigne(acteur: Acteur, ticket: { technicienId: number | null }): boolean {
+  return acteur.role === 'TECHNICIEN' && ticket.technicienId === acteur.id;
+}
+
+function estDemandeur(acteur: Acteur, ticket: { demandeurId: number }): boolean {
+  return ticket.demandeurId === acteur.id;
 }
 
 function nomComplet(personne: { prenom: string; nom: string }): string {
@@ -105,25 +138,6 @@ function refusModification(role: Role): never {
 }
 
 type UtilisateurEntite = NonNullable<Awaited<ReturnType<typeof utilisateurRepository.findById>>>;
-
-// Contrôle qui peut affecter : admin sans restriction, technicien seulement à lui-même
-// sur un ticket non déjà pris par un autre, employé jamais.
-function verifierDroitAffectation(
-  acteur: Acteur,
-  ticket: { technicienId: number | null },
-  technicienId: number | null,
-): void {
-  if (acteur.role === 'EMPLOYE') {
-    throw new ForbiddenError('Action réservée au support');
-  }
-  if (acteur.role !== 'TECHNICIEN') return; // administrateur
-  if (technicienId !== acteur.id) {
-    throw new ForbiddenError("Un technicien ne peut s'attribuer qu'à lui-même");
-  }
-  if (ticket.technicienId && ticket.technicienId !== acteur.id) {
-    throw new ForbiddenError('Ce ticket est déjà pris en charge par un autre technicien');
-  }
-}
 
 // Valide la cible d'affectation (null = désaffectation) : doit être un membre du support actif.
 async function resoudreTechnicien(technicienId: number | null): Promise<UtilisateurEntite | null> {
@@ -171,44 +185,115 @@ export const ticketService = {
       categorieId: ticket.categorieId,
       priorite: ticket.priorite,
     });
-    return ticket;
+
+    // Enrichissement IA (Greffe 1) — NON bloquant : le ticket est déjà committé.
+    // `enrichirTicket` absorbe toute erreur (service down, timeout, écriture) → la
+    // création réussit toujours. On relit ensuite pour renvoyer d'éventuelles suggestions.
+    await iaService.enrichirTicket(ticket);
+    return (await ticketRepository.findById(ticket.id)) ?? ticket;
   },
 
-  async changerStatut(acteur: Acteur, id: number, statut: StatutTicket): Promise<TicketDetail> {
+  // Prise en charge : le technicien ASSIGNÉ démarre le traitement (EN_ATTENTE → EN_COURS).
+  // Action distincte de l'assignation (décidée par l'admin) — c'est le technicien qui choisit
+  // de commencer. L'événement `PRISE_EN_CHARGE` sert de repère au délai de prise en charge.
+  async prendreEnCharge(acteur: Acteur, id: number): Promise<TicketDetail> {
     const ticket = await ticketRepository.findById(id);
     if (!ticket) throw new NotFoundError('Ticket introuvable');
-    if (!estGestionnaire(acteur, ticket)) refusModification(acteur.role);
-
-    if (ticket.statut === statut) return ticket;
-    if (!TRANSITIONS_STATUT[ticket.statut].includes(statut)) {
-      throw new ValidationError(
-        `Transition impossible de « ${LABEL_STATUT[ticket.statut]} » vers « ${LABEL_STATUT[statut]} »`,
-      );
+    if (!estTechnicienAssigne(acteur, ticket)) {
+      throw new ForbiddenError('Seul le technicien assigné peut prendre ce ticket en charge');
     }
+    verifierTransition(ticket.statut, 'EN_COURS');
 
-    const data: { statut: StatutTicket; dateCloture?: Date | null } = { statut };
-    if (statut === 'CLOTURE') data.dateCloture = new Date();
-    else if (ticket.dateCloture) data.dateCloture = null; // réouverture : on efface la date de clôture
+    await ticketRepository.creerEvenement({
+      ticketId: id,
+      auteurId: acteur.id,
+      type: 'PRISE_EN_CHARGE',
+      ancienneValeur: ticket.statut,
+      nouvelleValeur: 'EN_COURS',
+    });
 
-    // Trace dans le fil du ticket (créée avant la mise à jour pour être incluse dans le détail renvoyé).
+    const misAJour = await ticketRepository.update(id, { statut: 'EN_COURS' });
+    logAudit('TICKET_PRISE_EN_CHARGE', { ticketId: id, parUtilisateur: acteur.id });
+
+    // Informer le demandeur que son ticket est pris en charge.
+    if (misAJour.demandeur.id !== acteur.id) {
+      await notificationService.notifier({
+        destinataire: misAJour.demandeur,
+        type: 'CHANGEMENT_STATUT',
+        sujet: `Ticket #${id} — pris en charge`,
+        message: `Votre ticket « ${misAJour.titre} » est pris en charge par le support.`,
+        ticketId: id,
+      });
+    }
+    return misAJour;
+  },
+
+  // Résolution : le technicien assigné marque le ticket résolu (EN_COURS → RESOLU).
+  // La clôture reste une étape séparée (validation du demandeur, ou clôture admin).
+  async resoudre(acteur: Acteur, id: number): Promise<TicketDetail> {
+    const ticket = await ticketRepository.findById(id);
+    if (!ticket) throw new NotFoundError('Ticket introuvable');
+    if (!estTechnicienAssigne(acteur, ticket)) {
+      throw new ForbiddenError('Seul le technicien assigné peut résoudre ce ticket');
+    }
+    verifierTransition(ticket.statut, 'RESOLU');
+
     await ticketRepository.creerEvenement({
       ticketId: id,
       auteurId: acteur.id,
       type: 'CHANGEMENT_STATUT',
       ancienneValeur: ticket.statut,
-      nouvelleValeur: statut,
+      nouvelleValeur: 'RESOLU',
     });
 
-    const misAJour = await ticketRepository.update(id, data);
-    logAudit('TICKET_STATUT', { ticketId: id, de: ticket.statut, vers: statut, parUtilisateur: acteur.id });
+    const misAJour = await ticketRepository.update(id, { statut: 'RESOLU' });
+    logAudit('TICKET_STATUT', { ticketId: id, de: ticket.statut, vers: 'RESOLU', parUtilisateur: acteur.id });
 
-    // Notifier le demandeur du changement de statut (sauf s'il en est l'auteur).
+    // Inviter le demandeur à valider la résolution (sa validation clôturera le ticket).
     if (misAJour.demandeur.id !== acteur.id) {
       await notificationService.notifier({
         destinataire: misAJour.demandeur,
         type: 'CHANGEMENT_STATUT',
-        sujet: `Ticket #${id} — ${LABEL_STATUT[statut]}`,
-        message: `Votre ticket « ${misAJour.titre} » est passé au statut « ${LABEL_STATUT[statut]} ».`,
+        sujet: `Ticket #${id} — résolu`,
+        message: `Votre ticket « ${misAJour.titre} » a été marqué résolu. Merci de valider la résolution.`,
+        ticketId: id,
+      });
+    }
+    return misAJour;
+  },
+
+  // Clôture directe par l'ADMINISTRATEUR (RESOLU → CLOTURE) — typiquement quand le
+  // demandeur ne valide pas (absent). L'autre voie vers CLOTURE est la validation du
+  // demandeur (`evaluerSatisfaction`). Un technicien seul ne clôture jamais (T-W4).
+  async cloturer(acteur: Acteur, id: number): Promise<TicketDetail> {
+    const ticket = await ticketRepository.findById(id);
+    if (!ticket) throw new NotFoundError('Ticket introuvable');
+    if (!estAdmin(acteur)) {
+      throw new ForbiddenError('Seul un administrateur peut clôturer directement un ticket');
+    }
+    verifierTransition(ticket.statut, 'CLOTURE');
+
+    await ticketRepository.creerEvenement({
+      ticketId: id,
+      auteurId: acteur.id,
+      type: 'CHANGEMENT_STATUT',
+      ancienneValeur: ticket.statut,
+      nouvelleValeur: 'CLOTURE',
+    });
+
+    const misAJour = await ticketRepository.update(id, {
+      statut: 'CLOTURE',
+      dateCloture: new Date(),
+    });
+    logAudit('TICKET_STATUT', { ticketId: id, de: ticket.statut, vers: 'CLOTURE', parUtilisateur: acteur.id });
+
+    // Informer le demandeur de la clôture.
+    if (misAJour.demandeur.id !== acteur.id) {
+      await notificationService.notifier({
+        destinataire: misAJour.demandeur,
+        type: 'CHANGEMENT_STATUT',
+        sujet: `Ticket #${id} — clôturé`,
+        message: `Votre ticket « ${misAJour.titre} » a été clôturé par l'administration.`,
         ticketId: id,
       });
     }
@@ -233,32 +318,41 @@ export const ticketService = {
     return misAJour;
   },
 
-  // Affectation manuelle (l'affectation automatique par charge/catégorie arrive en Phase 5).
-  // Un administrateur affecte à n'importe quel technicien (ou désaffecte) ; un technicien
-  // ne peut que s'attribuer lui-même un ticket non encore pris en charge.
+  // Assignation manuelle par l'ADMINISTRATEUR (seul habilité — T-W1).
+  //  - assigner / réassigner un technicien → le ticket (re)passe EN_ATTENTE ; le
+  //    technicien devra ensuite « prendre en charge » pour passer EN_COURS ;
+  //  - désassigner (technicienId = null)   → le ticket revient à NOUVEAU (T-W3).
+  // Interdit une fois le ticket résolu ou clôturé (fin de cycle).
   async affecter(acteur: Acteur, id: number, technicienId: number | null): Promise<TicketDetail> {
     const ticket = await ticketRepository.findById(id);
     if (!ticket) throw new NotFoundError('Ticket introuvable');
+    if (!estAdmin(acteur)) {
+      throw new ForbiddenError('Seul un administrateur peut affecter un ticket');
+    }
+    if (ticket.statut === 'RESOLU' || ticket.statut === 'CLOTURE') {
+      throw new ValidationError('Un ticket résolu ou clôturé ne peut plus être (ré)affecté');
+    }
+    // Rien à changer (même technicien, ou déjà non assigné) : no-op idempotent.
+    if (technicienId === ticket.technicienId) return ticket;
 
-    verifierDroitAffectation(acteur, ticket, technicienId);
     const technicien = await resoudreTechnicien(technicienId);
-
-    const data: { technicienId: number | null; statut?: StatutTicket } = { technicienId };
-    // Première prise en charge : un ticket « Nouveau » passe automatiquement « En cours ».
-    if (technicienId !== null && ticket.statut === 'NOUVEAU') data.statut = 'EN_COURS';
+    const desaffectation = technicienId === null;
 
     await ticketRepository.creerEvenement({
       ticketId: id,
       auteurId: acteur.id,
-      type: technicienId === null ? 'DESAFFECTATION' : 'AFFECTATION',
+      type: desaffectation ? 'DESAFFECTATION' : 'AFFECTATION',
       ancienneValeur: ticket.technicien ? nomComplet(ticket.technicien) : null,
       nouvelleValeur: technicien ? nomComplet(technicien) : null,
     });
 
-    const misAJour = await ticketRepository.update(id, data);
+    const misAJour = await ticketRepository.update(id, {
+      technicienId,
+      statut: desaffectation ? 'NOUVEAU' : 'EN_ATTENTE',
+    });
     logAudit('TICKET_AFFECTATION', { ticketId: id, technicienId, parUtilisateur: acteur.id });
 
-    // Notifier le technicien affecté (sauf auto-affectation).
+    // Notifier le technicien nouvellement affecté (jamais lors d'une désaffectation).
     if (technicien && technicien.id !== acteur.id) {
       await notificationService.notifier({
         destinataire: { id: technicien.id, email: technicien.email, prenom: technicien.prenom },
@@ -271,12 +365,52 @@ export const ticketService = {
     return misAJour;
   },
 
+  // Correction de la catégorie après création (T-W6 — socle du flywheel J9).
+  // Le technicien assigné ou un administrateur peut recatégoriser tant que le ticket
+  // n'est pas clôturé. L'événement CHANGEMENT_CATEGORIE trace ancienne → nouvelle
+  // catégorie : c'est ce couple qui capturera « l'IA suggérait X, l'humain a choisi Y ».
+  async changerCategorie(acteur: Acteur, id: number, categorieId: number): Promise<TicketDetail> {
+    const ticket = await ticketRepository.findById(id);
+    if (!ticket) throw new NotFoundError('Ticket introuvable');
+    if (!estAdmin(acteur) && !estTechnicienAssigne(acteur, ticket)) {
+      throw new ForbiddenError(
+        'Seul le technicien assigné ou un administrateur peut corriger la catégorie',
+      );
+    }
+    if (ticket.statut === 'CLOTURE') {
+      throw new ValidationError("La catégorie d'un ticket clôturé ne peut plus être modifiée");
+    }
+
+    const categorie = await categorieRepository.findById(categorieId);
+    if (!categorie) throw new ValidationError('Catégorie invalide');
+    if (ticket.categorieId === categorieId) return ticket; // no-op idempotent
+
+    await ticketRepository.creerEvenement({
+      ticketId: id,
+      auteurId: acteur.id,
+      type: 'CHANGEMENT_CATEGORIE',
+      ancienneValeur: ticket.categorie?.nom ?? null,
+      nouvelleValeur: categorie.nom,
+    });
+
+    const misAJour = await ticketRepository.update(id, { categorieId });
+    logAudit('TICKET_CATEGORIE', {
+      ticketId: id,
+      de: ticket.categorieId,
+      vers: categorieId,
+      parUtilisateur: acteur.id,
+    });
+    return misAJour;
+  },
+
   async commenter(acteur: Acteur, id: number, contenu: string): Promise<CommentaireAvecAuteur> {
     const ticket = await ticketRepository.findById(id);
     if (!ticket) throw new NotFoundError('Ticket introuvable');
 
-    const estDemandeur = ticket.demandeurId === acteur.id;
-    if (!estDemandeur && !estGestionnaire(acteur, ticket)) {
+    // Peuvent commenter : le demandeur, le technicien assigné, ou un administrateur
+    // (supervision — décision workflow #5). estGestionnaire couvre admin + tech. assigné.
+    const parDemandeur = estDemandeur(acteur, ticket);
+    if (!parDemandeur && !estGestionnaire(acteur, ticket)) {
       throw new ForbiddenError('Vous ne participez pas à ce ticket');
     }
 
@@ -287,7 +421,7 @@ export const ticketService = {
     });
 
     // Notifier l'autre partie : demandeur → technicien affecté ; support → demandeur.
-    if (estDemandeur) {
+    if (parDemandeur) {
       if (ticket.technicien && ticket.technicien.id !== acteur.id) {
         await notificationService.notifier({
           destinataire: ticket.technicien,
@@ -309,9 +443,10 @@ export const ticketService = {
     return commentaire;
   },
 
-  // Évaluation de satisfaction par le demandeur (note 1..5 + commentaire optionnel).
-  // Évaluer un ticket « Résolu » le clôture définitivement ; l'évaluation reste
-  // modifiable par le demandeur tant qu'il le souhaite.
+  // Validation de la résolution par le DEMANDEUR (note 1..5 + commentaire optionnel).
+  // C'est l'une des deux voies vers CLOTURE (l'autre = clôture admin). N'est possible
+  // que depuis RESOLU et clôture systématiquement le ticket ; une fois CLOTURÉ,
+  // l'évaluation est VERROUILLÉE — intégrité des données (décision workflow #6).
   async evaluerSatisfaction(
     acteur: Acteur,
     id: number,
@@ -320,30 +455,32 @@ export const ticketService = {
   ): Promise<TicketDetail> {
     const ticket = await ticketRepository.findById(id);
     if (!ticket) throw new NotFoundError('Ticket introuvable');
-    if (ticket.demandeurId !== acteur.id) {
+    if (!estDemandeur(acteur, ticket)) {
       throw new ForbiddenError('Seul le demandeur peut évaluer la résolution');
     }
-    if (ticket.statut !== 'RESOLU' && ticket.statut !== 'CLOTURE') {
+    if (ticket.statut === 'CLOTURE') {
+      throw new ValidationError("L'évaluation n'est plus modifiable après la clôture du ticket");
+    }
+    if (ticket.statut !== 'RESOLU') {
       throw new ValidationError("L'évaluation n'est possible qu'une fois le ticket résolu");
     }
 
     const commentaireNettoye = commentaire?.trim() ? commentaire.trim() : null;
+    // La validation clôture toujours le ticket (RESOLU → CLOTURE).
     const data: MettreAJourTicketData = {
       satisfactionNote: note,
       satisfactionCommentaire: commentaireNettoye,
       satisfactionDate: new Date(),
+      statut: 'CLOTURE',
+      dateCloture: new Date(),
     };
-    if (ticket.statut === 'RESOLU') {
-      data.statut = 'CLOTURE';
-      data.dateCloture = new Date();
-    }
 
-    // Trace de l'évaluation dans le fil du ticket.
+    // Trace de la validation dans le fil du ticket.
     await ticketRepository.creerEvenement({
       ticketId: id,
       auteurId: acteur.id,
       type: 'EVALUATION',
-      ancienneValeur: ticket.satisfactionNote !== null ? `${ticket.satisfactionNote}/5` : null,
+      ancienneValeur: null,
       nouvelleValeur: `${note}/5`,
     });
 
@@ -376,7 +513,7 @@ export const ticketService = {
       repartitionNotes,
       chargeTechniciens,
       clotures,
-      affectations,
+      prisesEnCharge,
     } = await ticketRepository.statistiques(scope);
 
     const compter = (s: StatutTicket) => parStatut.find((g) => g.statut === s)?._count._all ?? 0;
@@ -386,14 +523,15 @@ export const ticketService = {
       clotures.map((t) => (t.dateCloture as Date).getTime() - t.dateCreation.getTime()),
     );
 
-    // Délai moyen de première prise en charge (création -> 1re affectation).
-    const premiereAffectation = new Map<number, number>();
-    for (const a of affectations) {
-      if (!premiereAffectation.has(a.ticketId)) {
-        premiereAffectation.set(a.ticketId, a.dateCreation.getTime() - a.ticket.dateCreation.getTime());
+    // Délai moyen de prise en charge (création -> 1re prise en charge par le technicien).
+    // `prisesEnCharge` = événements PRISE_EN_CHARGE (voir ticketRepository.statistiques).
+    const premierePriseEnCharge = new Map<number, number>();
+    for (const a of prisesEnCharge) {
+      if (!premierePriseEnCharge.has(a.ticketId)) {
+        premierePriseEnCharge.set(a.ticketId, a.dateCreation.getTime() - a.ticket.dateCreation.getTime());
       }
     }
-    const delaiPriseEnChargeMoyenHeures = moyenneHeures([...premiereAffectation.values()]);
+    const delaiPriseEnChargeMoyenHeures = moyenneHeures([...premierePriseEnCharge.values()]);
 
     // Noms lisibles pour les répartitions par catégorie et la charge par technicien.
     const categories = await categorieRepository.findMany();

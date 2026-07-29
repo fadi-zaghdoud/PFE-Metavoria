@@ -10,6 +10,7 @@ import { categorieRepository } from '../repositories/categorie.repository';
 import { utilisateurRepository } from '../repositories/utilisateur.repository';
 import { notificationService } from './notification.service';
 import { iaService } from './ia.service';
+import { env } from '../config/env';
 import { ForbiddenError, NotFoundError, ValidationError } from '../utils/AppError';
 import { logAudit } from '../utils/logger';
 import { Prisma } from '../generated/prisma/client';
@@ -441,6 +442,30 @@ export const ticketService = {
       });
     }
     return commentaire;
+  },
+
+  // Demande d'une suggestion RAG (Greffe 2). Règle workflow : le technicien ASSIGNÉ (ou un
+  // admin), et uniquement quand le ticket est EN_COURS (le moment où il le traite). La
+  // génération (15-30 s) est lancée en ASYNCHRONE ; on renvoie immédiatement le ticket avec
+  // la ligne SOLUTION en EN_COURS (l'UI affiche « génération en cours » et sonde ensuite).
+  async demanderSuggestion(acteur: Acteur, id: number): Promise<TicketDetail> {
+    if (!env.IA_ACTIVE) throw new ValidationError('Le module IA est désactivé');
+    const ticket = await ticketRepository.findById(id);
+    if (!ticket) throw new NotFoundError('Ticket introuvable');
+    if (!estAdmin(acteur) && !estTechnicienAssigne(acteur, ticket)) {
+      throw new ForbiddenError(
+        'Seul le technicien assigné ou un administrateur peut demander une suggestion',
+      );
+    }
+    if (ticket.statut !== 'EN_COURS') {
+      throw new ValidationError(
+        'Une suggestion ne peut être demandée que sur un ticket en cours de traitement',
+      );
+    }
+
+    await iaService.demarrerSuggestion(id, ticket.titre, ticket.description);
+    logAudit('TICKET_SUGGESTION', { ticketId: id, parUtilisateur: acteur.id });
+    return (await ticketRepository.findById(id)) ?? ticket;
   },
 
   // Validation de la résolution par le DEMANDEUR (note 1..5 + commentaire optionnel).

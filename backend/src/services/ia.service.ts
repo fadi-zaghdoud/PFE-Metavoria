@@ -27,11 +27,12 @@ interface ReponsePriority {
   plafonnements: string[];
 }
 
-// Appel HTTP borné par timeout (AbortController) : au-delà de IA_TIMEOUT_MS, on
-// abandonne → traité comme un échec d'étage → dégradation (pas de suggestion).
-async function appelerIA<T>(chemin: string, corps: unknown): Promise<T> {
+// Appel HTTP borné par timeout (AbortController) : au-delà de `timeoutMs`, on abandonne
+// → traité comme un échec → dégradation. Timeout court pour classify/priority (chemin
+// synchrone de création) ; long pour /suggest (génération RAG, appelée en asynchrone).
+async function appelerIA<T>(chemin: string, corps: unknown, timeoutMs = env.IA_TIMEOUT_MS): Promise<T> {
   const controleur = new AbortController();
-  const minuteur = setTimeout(() => controleur.abort(), env.IA_TIMEOUT_MS);
+  const minuteur = setTimeout(() => controleur.abort(), timeoutMs);
   try {
     const reponse = await fetch(`${env.SERVICE_IA_URL}${chemin}`, {
       method: 'POST',
@@ -53,6 +54,21 @@ const classifier = (titre: string, description: string) =>
 
 const prioriser = (titre: string, description: string, categorie: string) =>
   appelerIA<ReponsePriority>('/priority', { titre, description, categorie });
+
+// Réponse du RAG (Greffe 2). Contrat aligné sur `service/app.py` (/suggest).
+interface ReponseSuggest {
+  abstenu: boolean; // True → aucune suggestion ancrée : on n'invente pas
+  texte: string; // suggestion citée (vide si abstention)
+  sources: { id: number; titre: string }[]; // #id réellement cités
+  similaires: { id: number; titre: string; categorie: string | null }[]; // candidats RRF
+  confiance: number | null;
+  message: string;
+  latence_ms: number | null;
+}
+
+// Timeout LONG (génération 15-30 s) — cet appel est fait en asynchrone, hors réponse HTTP.
+const suggerer = (titre: string, description: string) =>
+  appelerIA<ReponseSuggest>('/suggest', { titre, description }, env.IA_SUGGESTION_TIMEOUT_MS);
 
 // Écrit l'embedding renvoyé par /classify. Prisma ne sait pas écrire le type
 // `Unsupported("vector(1024)")` → SQL brut paramétré : le vecteur part en littéral
@@ -144,6 +160,41 @@ async function enrichir(ticket: { id: number; titre: string; description: string
   }
 }
 
+// Génération RAG en ARRIÈRE-PLAN (fire-and-forget). Appelle /suggest (15-30 s) puis met la
+// ligne SOLUTION à PRETE (texte + sources + similaires ; abstention = PRETE aussi, c'est un
+// résultat valide) ou ECHEC (service/Ollama down/timeout). Ne rejette JAMAIS (promesse
+// détachée) : toute erreur est journalisée et la ligne passe ECHEC.
+async function genererSuggestion(
+  suggestionId: number,
+  ticketId: number,
+  titre: string,
+  description: string,
+): Promise<void> {
+  try {
+    const res = await suggerer(titre, description);
+    await prisma.suggestionIA.update({
+      where: { id: suggestionId },
+      data: {
+        statut: 'PRETE',
+        contenu: res.texte,
+        scoreConfiance: res.confiance,
+        details: {
+          abstenu: res.abstenu,
+          message: res.message,
+          sources: res.sources,
+          similaires: res.similaires,
+          latenceMs: res.latence_ms,
+        } as Prisma.InputJsonValue,
+      },
+    });
+  } catch (err) {
+    journaliser('génération suggestion', ticketId, err);
+    await prisma.suggestionIA
+      .update({ where: { id: suggestionId }, data: { statut: 'ECHEC' } })
+      .catch((e) => journaliser('maj ECHEC suggestion', ticketId, e));
+  }
+}
+
 export const iaService = {
   // Point d'entrée non bloquant : ne rejette jamais (filet de sécurité + étages internes).
   async enrichirTicket(ticket: { id: number; titre: string; description: string }): Promise<void> {
@@ -153,5 +204,17 @@ export const iaService = {
     } catch (err) {
       journaliser('enrichissement (interrompu)', ticket.id, err);
     }
+  },
+
+  // Démarre une suggestion RAG : réinitialise LA ligne SOLUTION du ticket en EN_COURS, puis
+  // lance la génération en ASYNCHRONE (non attendue) → l'appelant répond 202 immédiatement.
+  // Rapide ici (deux écritures DB) ; les 15-30 s de génération vivent dans le fire-and-forget.
+  async demarrerSuggestion(ticketId: number, titre: string, description: string): Promise<void> {
+    // Une seule ligne SOLUTION par ticket : on repart propre à chaque demande.
+    await prisma.suggestionIA.deleteMany({ where: { ticketId, typeSuggestion: 'SOLUTION' } });
+    const ligne = await prisma.suggestionIA.create({
+      data: { ticketId, typeSuggestion: 'SOLUTION', contenu: '', statut: 'EN_COURS' },
+    });
+    void genererSuggestion(ligne.id, ticketId, titre, description);
   },
 };

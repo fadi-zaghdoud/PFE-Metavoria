@@ -15,6 +15,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from . import config, embedder, predictors, reranker
+from ..retrieval import hybrid, suggestion
 
 app = FastAPI(
     title="Service IA — Smart Ticketing (Metavoria)",
@@ -144,3 +145,54 @@ def priority(req: RequetePriority) -> ReponsePriority:
     if not (req.titre.strip() or req.description.strip()):
         raise HTTPException(status_code=422, detail="Titre et description vides.")
     return ReponsePriority(**predictors.prioriser(req.titre, req.description, req.categorie))
+
+
+# ── Greffe 2 : suggestion RAG citée (à l'étape EN_COURS) ─────────────────────────
+# Ce endpoint LIT la KB (tickets résolus) mais n'écrit JAMAIS — Node reste seul
+# écrivain. Latence 15-30 s (génération Ollama qwen2.5:14b) → l'appelant Node
+# l'invoque en ASYNCHRONE (fire-and-forget), jamais dans un chemin de réponse.
+
+class RequeteSuggest(BaseModel):
+    titre: str = Field(..., description="Titre du ticket entrant (requête RAG).")
+    description: str = Field(..., description="Description du ticket entrant.")
+
+
+class SourceCitee(BaseModel):
+    id: int
+    titre: str
+
+
+class DocSimilaire(BaseModel):
+    id: int
+    titre: str
+    categorie: str | None = None
+
+
+class ReponseSuggest(BaseModel):
+    abstenu: bool                        # True → aucune suggestion (rien d'ancré) : on n'invente pas
+    texte: str                           # suggestion citée (vide si abstention)
+    sources: list[SourceCitee]           # #id RÉELLEMENT cités (⊆ similaires), avec titre
+    similaires: list[DocSimilaire]       # candidats RRF récupérés (affichés même en abstention)
+    confiance: float | None              # score de porte top-1 si un seuil est réglé (sinon None)
+    message: str                         # motif d'abstention, le cas échéant
+    latence_ms: float | None
+
+
+@app.post("/suggest", response_model=ReponseSuggest)
+def suggest(req: RequeteSuggest) -> ReponseSuggest:
+    """Suggestion de résolution RAG (recherche hybride + génération citée + abstention J6)."""
+    if not (req.titre.strip() or req.description.strip()):
+        raise HTTPException(status_code=422, detail="Titre et description vides.")
+    requete = f"{req.titre}\n{req.description}"  # même unité que les embeddings (titre + description)
+    with hybrid.connexion() as conn, conn.cursor() as cur:
+        sugg = suggestion.suggerer(cur, requete)
+    titres = {d["id"]: d["titre"] for d in sugg.similaires}
+    return ReponseSuggest(
+        abstenu=sugg.abstenu,
+        texte=sugg.texte,
+        sources=[SourceCitee(id=i, titre=titres.get(i, f"#{i}")) for i in sugg.sources],
+        similaires=[DocSimilaire(**d) for d in sugg.similaires],
+        confiance=sugg.confiance,
+        message=sugg.message,
+        latence_ms=sugg.latence_ms,
+    )

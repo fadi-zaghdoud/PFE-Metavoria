@@ -105,15 +105,26 @@ export interface DetailPrioriteIA {
   plafonnements: string[];
 }
 
-// Suggestion produite par le module IA (Greffe 1 : CLASSIFICATION, PRIORISATION).
-// L'IA suggère, le technicien valide/corrige. `details` dépend du type :
-// CLASSIFICATION → { categorieId, probabilites, … } ; PRIORISATION → DetailPrioriteIA.
+// Détail d'une suggestion SOLUTION (RAG, Greffe 2).
+export interface DetailSolutionIA {
+  abstenu: boolean; // true → aucune suggestion pertinente (pas d'invention)
+  message: string; // motif d'abstention le cas échéant
+  sources: { id: number; titre: string }[]; // #id cités par la génération
+  similaires: { id: number; titre: string; categorie: string | null }[]; // candidats RRF
+  latenceMs: number | null;
+}
+
+// Suggestion produite par le module IA. L'IA suggère, le technicien valide/corrige.
+// `statut` : PRETE d'emblée pour les suggestions synchrones (CLASSIFICATION/PRIORISATION) ;
+// EN_COURS → PRETE/ECHEC pour la SOLUTION RAG (générée en asynchrone). `details` dépend du
+// type : PRIORISATION → DetailPrioriteIA ; SOLUTION → DetailSolutionIA.
 export interface SuggestionIA {
   id: number;
   typeSuggestion: 'CLASSIFICATION' | 'PRIORISATION' | 'SOLUTION' | 'RESUME';
   contenu: string;
   scoreConfiance: number | null; // proba (classification) ; null pour la scorecard déterministe
-  details: unknown; // cast au point d'usage : DetailPrioriteIA pour une PRIORISATION
+  details: unknown; // cast au point d'usage selon le type
+  statut: 'EN_COURS' | 'PRETE' | 'ECHEC';
   valideeParTechnicien: boolean | null;
   dateCreation: string;
   ticketId: number;

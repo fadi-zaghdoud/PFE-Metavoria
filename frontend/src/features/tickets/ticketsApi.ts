@@ -59,6 +59,11 @@ export const ticketsApi = {
       token,
     }),
 
+  // Demande d'une suggestion RAG (Greffe 2) — répond 202 immédiat, la génération est
+  // asynchrone ; l'UI sonde ensuite le détail jusqu'à PRETE/ECHEC.
+  demanderSuggestion: (id: number, token: string) =>
+    apiRequest<{ ticket: TicketDetail }>(`/tickets/${id}/suggestion`, { method: 'POST', token }),
+
   affecter: (id: number, technicienId: number | null, token: string) =>
     apiRequest<{ ticket: TicketDetail }>(`/tickets/${id}/affectation`, {
       method: 'PATCH',

@@ -5,6 +5,7 @@ import {
   CheckCheck,
   Clock,
   Flag,
+  Loader2,
   Lock,
   RefreshCw,
   Send,
@@ -33,9 +34,11 @@ import type {
   Categorie,
   Commentaire,
   DetailPrioriteIA,
+  DetailSolutionIA,
   EvenementTicket,
   PrioriteTicket,
   StatutTicket,
+  SuggestionIA,
   TicketDetail,
   TypeEvenement,
 } from '../types/ticket';
@@ -257,6 +260,128 @@ function BlocSatisfaction({
   );
 }
 
+// Liste « tickets similaires » (candidats RRF), liens vers les tickets résolus de la KB.
+function TicketsSimilaires({ docs }: { docs: DetailSolutionIA['similaires'] }) {
+  if (docs.length === 0) return null;
+  return (
+    <div>
+      <p className="text-xs text-slate-400">Tickets similaires</p>
+      <ul className="mt-1 space-y-1">
+        {docs.map((d) => (
+          <li key={d.id}>
+            <Link
+              to={`/tickets/${d.id}`}
+              className="text-xs text-slate-600 hover:text-primary-700 hover:underline"
+            >
+              <span className="font-mono">#{d.id}</span> {d.titre}
+              {d.categorie && <span className="text-slate-400"> · {d.categorie}</span>}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+// Panneau de suggestion RAG (Greffe 2) — réservé au support. Cinq états : rien / en cours /
+// prête+suggestion / prête+abstention / échec. La génération vit côté serveur (async) ;
+// ici on affiche l'état de la ligne SOLUTION que le polling met à jour.
+function PanneauSuggestionRAG({
+  suggestion,
+  peutSuggerer,
+  onSuggerer,
+  enCours,
+}: {
+  suggestion: SuggestionIA | undefined;
+  peutSuggerer: boolean;
+  onSuggerer: () => void;
+  enCours: boolean;
+}) {
+  const detail = suggestion?.details as DetailSolutionIA | undefined;
+  const statut = suggestion?.statut;
+
+  const bouton = (label: string) =>
+    peutSuggerer ? (
+      <Button size="sm" variant="secondary" onClick={onSuggerer} loading={enCours} disabled={enCours}>
+        <Sparkles className="size-3.5" aria-hidden />
+        {label}
+      </Button>
+    ) : null;
+
+  return (
+    <Card>
+      <CardHeader
+        title="Suggestion de résolution (IA)"
+        description="Synthèse citée des résolutions passées similaires — à valider par le technicien."
+      />
+      <CardContent className="space-y-3">
+        {statut === 'EN_COURS' && (
+          <div className="flex items-center gap-2 text-sm text-slate-500">
+            <Loader2 className="size-4 animate-spin" aria-hidden />
+            Génération en cours… (~15-30 s)
+          </div>
+        )}
+
+        {statut === 'ECHEC' && (
+          <div className="space-y-2">
+            <p className="text-sm text-slate-500">Suggestion indisponible (service IA).</p>
+            {bouton('Réessayer')}
+          </div>
+        )}
+
+        {statut === 'PRETE' && detail?.abstenu && (
+          <div className="space-y-2.5">
+            <p className="text-sm text-slate-500">
+              Aucune suggestion pertinente — les tickets retrouvés ne couvrent pas ce problème.
+            </p>
+            <TicketsSimilaires docs={detail.similaires} />
+            {bouton('Relancer')}
+          </div>
+        )}
+
+        {statut === 'PRETE' && detail && !detail.abstenu && (
+          <div className="space-y-3">
+            <p className="whitespace-pre-line text-sm leading-relaxed text-slate-700">
+              {suggestion?.contenu}
+            </p>
+            {detail.sources.length > 0 && (
+              <div>
+                <p className="text-xs text-slate-400">Sources</p>
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  {detail.sources.map((s) => (
+                    <Link
+                      key={s.id}
+                      to={`/tickets/${s.id}`}
+                      className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-xs text-slate-600 transition-colors hover:border-primary-300 hover:text-primary-700"
+                    >
+                      <span className="font-mono">#{s.id}</span>
+                      <span className="max-w-[160px] truncate">{s.titre}</span>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+            <TicketsSimilaires docs={detail.similaires} />
+            <p className="text-[11px] leading-relaxed text-slate-400">
+              Suggestion non contraignante, ancrée sur des tickets résolus — à valider par le technicien.
+            </p>
+            {bouton('Régénérer')}
+          </div>
+        )}
+
+        {!suggestion &&
+          (peutSuggerer ? (
+            bouton('Suggérer une résolution')
+          ) : (
+            <p className="text-sm text-slate-400">
+              Disponible pour le technicien assigné quand le ticket est en cours.
+            </p>
+          ))}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function TicketDetailPage() {
   const { id } = useParams();
   const ticketId = Number(id);
@@ -312,6 +437,23 @@ export function TicketDetailPage() {
       });
   }, [token, utilisateur?.role]);
 
+  // Polling ciblé de la suggestion RAG : tant que la ligne SOLUTION est EN_COURS, on refetch
+  // le détail toutes les ~3,5 s ; dès qu'elle passe PRETE/ECHEC, on s'arrête (pas de polling
+  // infini). `statutSuggestion` est une primitive → l'effet ne se relance qu'aux transitions.
+  const statutSuggestion = ticket?.suggestionsIA.find((s) => s.typeSuggestion === 'SOLUTION')?.statut;
+  useEffect(() => {
+    if (!token || statutSuggestion !== 'EN_COURS') return;
+    const timer = setInterval(() => {
+      ticketsApi
+        .detail(ticketId, token)
+        .then(({ ticket: t }) => setTicket(t))
+        .catch(() => {
+          /* échec ponctuel de polling : on réessaiera au prochain tick */
+        });
+    }, 3500);
+    return () => clearInterval(timer);
+  }, [statutSuggestion, token, ticketId]);
+
   if (chargement) {
     return (
       <div className="space-y-4">
@@ -349,6 +491,11 @@ export function TicketDetailPage() {
   const suggestionCategorie = ticket.suggestionsIA.find((s) => s.typeSuggestion === 'CLASSIFICATION');
   const suggestionPriorite = ticket.suggestionsIA.find((s) => s.typeSuggestion === 'PRIORISATION');
   const detailPriorite = suggestionPriorite?.details as DetailPrioriteIA | undefined;
+
+  // Suggestion RAG (Greffe 2) — réservée au support ; déclenchable quand le ticket est en cours.
+  const suggestionSolution = ticket.suggestionsIA.find((s) => s.typeSuggestion === 'SOLUTION');
+  const estSupport = estAdmin || estTechnicienAssigne;
+  const peutSuggerer = estSupport && ticket.statut === 'EN_COURS';
 
   // Fil unifié : commentaires + événements (changements), triés chronologiquement.
   type ElementFil =
@@ -431,6 +578,15 @@ export function TicketDetailPage() {
       setTicket(res.ticket);
       toast.success('Catégorie mise à jour', `Catégorie « ${res.ticket.categorie?.nom ?? '—'} ».`);
     }
+  }
+
+  async function handleDemanderSuggestion() {
+    if (!token) return;
+    const res = await withAction(
+      () => ticketsApi.demanderSuggestion(ticket!.id, token),
+      'La demande de suggestion a échoué',
+    );
+    if (res) setTicket(res.ticket); // ligne SOLUTION en EN_COURS → le polling prend le relais
   }
 
   async function handleAffecter(technicienId: number | null) {
@@ -537,6 +693,16 @@ export function TicketDetailPage() {
               </p>
             </CardContent>
           </Card>
+
+          {/* Suggestion de résolution RAG (Greffe 2) — support uniquement */}
+          {estSupport && (
+            <PanneauSuggestionRAG
+              suggestion={suggestionSolution}
+              peutSuggerer={peutSuggerer}
+              onSuggerer={handleDemanderSuggestion}
+              enCours={action}
+            />
+          )}
 
           <Card>
             <CardHeader

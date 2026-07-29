@@ -237,8 +237,12 @@ model SuggestionIA {
   // règle glass-box sans probabilité — on ne fabrique pas de fausse confiance).
   scoreConfiance Float?   @map("score_confiance")
   // Détail structuré : probabilités par classe (classification) OU décomposition
-  // glass-box de la scorecard (priorité, `Decision.to_dict()` — « HAUTE car … »).
+  // glass-box de la scorecard (priorité) OU sources+similaires (solution RAG).
   details        Json?
+  // Cycle de la suggestion. PRETE d'emblée pour les suggestions SYNCHRONES
+  // (CLASSIFICATION/PRIORISATION, Greffe 1). Pour la SOLUTION RAG (Greffe 2, générée
+  // en ASYNCHRONE 15-30 s) : EN_COURS → PRETE (texte + sources) ou ECHEC.
+  statut         String   @default("PRETE")
   valideeParTechnicien Boolean? @map("validee_par_technicien")
   dateCreation   DateTime @default(now()) @map("date_creation")
 

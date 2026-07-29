@@ -1039,6 +1039,94 @@ demande explicite.
   (`findByNom`), include détail étendu (`suggestionsIA`), panneau UI (`TicketDetailPage.tsx`),
   types front (`SuggestionIA`, `DetailPrioriteIA`).
 
+### Greffe 2 (intégration IA) — Suggestion RAG asynchrone (étape EN_COURS)
+- **Date** : 28-29/07/2026. `[établi en séance]`
+- **Contexte** : deuxième greffe — productiser le RAG **J6** (recherche hybride RRF +
+  génération citée + abstention) dans l'application, à l'étape **EN_COURS** (le technicien
+  traite le ticket). L'IA **suggère** une résolution ancrée sur des tickets passés résolus ;
+  le technicien valide/écarte.
+- **Architecture — un `/suggest` qui LIT la KB (raffinement de frontière)** : contrairement
+  à `/classify` et `/priority` (Greffe 1, sans DB), le RAG **doit lire** la base (chercher
+  dans les tickets résolus). Décision assumée : **le service RAG LIT la KB (recherche), il
+  n'ÉCRIT jamais** — Node reste seul écrivain. Inhérent au RAG, pas une entorse. Le endpoint
+  réutilise `hybrid.connexion()` + `suggestion.suggerer` (code J6, un seul appelant : safe à
+  enrichir → ajout des `similaires` sans retrieval en double).
+- **L'ASYNC (le point structurant)** : la génération prend **15-30 s** (Ollama qwen2.5:14b)
+  → **jamais dans le chemin de réponse HTTP**.
+  - Migration `SuggestionIA.statut` (défaut `PRETE` ; les suggestions synchrones de Greffe 1
+    restent PRETE). Pour la SOLUTION : **EN_COURS → PRETE/ECHEC**.
+  - Flux : `POST /tickets/:id/suggestion` → crée la ligne SOLUTION EN_COURS + **répond 202
+    immédiat** ; puis `void genererSuggestion(...)` **fire-and-forget** (non attendu) appelle
+    `/suggest` (timeout dédié `IA_SUGGESTION_TIMEOUT_MS`=60 s, distinct des 4 s de Greffe 1)
+    et met la ligne à PRETE (texte + sources + similaires) ou ECHEC. **Le clic (~ms) et la
+    génération (30 s) ne se confondent jamais.**
+  - **UI = polling** (choix : simple, pas de SSE) : tant que la ligne SOLUTION est EN_COURS,
+    la page refetch toutes les ~3,5 s ; dès PRETE/ECHEC, **arrêt** (dépendance = la primitive
+    `statut`, pas de boucle infinie).
+- **Déclencheur** : **bouton « Suggérer »** (à la demande, pas d'auto sur EN_COURS → pas de
+  RAG gaspillé). Réservé au **technicien assigné ou admin**, **ticket EN_COURS uniquement**.
+- **KB = synthétique (723 résolus)** pour l'instant ; les vrais tickets résolus n'y entrent
+  pas encore (filtre `synthetique AND RESOLU/CLOTURE`) → **Greffe 3** (récolte des résolutions
+  validées).
+
+- **LES 4 COMPORTEMENTS OBSERVÉS À L'ÉCRAN (documentés sans maquillage)** :
+  1. **Pertinent** (ticket VPN #866) : suggestion **actionnable**, sources = **vrais** tickets
+     VPN de la KB. Cas nominal.
+  2. **Bruit léger du retrieval filtré par le LLM** (Imprimante #868) : le retrieval remonte
+     un **voisin bruité** (#837, non pertinent), mais le **LLM ne le cite pas** → solution
+     correcte. Illustration directe de l'**architecture à deux étages** (voir enseignement).
+  3. **Sur-connexion de surface — abstention NON déclenchée** (Réservation salle #867) :
+     requête **hors domaine** (réserver une salle ≠ problème IT). Le retrieval remonte des
+     tickets « **port réseau salle réunion** » (#327/#375) par recouvrement de **surface**
+     (« salle de réunion »), et le LLM **rationalise** en réinterprétant « confirmer la
+     disponibilité » en « vérifier la connectivité réseau ». **Grounding OK** (sources réelles
+     citées, pas d'hallucination au sens strict), mais **pertinence spurious**. **Cas-limite
+     ASSUMÉ** (cf. décision seuil). NB : une requête voisine avec « …commander un plateau
+     repas » abstenait bien (étape 1) → **l'abstention est sensible à la formulation, pas une
+     garantie dure**.
+  4. **Échec** (service Python coupé) : ligne → **ECHEC**, UI « Suggestion indisponible +
+     Réessayer ». Dégradation propre, ticket intact.
+
+- **Enseignement architectural — RAG à DEUX ÉTAGES** : **retrieval = RAPPEL** (large, peut
+  sur-générer des voisins bruités ou topiquement adjacents — cf. #837, #327/#375) ;
+  **LLM = PRÉCISION de synthèse** (filtre le bruit, ne cite que le pertinent — cf. #868). Les
+  cas #868 (filtre le bruit) et #867 (ne filtre PAS la sur-connexion de surface) **délimitent
+  ensemble** ce que le LLM sait faire (écarter un voisin franchement hors-sujet) et ne sait
+  pas faire (résister à un recouvrement de surface qui lui offre un pont plausible). C'est le
+  **fil rouge sémantique vs surface** dans une nouvelle forme.
+
+- **Décision — seuil d'abstention à `None` (non figé)** : le levier qui attraperait #867 est
+  le **seuil de la porte reranker (top-1)**. Il est **délibérément à `None`**. Le régler sur
+  du synthétique reproduirait exactement le piège prouvé en J5/J6 (« réglé sur synthétique →
+  ne transfère pas »). **On ne le tune pas** ; son réglage attend un **dev réel = flywheel
+  J9**. Ne pas « réparer » #867 est la décision **rigoureuse**, pas de la paresse.
+
+- **Le garde-fou = SUGGÈRE + validation humaine** : la posture (l'IA suggère, le technicien
+  valide, mention « à valider par le technicien ») est **exactement** ce qui neutralise #867 —
+  un technicien écarte la suggestion d'un coup d'œil. Le cas #867 est la **démonstration
+  vivante** de pourquoi glass-box + human-in-the-loop sont nécessaires (planche de soutenance).
+
+- **Dimensionnement** : latence **26 s à chaud / 52 s à froid** (chargement bge-m3 + RRF +
+  génération) → confirme l'**async obligatoire**. **Warm-up** identique à Greffe 1 : pré-chauffer
+  le service (un `/suggest` à vide) avant la démo. Dépendances runtime : **Ollama qwen2.5:14b**
+  (génération) + **`DATABASE_URL`** (lecture KB).
+
+- **Limites (à documenter au rapport)** : (a) KB **synthétique** (réel = Greffe 3) ;
+  (b) **abstention sensible à la formulation**, pas une garantie — le seuil calibré (qui
+  durcirait la porte) attend le flywheel ; (c) **mono-instance** : le fire-and-forget suffit
+  en dev/démo ; une vraie file de jobs serait un sujet de **passage à l'échelle** (une ligne
+  SOLUTION laissée EN_COURS par un redémarrage Node est réinitialisée au re-clic).
+
+- **Livrables** : `retrieval/suggestion.py` (+`similaires`), `service/app.py` (`/suggest`),
+  migration `…_ajout_statut_suggestion_ia`, `ia.service.ts` (`demarrerSuggestion` +
+  `genererSuggestion` fire-and-forget + timeout paramétré), `ticket.service.ts`
+  (`demanderSuggestion`), controller + route `POST /:id/suggestion` (202), `ticketsApi.ts`,
+  panneau RAG + polling (`TicketDetailPage.tsx`), types front (`SuggestionIA.statut`,
+  `DetailSolutionIA`).
+
+- **Suite** : **J8** — résumé automatique (CDC §6.3) ; puis **J8bis** OCR (encadrant) ;
+  **Greffe 3** flywheel (récolte KB réelle + capture validation).
+
 ### J8bis — Pièces jointes dans le pipeline IA (extension validée par l'encadrant)
 - **Date** : 17/07/2026. `[établi en séance]`
 - **Contexte / nouvelle exigence** : l'encadrant demande d'**intégrer les pièces

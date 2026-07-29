@@ -24,3 +24,5 @@ ticketsRouter.post('/:id/cloture', asyncHandler(ticketController.cloturer)); // 
 ticketsRouter.patch('/:id/priorite', asyncHandler(ticketController.changerPriorite));
 ticketsRouter.patch('/:id/categorie', asyncHandler(ticketController.changerCategorie)); // tech. assigné/admin : recatégorisation (flywheel)
 ticketsRouter.post('/:id/commentaires', asyncHandler(ticketController.commenter));
+// IA — suggestion RAG asynchrone (Greffe 2) : tech. assigné/admin, ticket EN_COURS ; répond 202.
+ticketsRouter.post('/:id/suggestion', asyncHandler(ticketController.demanderSuggestion));

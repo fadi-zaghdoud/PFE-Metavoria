@@ -69,6 +69,14 @@ export const ticketController = {
     res.status(200).json({ ticket });
   },
 
+  // 202 Accepted : la génération RAG (15-30 s) part en arrière-plan ; on renvoie tout de
+  // suite le ticket avec la ligne SOLUTION en EN_COURS (l'UI sonde ensuite jusqu'à PRETE).
+  async demanderSuggestion(req: Request, res: Response) {
+    const id = parseIdParam(req.params.id);
+    const ticket = await ticketService.demanderSuggestion(acteur(req), id);
+    res.status(202).json({ ticket });
+  },
+
   async changerPriorite(req: Request, res: Response) {
     const id = parseIdParam(req.params.id);
     const { priorite } = changerPrioriteSchema.parse(req.body);

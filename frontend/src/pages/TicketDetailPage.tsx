@@ -382,6 +382,64 @@ function PanneauSuggestionRAG({
   );
 }
 
+// Encart « Résumé du fil (IA) » (J8) — en tête de la carte Conversation, support uniquement.
+// Quatre états : rien (bouton si ≥2 messages) / en cours / prêt (résumé + régénérer) / échec.
+function EncartResumeFil({
+  resume,
+  peutResumer,
+  onResumer,
+  enCours,
+}: {
+  resume: SuggestionIA | undefined;
+  peutResumer: boolean;
+  onResumer: () => void;
+  enCours: boolean;
+}) {
+  const statut = resume?.statut;
+
+  // Rien à montrer : ni résumé existant, ni possibilité d'en demander un (fil trop court).
+  if (!resume && !peutResumer) return null;
+
+  const bouton = (label: string) => (
+    <Button size="sm" variant="secondary" onClick={onResumer} loading={enCours} disabled={enCours}>
+      <Sparkles className="size-3.5" aria-hidden />
+      {label}
+    </Button>
+  );
+
+  return (
+    <div className="rounded-xl border border-primary-100 bg-primary-50/40 p-3">
+      <div className="flex items-center gap-2">
+        <span className="flex size-6 items-center justify-center rounded-md bg-gradient-to-br from-primary-500 to-accent-600 text-white">
+          <Sparkles className="size-3.5" aria-hidden />
+        </span>
+        <h3 className="text-xs font-semibold text-slate-700">Résumé du fil (IA)</h3>
+      </div>
+      <div className="mt-2">
+        {statut === 'EN_COURS' && (
+          <div className="flex items-center gap-2 text-sm text-slate-500">
+            <Loader2 className="size-4 animate-spin" aria-hidden />
+            Résumé en cours…
+          </div>
+        )}
+        {statut === 'ECHEC' && (
+          <div className="space-y-2">
+            <p className="text-sm text-slate-500">Résumé indisponible (service IA).</p>
+            {peutResumer && bouton('Réessayer')}
+          </div>
+        )}
+        {statut === 'PRETE' && (
+          <div className="space-y-2">
+            <p className="whitespace-pre-line text-sm leading-relaxed text-slate-700">{resume?.contenu}</p>
+            {peutResumer && bouton('Régénérer')}
+          </div>
+        )}
+        {!resume && peutResumer && bouton('Résumer le fil')}
+      </div>
+    </div>
+  );
+}
+
 export function TicketDetailPage() {
   const { id } = useParams();
   const ticketId = Number(id);
@@ -437,12 +495,13 @@ export function TicketDetailPage() {
       });
   }, [token, utilisateur?.role]);
 
-  // Polling ciblé de la suggestion RAG : tant que la ligne SOLUTION est EN_COURS, on refetch
-  // le détail toutes les ~3,5 s ; dès qu'elle passe PRETE/ECHEC, on s'arrête (pas de polling
-  // infini). `statutSuggestion` est une primitive → l'effet ne se relance qu'aux transitions.
-  const statutSuggestion = ticket?.suggestionsIA.find((s) => s.typeSuggestion === 'SOLUTION')?.statut;
+  // Polling généralisé des générations IA asynchrones : tant qu'UNE quelconque suggestion
+  // (SOLUTION ou RESUME) est EN_COURS, on refetch le détail toutes les ~3,5 s ; dès qu'aucune
+  // ne l'est, on s'arrête. `aGenerationEnCours` est un booléen → l'effet ne se relance qu'aux
+  // transitions (pas de boucle infinie, un seul mécanisme pour les deux types).
+  const aGenerationEnCours = ticket?.suggestionsIA.some((s) => s.statut === 'EN_COURS') ?? false;
   useEffect(() => {
-    if (!token || statutSuggestion !== 'EN_COURS') return;
+    if (!token || !aGenerationEnCours) return;
     const timer = setInterval(() => {
       ticketsApi
         .detail(ticketId, token)
@@ -452,7 +511,7 @@ export function TicketDetailPage() {
         });
     }, 3500);
     return () => clearInterval(timer);
-  }, [statutSuggestion, token, ticketId]);
+  }, [aGenerationEnCours, token, ticketId]);
 
   if (chargement) {
     return (
@@ -496,6 +555,10 @@ export function TicketDetailPage() {
   const suggestionSolution = ticket.suggestionsIA.find((s) => s.typeSuggestion === 'SOLUTION');
   const estSupport = estAdmin || estTechnicienAssigne;
   const peutSuggerer = estSupport && ticket.statut === 'EN_COURS';
+
+  // Résumé du fil (J8) — support ; disponible dès ≥ 2 messages, quel que soit le statut.
+  const suggestionResume = ticket.suggestionsIA.find((s) => s.typeSuggestion === 'RESUME');
+  const peutResumer = estSupport && ticket.commentaires.length >= 2;
 
   // Fil unifié : commentaires + événements (changements), triés chronologiquement.
   type ElementFil =
@@ -587,6 +650,15 @@ export function TicketDetailPage() {
       'La demande de suggestion a échoué',
     );
     if (res) setTicket(res.ticket); // ligne SOLUTION en EN_COURS → le polling prend le relais
+  }
+
+  async function handleDemanderResume() {
+    if (!token) return;
+    const res = await withAction(
+      () => ticketsApi.demanderResume(ticket!.id, token),
+      'La demande de résumé a échoué',
+    );
+    if (res) setTicket(res.ticket); // ligne RESUME en EN_COURS → le polling prend le relais
   }
 
   async function handleAffecter(technicienId: number | null) {
@@ -710,6 +782,15 @@ export function TicketDetailPage() {
               description={`${ticket.commentaires.length} message${ticket.commentaires.length > 1 ? 's' : ''}`}
             />
             <CardContent className="space-y-5">
+              {/* Résumé du fil (J8) — en tête, support uniquement */}
+              {estSupport && (
+                <EncartResumeFil
+                  resume={suggestionResume}
+                  peutResumer={peutResumer}
+                  onResumer={handleDemanderResume}
+                  enCours={action}
+                />
+              )}
               {fil.length === 0 && (
                 <p className="text-sm text-slate-400">Aucun message pour l'instant.</p>
               )}

@@ -11,11 +11,14 @@ Lancement (dév) :
 
 from __future__ import annotations
 
+import time
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from . import config, embedder, predictors, reranker
 from ..retrieval import hybrid, suggestion
+from ..summarize import resumer
 
 app = FastAPI(
     title="Service IA — Smart Ticketing (Metavoria)",
@@ -196,3 +199,38 @@ def suggest(req: RequeteSuggest) -> ReponseSuggest:
         message=sugg.message,
         latence_ms=sugg.latence_ms,
     )
+
+
+# ── J8 : résumé automatique du fil (à la demande, à l'étape de traitement) ───────
+# Résumé FIDÈLE du fil (description + messages) : le LLM condense, n'invente rien
+# (prompt strict, température 0). Texte in / JSON out, sans DB. Latence 21-55 s
+# (génération Ollama) → l'appelant Node l'invoque en ASYNCHRONE, comme /suggest.
+
+class MessageFil(BaseModel):
+    auteur: str
+    contenu: str
+
+
+class RequeteSummarize(BaseModel):
+    titre: str = Field(..., description="Titre du ticket.")
+    description: str = Field(..., description="Description (message initial du demandeur).")
+    messages: list[MessageFil] = Field(default_factory=list, description="Commentaires, ordre chronologique.")
+
+
+class ReponseSummarize(BaseModel):
+    resume: str
+    latence_ms: float | None
+
+
+@app.post("/summarize", response_model=ReponseSummarize)
+def summarize(req: RequeteSummarize) -> ReponseSummarize:
+    """Résumé fidèle et condensé du fil d'un ticket (aucune invention)."""
+    if not req.description.strip() and not req.messages:
+        raise HTTPException(status_code=422, detail="Fil vide (ni description ni message).")
+    t0 = time.perf_counter()
+    resume = resumer(
+        req.titre,
+        req.description,
+        [{"auteur": m.auteur, "contenu": m.contenu} for m in req.messages],
+    )
+    return ReponseSummarize(resume=resume, latence_ms=(time.perf_counter() - t0) * 1000)

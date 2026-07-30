@@ -70,6 +70,20 @@ interface ReponseSuggest {
 const suggerer = (titre: string, description: string) =>
   appelerIA<ReponseSuggest>('/suggest', { titre, description }, env.IA_SUGGESTION_TIMEOUT_MS);
 
+// Résumé du fil (J8). Contrat aligné sur /summarize ; même timeout long (génération 21-55 s).
+interface MessageFil {
+  auteur: string;
+  contenu: string;
+}
+
+interface ReponseSummarize {
+  resume: string;
+  latence_ms: number | null;
+}
+
+const resumer = (titre: string, description: string, messages: MessageFil[]) =>
+  appelerIA<ReponseSummarize>('/summarize', { titre, description, messages }, env.IA_SUGGESTION_TIMEOUT_MS);
+
 // Écrit l'embedding renvoyé par /classify. Prisma ne sait pas écrire le type
 // `Unsupported("vector(1024)")` → SQL brut paramétré : le vecteur part en littéral
 // pgvector `[...]` casté ::vector. Le service ne touche jamais la DB (Node le fait).
@@ -195,6 +209,33 @@ async function genererSuggestion(
   }
 }
 
+// Génération du résumé en ARRIÈRE-PLAN (fire-and-forget) — même patron que genererSuggestion.
+// Met la ligne RESUME à PRETE (contenu = résumé) ou ECHEC. Ne rejette JAMAIS.
+async function genererResume(
+  suggestionId: number,
+  ticketId: number,
+  titre: string,
+  description: string,
+  messages: MessageFil[],
+): Promise<void> {
+  try {
+    const res = await resumer(titre, description, messages);
+    await prisma.suggestionIA.update({
+      where: { id: suggestionId },
+      data: {
+        statut: 'PRETE',
+        contenu: res.resume,
+        details: { latenceMs: res.latence_ms } as Prisma.InputJsonValue,
+      },
+    });
+  } catch (err) {
+    journaliser('génération résumé', ticketId, err);
+    await prisma.suggestionIA
+      .update({ where: { id: suggestionId }, data: { statut: 'ECHEC' } })
+      .catch((e) => journaliser('maj ECHEC résumé', ticketId, e));
+  }
+}
+
 export const iaService = {
   // Point d'entrée non bloquant : ne rejette jamais (filet de sécurité + étages internes).
   async enrichirTicket(ticket: { id: number; titre: string; description: string }): Promise<void> {
@@ -216,5 +257,21 @@ export const iaService = {
       data: { ticketId, typeSuggestion: 'SOLUTION', contenu: '', statut: 'EN_COURS' },
     });
     void genererSuggestion(ligne.id, ticketId, titre, description);
+  },
+
+  // Démarre un résumé du fil : réinitialise LA ligne RESUME en EN_COURS, puis lance la
+  // génération en ASYNCHRONE (non attendue) → l'appelant répond 202 immédiatement.
+  async demarrerResume(
+    ticketId: number,
+    titre: string,
+    description: string,
+    messages: MessageFil[],
+  ): Promise<void> {
+    // Une seule ligne RESUME par ticket : on repart propre (le fil a pu grandir).
+    await prisma.suggestionIA.deleteMany({ where: { ticketId, typeSuggestion: 'RESUME' } });
+    const ligne = await prisma.suggestionIA.create({
+      data: { ticketId, typeSuggestion: 'RESUME', contenu: '', statut: 'EN_COURS' },
+    });
+    void genererResume(ligne.id, ticketId, titre, description, messages);
   },
 };

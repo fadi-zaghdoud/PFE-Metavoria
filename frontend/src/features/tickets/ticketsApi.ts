@@ -64,6 +64,10 @@ export const ticketsApi = {
   demanderSuggestion: (id: number, token: string) =>
     apiRequest<{ ticket: TicketDetail }>(`/tickets/${id}/suggestion`, { method: 'POST', token }),
 
+  // Demande d'un résumé du fil (J8) — même mécanique async (202 immédiat + polling).
+  demanderResume: (id: number, token: string) =>
+    apiRequest<{ ticket: TicketDetail }>(`/tickets/${id}/resume`, { method: 'POST', token }),
+
   affecter: (id: number, technicienId: number | null, token: string) =>
     apiRequest<{ ticket: TicketDetail }>(`/tickets/${id}/affectation`, {
       method: 'PATCH',

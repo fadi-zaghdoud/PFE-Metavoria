@@ -468,6 +468,34 @@ export const ticketService = {
     return (await ticketRepository.findById(id)) ?? ticket;
   },
 
+  // Demande d'un résumé du fil (J8). Règle : le technicien assigné ou un admin, à N'IMPORTE
+  // QUEL statut, dès que le fil a ≥ 2 messages (en dessous, la description suffit). La
+  // génération (21-55 s) est ASYNCHRONE ; on renvoie tout de suite le ticket avec la ligne
+  // RESUME en EN_COURS (l'UI sonde ensuite jusqu'à PRETE/ECHEC).
+  async demanderResume(acteur: Acteur, id: number): Promise<TicketDetail> {
+    if (!env.IA_ACTIVE) throw new ValidationError('Le module IA est désactivé');
+    const ticket = await ticketRepository.findById(id);
+    if (!ticket) throw new NotFoundError('Ticket introuvable');
+    if (!estAdmin(acteur) && !estTechnicienAssigne(acteur, ticket)) {
+      throw new ForbiddenError('Seul le technicien assigné ou un administrateur peut demander un résumé');
+    }
+    if (ticket.commentaires.length < 2) {
+      throw new ValidationError("Un résumé n'a d'intérêt qu'à partir de 2 messages dans le fil");
+    }
+
+    // Fil = description + commentaires chronologiques (SANS les événements de statut : ce sont
+    // des métadonnées, pas de la conversation). Auteur annoté demandeur / technicien.
+    const messages = ticket.commentaires.map((c) => ({
+      auteur: `${c.auteur.prenom} ${c.auteur.nom} (${
+        c.auteur.id === ticket.demandeur.id ? 'demandeur' : 'technicien'
+      })`,
+      contenu: c.contenu,
+    }));
+    await iaService.demarrerResume(id, ticket.titre, ticket.description, messages);
+    logAudit('TICKET_RESUME', { ticketId: id, parUtilisateur: acteur.id });
+    return (await ticketRepository.findById(id)) ?? ticket;
+  },
+
   // Validation de la résolution par le DEMANDEUR (note 1..5 + commentaire optionnel).
   // C'est l'une des deux voies vers CLOTURE (l'autre = clôture admin). N'est possible
   // que depuis RESOLU et clôture systématiquement le ticket ; une fois CLOTURÉ,

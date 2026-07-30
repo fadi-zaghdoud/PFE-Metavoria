@@ -1127,6 +1127,63 @@ demande explicite.
 - **Suite** : **J8** — résumé automatique (CDC §6.3) ; puis **J8bis** OCR (encadrant) ;
   **Greffe 3** flywheel (récolte KB réelle + capture validation).
 
+### J8 — Résumé automatique du fil (async)
+- **Date** : 29-30/07/2026. `[établi en séance]`
+- **Contexte** : exigence **CDC §6.3**. Objectif : un technicien qui reprend un ticket au
+  **fil long** sait « où on en est » sans tout relire. **Ce qu'on résume = le FIL**
+  (description + commentaires) — un ticket n'est « long » que par son échange ; la
+  description seule est souvent déjà courte. Le résumé de clôture (KPI) = bonus secondaire,
+  hors du cœur de J8.
+- **Méthode — MESURER avant de trancher sync/async** : chronométré un vrai résumé
+  (qwen2.5:14b, température 0) → **55 s à froid / 21 s à chaud** (fils de 6/5 messages). Les
+  deux ≫ 8 s → **décision : ASYNC**. La mesure valide **deux choses d'un coup** : la latence
+  (async obligatoire) ET la qualité (les 2 résumés produits étaient déjà fidèles, zéro
+  invention → le prompt était bon avant même de coder l'UI).
+- **Réutilisation intégrale du socle Greffe 2** : même patron async — `SuggestionIA` type
+  **`RESUME`**, `statut` EN_COURS→PRETE/ECHEC, `demarrerResume`/`genererResume`
+  **fire-and-forget**, **202 immédiat**, polling. **ZÉRO migration** (type `RESUME` + champ
+  `statut` déjà en place depuis Greffe 2).
+- **Serving `/summarize`** (texte in, JSON out, **SANS DB**) : contrairement au RAG (qui lit
+  la KB), le résumé n'a **aucune** lecture base — seulement `titre + description + messages[]`
+  → génération Ollama. Module `summarize.py` (prompt + `resumer`).
+- **Prompt anti-hallucination (LE point critique)** : le LLM **CONDENSE, il n'AJOUTE JAMAIS**.
+  Interdictions explicites : n'invente pas, n'extrapole pas, ne déduis aucune cause /
+  diagnostic / action / solution absente du fil, ne propose aucune recommandation de ton cru ;
+  reste factuel ; attribue les propos à leur auteur (demandeur / technicien) ; réponds en
+  français ; **température 0** (déterministe). **Validé empiriquement** : 2 mesures + test à
+  l'écran (fil SMB/Excel — 6 messages → 3 phrases fidèles, attribution Sarah/Karim correcte,
+  **fusion des 2 décisions du technicien** = vraie synthèse, zéro invention).
+- **Assemblage du fil (Node)** : `description + commentaires` **chronologiques**, **SANS les
+  événements de statut** (métadonnées, pas de conversation). Auteur annoté **(demandeur) /
+  (technicien)** selon qu'il est le demandeur du ticket — exactement le format attendu par le
+  prompt.
+- **Déclencheur** : **bouton « Résumer le fil »** (à la demande, pas d'auto). **Technicien
+  assigné ou admin**, **n'importe quel statut** (un résumé sert dès qu'il y a un échange :
+  admin qui supervise, technicien qui reprend un ticket en attente), **dès ≥ 2 commentaires**
+  (en dessous, la description suffit — garde-fou anti-résumé-inutile).
+- **Affichage** : encart **« Résumé du fil (IA) »** en tête de la carte Conversation (le
+  résumé résume le fil → juste au-dessus). Support uniquement. 4 états : rien (bouton) /
+  EN_COURS (spinner) / PRETE (résumé + Régénérer) / ECHEC (indisponible + Réessayer).
+  **Polling généralisé** : la clé passe de « SOLUTION EN_COURS » à « **une quelconque
+  suggestion EN_COURS** » → **un seul mécanisme** couvre le RAG (SOLUTION) **et** le résumé
+  (RESUME).
+- **Persistance** : `SuggestionIA` type `RESUME` · `contenu`=résumé · `scoreConfiance`=null ·
+  `statut`=EN_COURS→PRETE/ECHEC · `details`={latenceMs}. Une seule ligne RESUME par ticket
+  (deleteMany+create → « Régénérer » repart propre, le fil ayant grandi).
+- **Dégradation** : identique Greffe 2 — `genererResume` ne rejette jamais ; service/Ollama
+  down/timeout → **ECHEC** (+ Réessayer). Ticket intact.
+- **Dimensionnement** : latence **21-55 s** (Ollama qwen2.5:14b ; timeout async 60 s). Un fil
+  très long + modèle froid peut frôler 60 s → ECHEC, re-clic. Dépendance runtime : **Ollama
+  qwen2.5:14b** uniquement (ni DB ni bge-m3 — le résumé n'utilise ni la KB ni les embeddings).
+  Warm-up Ollama identique aux autres greffes.
+- **Livrables** : `summarize.py`, `service/app.py` (`/summarize`), `ia.service.ts` (`resumer` +
+  `demarrerResume`/`genererResume`), `ticket.service.ts` (`demanderResume` + assemblage du
+  fil), controller + route `POST /:id/resume` (202), `ticketsApi.ts`, encart + polling
+  généralisé (`TicketDetailPage.tsx`).
+- **Suite** : **J8bis** — OCR pièces jointes (exigence encadrant). En attente d'une
+  clarification de l'encadrant : extraire le **TEXTE** (Tesseract, simple) vs analyser
+  l'**IMAGE** (modèle de vision, complexe).
+
 ### J8bis — Pièces jointes dans le pipeline IA (extension validée par l'encadrant)
 - **Date** : 17/07/2026. `[établi en séance]`
 - **Contexte / nouvelle exigence** : l'encadrant demande d'**intégrer les pièces

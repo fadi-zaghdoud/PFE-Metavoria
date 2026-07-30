@@ -77,6 +77,13 @@ export const ticketController = {
     res.status(202).json({ ticket });
   },
 
+  // 202 Accepted : la génération du résumé (21-55 s) part en arrière-plan (ligne RESUME EN_COURS).
+  async demanderResume(req: Request, res: Response) {
+    const id = parseIdParam(req.params.id);
+    const ticket = await ticketService.demanderResume(acteur(req), id);
+    res.status(202).json({ ticket });
+  },
+
   async changerPriorite(req: Request, res: Response) {
     const id = parseIdParam(req.params.id);
     const { priorite } = changerPrioriteSchema.parse(req.body);

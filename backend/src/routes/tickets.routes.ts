@@ -26,3 +26,5 @@ ticketsRouter.patch('/:id/categorie', asyncHandler(ticketController.changerCateg
 ticketsRouter.post('/:id/commentaires', asyncHandler(ticketController.commenter));
 // IA — suggestion RAG asynchrone (Greffe 2) : tech. assigné/admin, ticket EN_COURS ; répond 202.
 ticketsRouter.post('/:id/suggestion', asyncHandler(ticketController.demanderSuggestion));
+// IA — résumé du fil asynchrone (J8) : tech. assigné/admin, ≥2 messages, tout statut ; répond 202.
+ticketsRouter.post('/:id/resume', asyncHandler(ticketController.demanderResume));

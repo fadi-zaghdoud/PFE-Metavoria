@@ -11,7 +11,9 @@ import { utilisateurRepository } from '../repositories/utilisateur.repository';
 import { notificationService } from './notification.service';
 import { iaService } from './ia.service';
 import { env } from '../config/env';
-import { ForbiddenError, NotFoundError, ValidationError } from '../utils/AppError';
+import { estConfigure, uploaderBuffer } from '../config/cloudinary';
+import { MAX_PIECES_PAR_TICKET } from '../middlewares/upload.middleware';
+import { AppError, ForbiddenError, NotFoundError, ValidationError } from '../utils/AppError';
 import { logAudit } from '../utils/logger';
 import { Prisma } from '../generated/prisma/client';
 import type { Priorite, Role, StatutTicket } from '../generated/prisma/enums';
@@ -466,6 +468,63 @@ export const ticketService = {
     await iaService.demarrerSuggestion(id, ticket.titre, ticket.description);
     logAudit('TICKET_SUGGESTION', { ticketId: id, parUtilisateur: acteur.id });
     return (await ticketRepository.findById(id)) ?? ticket;
+  },
+
+  // Ajout d'une pièce jointe (J8bis, Lot A) : upload vers Cloudinary puis persistance.
+  // Peut ajouter : le demandeur (son ticket) ou le support (technicien assigné / admin).
+  async ajouterPieceJointe(
+    acteur: Acteur,
+    id: number,
+    fichier: { buffer: Buffer; originalname: string; mimetype: string; size: number },
+  ) {
+    if (!estConfigure()) {
+      throw new ValidationError("Le stockage des pièces jointes n'est pas configuré");
+    }
+    const ticket = await ticketRepository.findById(id);
+    if (!ticket) throw new NotFoundError('Ticket introuvable');
+    if (!estDemandeur(acteur, ticket) && !estGestionnaire(acteur, ticket)) {
+      throw new ForbiddenError('Vous ne participez pas à ce ticket');
+    }
+    const nb = await ticketRepository.compterPiecesJointes(id);
+    if (nb >= MAX_PIECES_PAR_TICKET) {
+      throw new ValidationError(`Maximum ${MAX_PIECES_PAR_TICKET} pièces jointes par ticket`);
+    }
+
+    // L'upload dépend d'un service externe (Cloudinary) : une erreur (mauvaise config,
+    // réseau, quota) ne doit pas remonter en 500 opaque → message explicite (502).
+    // PDF → 'raw' (livraison sans réglage compte, original propre pour l'OCR) ; images → 'image'.
+    const resourceType = fichier.mimetype === 'application/pdf' ? 'raw' : 'image';
+    let stockage: { url: string; publicId: string };
+    try {
+      stockage = await uploaderBuffer(fichier.buffer, `smart-ticketing/tickets/${id}`, resourceType);
+    } catch (err) {
+      console.error('[PieceJointe] upload Cloudinary échoué :', err instanceof Error ? err.message : err);
+      throw new AppError(502, "L'envoi vers le stockage de fichiers a échoué (réessayez plus tard).");
+    }
+    const piece = await ticketRepository.creerPieceJointe({
+      ticketId: id,
+      nomFichier: fichier.originalname,
+      url: stockage.url,
+      cloudinaryId: stockage.publicId,
+      typeMime: fichier.mimetype,
+      taille: fichier.size,
+    });
+    logAudit('TICKET_PIECE_JOINTE', { ticketId: id, pieceJointeId: piece.id, parUtilisateur: acteur.id });
+    return piece;
+  },
+
+  // Résout une pièce jointe pour le téléchargement proxifié (J8bis) : contrôle d'accès au
+  // ticket (peutVoir) + appartenance de la pièce. Renvoie l'URL Cloudinary (jamais exposée
+  // au client) que le contrôleur va récupérer côté serveur.
+  async pieceJointePourTelechargement(acteur: Acteur, id: number, pieceJointeId: number) {
+    const ticket = await ticketRepository.findById(id);
+    if (!ticket) throw new NotFoundError('Ticket introuvable');
+    if (!peutVoir(acteur, ticket)) throw new ForbiddenError('Accès refusé à ce ticket');
+    // Lecture serveur avec l'url Cloudinary (jamais dans le payload client) ; on vérifie que
+    // la pièce appartient bien au ticket dont l'accès vient d'être contrôlé.
+    const piece = await ticketRepository.findPieceJointe(pieceJointeId);
+    if (!piece || piece.ticketId !== id) throw new NotFoundError('Pièce jointe introuvable');
+    return piece;
   },
 
   // Demande d'un résumé du fil (J8). Règle : le technicien assigné ou un admin, à N'IMPORTE

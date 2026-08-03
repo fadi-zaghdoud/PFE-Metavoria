@@ -1,12 +1,21 @@
 import { Router } from 'express';
 import { ticketController } from '../controllers/ticket.controller';
 import { requireAuth } from '../middlewares/auth.middleware';
+import { uploadPieceJointe } from '../middlewares/upload.middleware';
 import { asyncHandler } from '../utils/asyncHandler';
 
 export const ticketsRouter = Router();
 
-// Toutes les routes tickets exigent une authentification ; le contrôle fin
-// (rôle, propriété du ticket) est appliqué dans la couche service.
+// Téléchargement proxifié d'une pièce jointe — AVANT `requireAuth` : l'auth se fait par
+// token en query (une navigation <a>/nouvel onglet ne peut pas envoyer d'en-tête Bearer),
+// vérifié dans le contrôleur (même patron que le flux SSE).
+ticketsRouter.get(
+  '/:id/pieces-jointes/:pjId/download',
+  asyncHandler(ticketController.telechargerPieceJointe),
+);
+
+// Toutes les autres routes tickets exigent une authentification par en-tête Bearer ; le
+// contrôle fin (rôle, propriété du ticket) est appliqué dans la couche service.
 ticketsRouter.use(requireAuth);
 
 ticketsRouter.get('/', asyncHandler(ticketController.lister));
@@ -24,6 +33,12 @@ ticketsRouter.post('/:id/cloture', asyncHandler(ticketController.cloturer)); // 
 ticketsRouter.patch('/:id/priorite', asyncHandler(ticketController.changerPriorite));
 ticketsRouter.patch('/:id/categorie', asyncHandler(ticketController.changerCategorie)); // tech. assigné/admin : recatégorisation (flywheel)
 ticketsRouter.post('/:id/commentaires', asyncHandler(ticketController.commenter));
+// Pièces jointes (J8bis) : upload multipart (multer en mémoire → Cloudinary). Demandeur ou support.
+ticketsRouter.post(
+  '/:id/pieces-jointes',
+  uploadPieceJointe,
+  asyncHandler(ticketController.ajouterPieceJointe),
+);
 // IA — suggestion RAG asynchrone (Greffe 2) : tech. assigné/admin, ticket EN_COURS ; répond 202.
 ticketsRouter.post('/:id/suggestion', asyncHandler(ticketController.demanderSuggestion));
 // IA — résumé du fil asynchrone (J8) : tech. assigné/admin, ≥2 messages, tout statut ; répond 202.

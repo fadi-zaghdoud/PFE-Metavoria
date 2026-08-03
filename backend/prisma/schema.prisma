@@ -174,10 +174,16 @@ model Commentaire {
 }
 
 model PieceJointe {
-  id         Int      @id @default(autoincrement())
-  nomFichier String   @map("nom_fichier")
-  url        String
-  dateUpload DateTime @default(now()) @map("date_upload")
+  id           Int     @id @default(autoincrement())
+  nomFichier   String  @map("nom_fichier")
+  url          String                         // URL Cloudinary (secure_url)
+  cloudinaryId String? @map("cloudinary_id")  // public_id Cloudinary (suppression)
+  typeMime     String? @map("type_mime")
+  taille       Int?                           // octets
+  // Texte extrait par OCR (J8bis, Lot B) — rempli après extraction si confiance suffisante ;
+  // JAMAIS injecté dans `description` (augmentation à l'usage). Vide jusqu'au Lot B.
+  texteExtrait String? @map("texte_extrait")
+  dateUpload   DateTime @default(now()) @map("date_upload")
 
   ticketId Int    @map("ticket_id")
   ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)

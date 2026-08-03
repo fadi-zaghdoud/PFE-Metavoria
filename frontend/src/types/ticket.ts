@@ -29,6 +29,17 @@ export interface Commentaire {
   auteur: PersonnePublique;
 }
 
+// Pièce jointe (J8bis). L'URL Cloudinary N'est PAS exposée au client (§10) : le
+// téléchargement passe par le proxy backend authentifié (GET …/pieces-jointes/:id/download).
+export interface PieceJointe {
+  id: number;
+  nomFichier: string;
+  typeMime: string | null;
+  taille: number | null;
+  dateUpload: string;
+  ticketId: number;
+}
+
 export type TypeEvenement =
   | 'CHANGEMENT_STATUT'
   | 'CHANGEMENT_PRIORITE'
@@ -93,6 +104,7 @@ export interface TicketDetail {
   commentaires: Commentaire[];
   evenements: EvenementTicket[];
   suggestionsIA: SuggestionIA[];
+  piecesJointes: PieceJointe[];
 }
 
 // Décomposition glass-box de la scorecard (details d'une suggestion PRIORISATION).

@@ -45,6 +45,12 @@ const envSchema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASSWORD: z.string().optional(),
   SMTP_FROM: z.string().default('Smart Ticketing <no-reply@metavoria.tn>'),
+
+  // Cloudinary — stockage des pièces jointes (J8bis). Optionnels au démarrage : sans eux,
+  // l'app boote mais l'upload est désactivé (l'endpoint répond une erreur explicite).
+  CLOUDINARY_CLOUD_NAME: z.string().optional(),
+  CLOUDINARY_API_KEY: z.string().optional(),
+  CLOUDINARY_API_SECRET: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

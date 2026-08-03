@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ChangeEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -7,6 +7,7 @@ import {
   Flag,
   Loader2,
   Lock,
+  Paperclip,
   RefreshCw,
   Send,
   Sparkles,
@@ -28,8 +29,9 @@ import {
   StatutBadge,
 } from '../features/tickets/ticket-ui';
 import { useAuthStore } from '../store/authStore';
-import { ApiError } from '../lib/apiClient';
-import { tempsRelatif, dateLongue } from '../lib/format';
+import { ApiError, API_BASE_URL } from '../lib/apiClient';
+import { tempsRelatif, dateLongue, formaterOctets } from '../lib/format';
+import { ACCEPT_PJ, MAX_PJ, validerPieceJointe } from '../features/tickets/pieceJointe';
 import type {
   Categorie,
   Commentaire,
@@ -542,6 +544,7 @@ export function TicketDetailPage() {
   const estTechnicienAssigne = ticket.technicien?.id === utilisateur?.id;
   const estGestionnaire = Boolean(estAdmin || estTechnicienAssigne);
   const peutCommenter = estDemandeur || estGestionnaire;
+  const peutJoindre = estDemandeur || estGestionnaire; // demandeur ou support : ajout de pièces jointes
   const estCloture = ticket.statut === 'CLOTURE';
   const montrerSatisfaction =
     ticket.statut === 'RESOLU' || ticket.statut === 'CLOTURE' || ticket.satisfactionNote != null;
@@ -659,6 +662,27 @@ export function TicketDetailPage() {
       'La demande de résumé a échoué',
     );
     if (res) setTicket(res.ticket); // ligne RESUME en EN_COURS → le polling prend le relais
+  }
+
+  async function handleUploaderPieceJointe(e: ChangeEvent<HTMLInputElement>) {
+    const fichier = e.target.files?.[0];
+    e.target.value = ''; // autorise le ré-upload du même fichier
+    if (!fichier || !token) return;
+    const err = validerPieceJointe(fichier);
+    if (err) {
+      toast.error(fichier.name, err);
+      return;
+    }
+    const res = await withAction(
+      () => ticketsApi.uploaderPieceJointe(ticket!.id, fichier, token),
+      "L'envoi de la pièce jointe a échoué",
+    );
+    if (res) {
+      setTicket((prev) =>
+        prev ? { ...prev, piecesJointes: [...prev.piecesJointes, res.pieceJointe] } : prev,
+      );
+      toast.success('Pièce jointe ajoutée', fichier.name);
+    }
   }
 
   async function handleAffecter(technicienId: number | null) {
@@ -958,6 +982,46 @@ export function TicketDetailPage() {
                   <p className="mt-0.5 text-xs text-slate-500">{ticket.demandeur.service}</p>
                 )}
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Pièces jointes (J8bis) */}
+          <Card>
+            <CardHeader title="Pièces jointes" />
+            <CardContent className="space-y-2.5">
+              {ticket.piecesJointes.length === 0 ? (
+                <p className="text-sm text-slate-400">Aucune pièce jointe.</p>
+              ) : (
+                <ul className="space-y-1.5">
+                  {ticket.piecesJointes.map((pj) => (
+                    <li key={pj.id}>
+                      <a
+                        href={`${API_BASE_URL}/tickets/${ticket.id}/pieces-jointes/${pj.id}/download?token=${token ?? ''}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs transition-colors hover:border-primary-300 hover:bg-slate-50"
+                      >
+                        <Paperclip className="size-3.5 shrink-0 text-slate-400" aria-hidden />
+                        <span className="min-w-0 flex-1 truncate text-slate-700">{pj.nomFichier}</span>
+                        <span className="shrink-0 text-slate-400">{formaterOctets(pj.taille)}</span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {peutJoindre && ticket.piecesJointes.length < MAX_PJ && (
+                <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs font-medium text-primary-600 hover:underline">
+                  <Paperclip className="size-3.5" aria-hidden />
+                  Ajouter une pièce jointe
+                  <input
+                    type="file"
+                    accept={ACCEPT_PJ}
+                    className="hidden"
+                    disabled={action}
+                    onChange={handleUploaderPieceJointe}
+                  />
+                </label>
+              )}
             </CardContent>
           </Card>
 

@@ -36,6 +36,21 @@ const ticketDetailInclude = {
   suggestionsIA: {
     orderBy: { dateCreation: 'desc' },
   },
+  // Pièces jointes (J8bis) — dans l'ordre d'ajout. `url`/`cloudinaryId`/`texteExtrait` NE sont
+  // PAS exposés au client (§10 : l'URL Cloudinary publique reste côté serveur ; le download
+  // passe par le proxy authentifié). Le texte OCR (texteExtrait) alimentera le pipeline en
+  // interne au Lot B, sans transiter par le client.
+  piecesJointes: {
+    orderBy: { dateUpload: 'asc' },
+    select: {
+      id: true,
+      nomFichier: true,
+      typeMime: true,
+      taille: true,
+      dateUpload: true,
+      ticketId: true,
+    },
+  },
 } satisfies Prisma.TicketInclude;
 
 export type TicketListe = Prisma.TicketGetPayload<{ include: typeof ticketListeInclude }>;
@@ -128,6 +143,37 @@ export const ticketRepository = {
 
   creerEvenement(data: CreerEvenementData) {
     return prisma.evenementTicket.create({ data });
+  },
+
+  compterPiecesJointes(ticketId: number) {
+    return prisma.pieceJointe.count({ where: { ticketId } });
+  },
+
+  creerPieceJointe(data: {
+    ticketId: number;
+    nomFichier: string;
+    url: string;
+    cloudinaryId: string;
+    typeMime: string;
+    taille: number;
+  }) {
+    // Renvoie une pièce SANS url/cloudinaryId/texteExtrait (client-safe, §10).
+    return prisma.pieceJointe.create({
+      data,
+      select: {
+        id: true,
+        nomFichier: true,
+        typeMime: true,
+        taille: true,
+        dateUpload: true,
+        ticketId: true,
+      },
+    });
+  },
+
+  // Pièce jointe complète (avec `url`) — usage SERVEUR uniquement (proxy de téléchargement).
+  findPieceJointe(id: number) {
+    return prisma.pieceJointe.findUnique({ where: { id } });
   },
 
   // Statistiques agrégées sur un périmètre (tous les tickets, ou un sous-ensemble filtré).

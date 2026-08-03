@@ -5,6 +5,7 @@ import type {
   CreerTicketPayload,
   FiltresStatistiques,
   FiltresTickets,
+  PieceJointe,
   PrioriteTicket,
   StatistiquesTickets,
   TicketDetail,
@@ -67,6 +68,17 @@ export const ticketsApi = {
   // Demande d'un résumé du fil (J8) — même mécanique async (202 immédiat + polling).
   demanderResume: (id: number, token: string) =>
     apiRequest<{ ticket: TicketDetail }>(`/tickets/${id}/resume`, { method: 'POST', token }),
+
+  // Upload d'une pièce jointe (J8bis) — multipart via FormData (champ `fichier`).
+  uploaderPieceJointe: (id: number, fichier: File, token: string) => {
+    const form = new FormData();
+    form.append('fichier', fichier);
+    return apiRequest<{ pieceJointe: PieceJointe }>(`/tickets/${id}/pieces-jointes`, {
+      method: 'POST',
+      body: form,
+      token,
+    });
+  },
 
   affecter: (id: number, technicienId: number | null, token: string) =>
     apiRequest<{ ticket: TicketDetail }>(`/tickets/${id}/affectation`, {

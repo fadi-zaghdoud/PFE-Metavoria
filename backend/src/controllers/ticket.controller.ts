@@ -10,7 +10,8 @@ import {
   satisfactionSchema,
   statistiquesQuerySchema,
 } from '../validators/ticket.validator';
-import { UnauthorizedError, ValidationError } from '../utils/AppError';
+import { AppError, UnauthorizedError, ValidationError } from '../utils/AppError';
+import { authentifierToken } from '../middlewares/auth.middleware';
 
 function acteur(req: Request): Acteur {
   if (!req.user) throw new UnauthorizedError();
@@ -82,6 +83,38 @@ export const ticketController = {
     const id = parseIdParam(req.params.id);
     const ticket = await ticketService.demanderResume(acteur(req), id);
     res.status(202).json({ ticket });
+  },
+
+  // Upload d'une pièce jointe (multipart, champ `fichier`) — multer a rempli req.file en amont.
+  async ajouterPieceJointe(req: Request, res: Response) {
+    const id = parseIdParam(req.params.id);
+    if (!req.file) {
+      throw new ValidationError('Fichier manquant ou format non supporté (PDF, PNG ou JPG, ≤ 10 Mo)');
+    }
+    const pieceJointe = await ticketService.ajouterPieceJointe(acteur(req), id, req.file);
+    res.status(201).json({ pieceJointe });
+  },
+
+  // Téléchargement PROXIFIÉ d'une pièce jointe : le backend récupère le fichier chez Cloudinary
+  // et le re-sert avec le bon Content-Type + nom (PDF/image corrects). Auth par token en query
+  // (navigation <a>, pas d'en-tête Bearer possible) — même patron que le flux SSE.
+  async telechargerPieceJointe(req: Request, res: Response) {
+    const token = typeof req.query.token === 'string' ? req.query.token : '';
+    if (!token) throw new UnauthorizedError('Jeton manquant', 'TOKEN_INVALIDE');
+    const auth = await authentifierToken(token);
+    const id = parseIdParam(req.params.id);
+    const pjId = parseIdParam(req.params.pjId);
+    const piece = await ticketService.pieceJointePourTelechargement(
+      { id: auth.sub, role: auth.role },
+      id,
+      pjId,
+    );
+    const reponse = await fetch(piece.url);
+    if (!reponse.ok) throw new AppError(502, 'Fichier indisponible');
+    const buffer = Buffer.from(await reponse.arrayBuffer());
+    res.setHeader('Content-Type', piece.typeMime ?? 'application/octet-stream');
+    res.setHeader('Content-Disposition', `inline; filename="${piece.nomFichier.replaceAll('"', '')}"`);
+    res.send(buffer);
   },
 
   async changerPriorite(req: Request, res: Response) {

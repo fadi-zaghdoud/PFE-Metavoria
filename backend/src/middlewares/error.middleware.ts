@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import { z, ZodError } from 'zod';
+import { MulterError } from 'multer';
 import { AppError } from '../utils/AppError';
 
 export function notFoundHandler(req: Request, res: Response): void {
@@ -20,6 +21,16 @@ export function errorHandler(
 
   if (err instanceof ZodError) {
     res.status(400).json({ error: 'Données invalides', details: z.flattenError(err).fieldErrors });
+    return;
+  }
+
+  // Erreurs d'upload multer (ex. fichier trop volumineux) → 400 lisible.
+  if (err instanceof MulterError) {
+    const message =
+      err.code === 'LIMIT_FILE_SIZE'
+        ? 'Fichier trop volumineux (10 Mo maximum)'
+        : "Envoi de fichier invalide";
+    res.status(400).json({ error: message });
     return;
   }
 

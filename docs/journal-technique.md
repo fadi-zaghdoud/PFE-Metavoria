@@ -1027,7 +1027,10 @@ demande explicite.
   - **Dockerisation du microservice reportée** à la phase DevOps (Dockerfile lourd :
     torch + modèle ~2,3 Go + artefact `classifier_*.joblib` gitignored à monter/produire).
     En dev : `uvicorn` lancé à part. `docker-compose` a `ollama` mais pas encore le
-    service FastAPI. `[À COMPLÉTER PAR FEDI : Dockerfile service IA + stratégie modèle]`
+    service FastAPI. `[À COMPLÉTER PAR FEDI : Dockerfile service IA — torch + modèles
+    (stratégie artefact `.joblib`) + **Tesseract OCR** (conteneur Linux :
+    `apt-get install tesseract-ocr tesseract-ocr-fra`, J8bis) ; à traiter d'un bloc en
+    phase DevOps]`
 - **Suite** : **Greffe 2** — suggestion RAG **asynchrone** à l'étape EN_COURS (génération
   15-30 s, hors chemin synchrone) ; **Greffe 3** — capture de la validation technicien →
   flywheel (triplet `SuggestionIA` + événement `CHANGEMENT_CATEGORIE`/`CHANGEMENT_PRIORITE`
@@ -1208,8 +1211,46 @@ demande explicite.
      polluerait le classifieur — mieux vaut ne rien injecter que du bruit.
 - **Dépendance à lever** : l'upload/stockage des pièces jointes avait été **reporté**
   en Epic 2 (modèle `PieceJointe` présent au schéma, mais bouton d'upload retiré de
-  l'UI). J8bis **suppose ce lot réactivé** — à cadrer avant de coder J8bis.
-- **Statut** : **planifié** (non codé). Détail de conception : `docs/epic-4-module-ia-conception.md` §7 bis.
+  l'UI). J8bis se décompose donc en **deux lots** : **A. upload + stockage** (le lot
+  reporté), **B. OCR** qui traite ces pièces.
+- **Décisions arrêtées (30/07/2026)** :
+  - **Extraction de TEXTE (Tesseract + pdfplumber), pas la vision** — confirmé après
+    clarification de l'encadrant. Tesseract tourne sur **CPU** (zéro charge VRAM, tient sur
+    la machine de dev — cf. choix frugal Phase 7), et couvre le besoin principal (lire les
+    messages d'erreur des captures / PDF). La **vision** (modèle multimodal GPU) reste une
+    **perspective de production** si le serveur a un GPU.
+  - **Stockage = Cloudinary** (niveau gratuit) plutôt que disque local : résout le dev→prod
+    (fichiers accessibles depuis la machine de dev ET le serveur, sans volume Docker à
+    gérer), URLs directes, pas d'endpoint de download à coder. `PieceJointe.url` = l'URL
+    Cloudinary. **⚠️ Confidentialité (§10)** : les fichiers partent sur un **cloud tiers**
+    → **à valider avec l'encadrant** ; en production, un **stockage interne** reste
+    envisageable si la confidentialité l'exige (l'interface d'upload isole ce choix).
+- **Lot A — upload + stockage (LIVRÉ, 03/08/2026)** :
+  - **Upload routé par Node** (multer en mémoire → Cloudinary), validé côté backend
+    (whitelist MIME **PDF/PNG/JPG**, **≤ 10 Mo**, **≤ 5/ticket**), permission **demandeur ou
+    support**. Migration `pieces_jointes` : `cloudinary_id`, `type_mime`, `taille`,
+    `texte_extrait` (ce dernier vide jusqu'au Lot B). Upload à la **création** (nourrit l'OCR
+    dès le départ) **et** sur le **détail**.
+  - **La livraison des PDF — itération honnête** : Cloudinary a résisté sur deux fronts.
+    `resource_type: image/auto` produit une URL `.pdf` mais la **livraison est bloquée par
+    défaut** (401 ; réglage compte « Allow delivery of PDF » à activer — non fiable en
+    séance). Passer en `raw` **livre en 200 mais sans extension** (octet-stream → « le
+    fichier n'est pas un PDF »). Et le timeout d'upload (499) réglé par un `timeout` explicite.
+  - **Décision finale — PROXY backend** : le fichier n'est **jamais** servi directement par
+    Cloudinary au navigateur. Un endpoint `GET /tickets/:id/pieces-jointes/:pjId/download?token=`
+    (**auth par token en query**, même patron que le flux SSE) **récupère le fichier côté
+    serveur** (PDF en `raw` → 200 **sans aucun réglage compte**) et le **re-sert avec le bon
+    `Content-Type` + le vrai nom** → PDF et image corrects. **Deux bénéfices** : (1) robustesse
+    **dev ET prod** (aucun réglage Cloudinary requis) ; (2) **confidentialité §10 renforcée** —
+    l'URL publique Cloudinary **n'est plus exposée**, le téléchargement est **authentifié**
+    (accès au ticket vérifié). C'est la réponse concrète au point §10 soulevé (stockage tiers
+    + URL publique) : l'abstraction d'upload/livraison **isole** le stockage, une bascule prod
+    (URLs signées / stockage interne) ne toucherait pas le reste.
+  - **Durcissement** : un échec Cloudinary renvoie un **502 lisible** (plus de 500 opaque).
+  - **Enseignement** : ne pas dépendre d'un **réglage de service tiers** pour une fonction
+    cœur — proxifier rend le comportement déterministe et portable.
+- **Statut** : **Lot A livré** ; **Lot B (OCR `/extract`)** à suivre. Détail de conception :
+  `docs/epic-4-module-ia-conception.md` §7 bis.
 
 ---
 
@@ -1222,6 +1263,27 @@ demande explicite.
 ---
 
 # Phase 7 — Déploiement & documentation
+
+### Choix de conception — architecture frugale, scalable sans réécriture
+- **Date** : 30/07/2026. `[établi en séance]`
+- **Décision** : le module IA est **développé et validé sur du matériel modeste** (RTX
+  3050 Ti Laptop, **4 Go de VRAM**), l'**upgrade de puissance étant reporté à la
+  production**. Rendu possible par l'**architecture découplée** : les LLM et modèles
+  vivent **derrière une interface HTTP** (microservice FastAPI ; Ollama), le backend Node
+  ne les appelle que par contrat. Passer à un serveur GPU en prod **ne change aucune ligne
+  de code applicatif** — seuls l'hôte et le device (`EMBED_DEVICE=cuda`, GPU Ollama)
+  changent, par variables d'environnement.
+- **Ce que ça démontre (à valoriser au rapport / soutenance)** : un **système frugal**,
+  fonctionnel de bout en bout sur une machine grand public, **scalable en production sans
+  réécriture**. Les latences mesurées (embed ~100-400 ms CPU ; génération 21-55 s en
+  offload CPU/GPU partiel) sont des **bornes hautes** : un GPU dédié les réduit fortement
+  (perspective GPU/torch-CUDA ~30-50 ms/paire notée en J6) sans toucher au code.
+- **Corollaire OCR (J8bis)** : le choix **Tesseract (extraction de texte, CPU)** plutôt que
+  la **vision (GPU)** suit la même logique — zéro charge VRAM, tient sur la machine de dev,
+  couvre le besoin principal (lire les messages d'erreur des captures/PDF). La **vision
+  reste une perspective de production** (si le serveur a un GPU), documentée comme évolution
+  possible.
+
 - **Ce qui existe déjà** `[reconstitué depuis Git]` : **conteneurisation Docker**
   opérationnelle (`docker-compose.yml` : postgres+pgvector, backend, frontend nginx ;
   service **ollama** ajouté pour le module IA). Migrations appliquées au démarrage

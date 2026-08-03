@@ -49,3 +49,11 @@ export function dateLongue(date: Date | string): string {
   const d = typeof date === 'string' ? new Date(date) : date;
   return d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 }
+
+// Taille de fichier lisible : 512 o, 24 Ko, 3,4 Mo.
+export function formaterOctets(octets: number | null): string {
+  if (octets == null) return '';
+  if (octets < 1024) return `${octets} o`;
+  if (octets < 1024 * 1024) return `${Math.round(octets / 1024)} Ko`;
+  return `${(octets / (1024 * 1024)).toFixed(1).replace('.', ',')} Mo`;
+}

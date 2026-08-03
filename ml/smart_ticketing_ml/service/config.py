@@ -46,3 +46,40 @@ CLASSIFIER_PATH = os.environ.get("CLASSIFIER_PATH")
 # Adresse d'écoute du service FastAPI.
 HOTE = os.environ.get("EMBED_HOTE", "127.0.0.1")
 PORT = int(os.environ.get("EMBED_PORT", "8000"))
+
+# ─────────────────────────────────────────────────────────────────────────────
+# J8bis Lot B — OCR des pièces jointes (Tesseract + pdfplumber). Local, zéro coût.
+# ─────────────────────────────────────────────────────────────────────────────
+def _tesseract_defaut() -> str | None:
+    """Chemin du binaire Tesseract si absent du PATH (install dév Windows UB Mannheim).
+    Sur le PATH (prod Docker) → None : on laisse pytesseract le résoudre."""
+    import os as _os
+    import shutil as _shutil
+
+    if _shutil.which("tesseract"):
+        return None
+    for c in (r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+              r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe"):
+        if _os.path.exists(c):
+            return c
+    return None
+
+
+# Binaire Tesseract : override explicite, sinon auto-détection. `None` = sur le PATH.
+TESSERACT_CMD = os.environ.get("TESSERACT_CMD") or _tesseract_defaut()
+# Langue OCR — pack Tesseract `fra` requis (FR + termes techniques EN, comme les embeddings).
+OCR_LANGUE = os.environ.get("OCR_LANGUE", "fra")
+# Résolution de rasterisation d'un PDF scanné avant OCR (300 dpi = standard qualité OCR).
+OCR_DPI = int(os.environ.get("OCR_DPI", "300"))
+# Seuil anti-bruit ÉTAGE MOT : on écarte tout mot dont la confiance Tesseract < ce seuil.
+OCR_SEUIL_MOT = float(os.environ.get("OCR_SEUIL_MOT", "40"))
+# Seuil anti-bruit ÉTAGE DOCUMENT : `fiable=False` si la confiance moyenne des mots
+# retenus est sous ce seuil (Node ne stockera pas un OCR douteux dans texte_extrait).
+OCR_SEUIL_DOC = float(os.environ.get("OCR_SEUIL_DOC", "55"))
+# …et `fiable=False` s'il reste moins de ce nombre de mots lisibles.
+OCR_MIN_MOTS = int(os.environ.get("OCR_MIN_MOTS", "3"))
+# Un PDF est réputé « à couche texte » (pas d'OCR) si l'extraction directe rend au
+# moins ce nombre de caractères non blancs ; en dessous → PDF scanné → OCR.
+PDF_MIN_CHARS_TEXTE = int(os.environ.get("PDF_MIN_CHARS_TEXTE", "20"))
+# Garde-fou de taille (Node valide déjà ≤10 Mo à l'upload ; défense en profondeur).
+EXTRACT_TAILLE_MAX_MO = int(os.environ.get("EXTRACT_TAILLE_MAX_MO", "10"))

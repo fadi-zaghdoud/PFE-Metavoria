@@ -1249,8 +1249,31 @@ demande explicite.
   - **Durcissement** : un échec Cloudinary renvoie un **502 lisible** (plus de 500 opaque).
   - **Enseignement** : ne pas dépendre d'un **réglage de service tiers** pour une fonction
     cœur — proxifier rend le comportement déterministe et portable.
-- **Statut** : **Lot A livré** ; **Lot B (OCR `/extract`)** à suivre. Détail de conception :
-  `docs/epic-4-module-ia-conception.md` §7 bis.
+- **Lot B — OCR `/extract` (serving, LIVRÉ, 03/08/2026)** :
+  - **Endpoint `POST /extract`** (`ml/.../service/ocr.py` + `app.py`) : **octets in (base64)
+    / JSON out**, frontière tenue — **ni Cloudinary ni DB** (Node récupère les octets, comme
+    pour le proxy de download, et persistera `texte_extrait`). Le service reste **sans état**.
+  - **Trois branches, auto-détectées par *magic bytes*** (pas le Content-Type du client) :
+    `texte_pdf` (pdfplumber, couche texte directe) · `ocr_image` (pytesseract) ·
+    `ocr_pdf_scanne` (rasterisation pypdfium2 via pdfplumber, puis pytesseract). Langue `fra`.
+  - **« Pas d'OCR quand le texte est là »** : un PDF à couche texte sort en **~11 ms**
+    (extraction directe) contre **~490 ms** pour un scan OCRisé → l'OCR n'est déclenché que
+    si l'extraction directe rend moins de `PDF_MIN_CHARS_TEXTE` (20) caractères.
+  - **Seuil de confiance anti-bruit à DEUX étages** : étage **mot** (on écarte tout mot dont
+    la confiance Tesseract < 40 → charabia isolé) ; étage **document** (`fiable=False` si
+    confiance moyenne < 55 **ou** < 3 mots retenus). Node ne persistera pas un OCR douteux.
+    Le texte d'une couche PDF est **fiable par construction** (confiance 100, aucun OCR).
+  - **Dégradation** : Tesseract/pytesseract absent → **503** (Node dégrade) ; type inconnu /
+    base64 invalide / fichier illisible → **422** ; > 10 Mo → **413**. `/sante` expose l'état OCR.
+  - **Tesseract = binaire SYSTÈME** (pack `fra` ; v5.5.3 en dév) : chemin **auto-détecté**
+    (`C:\Program Files\Tesseract-OCR` hors PATH en dév Windows) ou PATH (prod Docker),
+    surchargeable via `TESSERACT_CMD`. Libs Python isolées dans l'extra `[ocr]` du `pyproject`.
+  - **Preuve (serving figé avant le pont)** : 3 fixtures (image PNG, PDF scanné, PDF texte)
+    validées **en direct ET en HTTP** — méthodes correctes, texte fidèle (VPN/erreur 691 ;
+    Active Directory), confiances 92.8 / 92.5 / 100 ; cas d'erreur (type non supporté) → **422**.
+- **Statut** : **Lot A + Lot B serving livrés** ; **pont Node** (upload → `/extract` async
+  fire-and-forget → écrit `texte_extrait` si `fiable` → **nouvelle** `SuggestionIA` « après OCR »,
+  sans écraser la 1ʳᵉ) à suivre. Détail de conception : `docs/epic-4-module-ia-conception.md` §7 bis.
 
 ---
 

@@ -11,12 +11,13 @@ Lancement (dév) :
 
 from __future__ import annotations
 
+import base64
 import time
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from . import config, embedder, predictors, reranker
+from . import config, embedder, ocr, predictors, reranker
 from ..retrieval import hybrid, suggestion
 from ..summarize import resumer
 
@@ -56,6 +57,11 @@ def sante() -> dict:
         },
         "classifieur": {
             "modele_charge": predictors.classifieur_charge(),
+        },
+        "ocr": {
+            "tesseract_disponible": ocr.tesseract_disponible(),
+            "langue": config.OCR_LANGUE,
+            "tesseract_cmd": config.TESSERACT_CMD,
         },
     }
 
@@ -234,3 +240,49 @@ def summarize(req: RequeteSummarize) -> ReponseSummarize:
         [{"auteur": m.auteur, "contenu": m.contenu} for m in req.messages],
     )
     return ReponseSummarize(resume=resume, latence_ms=(time.perf_counter() - t0) * 1000)
+
+
+# ── J8bis Lot B : OCR des pièces jointes (extraction de texte) ───────────────────
+# Node récupère les octets (il le fait déjà pour le proxy de téléchargement) et les
+# POST ici en base64 : le service reste SANS ÉTAT (ni Cloudinary ni DB). Node persiste
+# `texte_extrait` UNIQUEMENT si `fiable` (seuil anti-bruit), puis re-déclenche la
+# classification/priorité « après OCR » (nouvelle suggestion, sans écraser la 1ʳᵉ).
+
+class RequeteExtract(BaseModel):
+    nom_fichier: str = Field("", description="Nom du fichier (aide au typage + logs).")
+    contenu_base64: str = Field(..., min_length=1, description="Octets de la pièce jointe, en base64.")
+    type_mime: str | None = Field(None, description="Type MIME indicatif (le type réel est sniffé).")
+
+
+class ReponseExtract(BaseModel):
+    texte: str                     # texte extrait, nettoyé
+    fiable: bool                   # False → Node NE stocke PAS dans texte_extrait
+    confiance: float               # 0–100 (moyenne OCR) ; 100.0 pour une couche texte PDF
+    methode: str                   # texte_pdf | ocr_image | ocr_pdf_scanne
+    n_mots: int
+    n_pages: int | None            # renseigné pour les PDF
+    langue: str
+    message: str                   # motif si non fiable
+    latence_ms: float | None
+
+
+@app.post("/extract", response_model=ReponseExtract)
+def extract(req: RequeteExtract) -> ReponseExtract:
+    """Extrait le texte d'une pièce jointe (PDF/image) — OCR local Tesseract.
+    Octets in (base64) / JSON out, sans DB. `fiable=False` signale à Node un résultat
+    trop bruité pour être persisté."""
+    try:
+        octets = base64.b64decode(req.contenu_base64, validate=True)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=422, detail="contenu_base64 invalide.")
+    if not octets:
+        raise HTTPException(status_code=422, detail="Pièce jointe vide.")
+    if len(octets) > config.EXTRACT_TAILLE_MAX_MO * 1024 * 1024:
+        raise HTTPException(status_code=413, detail=f"Fichier > {config.EXTRACT_TAILLE_MAX_MO} Mo.")
+    try:
+        resultat = ocr.extraire(octets, req.nom_fichier, req.type_mime)
+    except ValueError as exc:      # type inconnu / fichier illisible
+        raise HTTPException(status_code=422, detail=str(exc))
+    except RuntimeError as exc:    # Tesseract/pytesseract absent → Node dégrade (503)
+        raise HTTPException(status_code=503, detail=str(exc))
+    return ReponseExtract(**resultat)

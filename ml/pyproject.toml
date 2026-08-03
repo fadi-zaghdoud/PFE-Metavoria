@@ -25,6 +25,14 @@ service = [
     "fastapi>=0.110",
     "uvicorn>=0.29",
 ]
+# OCR des pièces jointes (J8bis, Lot B) : extraction de texte PDF + images scannées.
+# Tesseract est un binaire SYSTÈME (pack `fra`), à installer hors pip (dév Windows :
+# UB Mannheim ; prod : apt-get tesseract-ocr tesseract-ocr-fra).
+ocr = [
+    "pytesseract>=0.3",
+    "pdfplumber>=0.11",  # couche texte + rasterisation (pypdfium2) des scans pour l'OCR
+    "Pillow>=10",
+]
 
 [build-system]
 requires = ["setuptools>=68"]

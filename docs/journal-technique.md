@@ -1289,8 +1289,23 @@ demande explicite.
     cohérente. **Zéro migration** (marqueur dans `details` JSON ; colonne dédiée = flywheel J9).
   - **Validé à l'écran** (06/08) : upload image « erreur VPN » → `texte_extrait` peuplé + 2ᵉ
     suggestion `apres_ocr`, 1ʳᵉ intacte ; fichier illisible → aucun effet, upload OK. `tsc` + ESLint verts.
-- **Statut** : **Lot B livré (serving + pont Node)** ; reste l'**UI** (indicateur « texte extrait »
-  + affichage avant/après OCR). Détail de conception : `docs/epic-4-module-ia-conception.md` §7 bis.
+- **UI — affichage (LIVRÉ, 06/08/2026)** :
+  - **Pièces jointes** : badge « texte extrait » + dépliant « Voir le texte extrait (OCR) ». Le
+    texte OCR est exposé aux personnes ayant accès au ticket (contenu d'un fichier **déjà
+    téléchargeable** via le proxy) ; l'URL Cloudinary, elle, reste cachée (§10).
+  - **Panneau Assistant IA** : split des suggestions par `details.origine` (corrige un `.find()`
+    qui prenait la plus récente et **masquait** la création) → bloc « Révisé grâce à la pièce
+    jointe » avec la révision **`avant → après`** surlignée (ex. `Autre → Réseau`).
+  - **Seuil d'AFFICHAGE de confiance (50 %, réglable admin §6.5)** — **distinct** du seuil
+    d'ABSTENTION du modèle (non figé, flywheel J9). Sous le seuil, la catégorie est présentée
+    **grisée + « à préciser »** au lieu d'être donnée comme sûre. Point de fond : le modèle
+    exprime son doute par une **confiance basse**, PAS en sortant `Autre` — `Autre` est une vraie
+    classe (fourre-tout), pas le « je ne sais pas » (cf. `classifier.py`, « abstenir ≠ prédire autre »).
+  - **Rafraîchissement** : l'extraction async n'ayant pas de ligne EN_COURS, un **polling court**
+    (~16 s) après upload fait apparaître le texte extrait + la suggestion après-OCR. Zéro migration.
+- **Statut** : **Lot B TERMINÉ** (serving + pont Node + UI), validé à l'écran. Prochaine étape
+  roadmap : **Greffe 3** (flywheel — capture de la validation technicien). Détail de conception :
+  `docs/epic-4-module-ia-conception.md` §7 bis.
 
 ---
 

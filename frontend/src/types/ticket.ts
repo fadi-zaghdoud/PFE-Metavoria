@@ -38,6 +38,9 @@ export interface PieceJointe {
   taille: number | null;
   dateUpload: string;
   ticketId: number;
+  // Texte extrait par OCR (J8bis Lot B) — présent après extraction fiable, sinon absent/null.
+  // Exposé aux personnes ayant accès au ticket (contenu d'un fichier déjà téléchargeable).
+  texteExtrait?: string | null;
 }
 
 export type TypeEvenement =
@@ -107,6 +110,19 @@ export interface TicketDetail {
   piecesJointes: PieceJointe[];
 }
 
+// Origine d'une suggestion catégorie/priorité : à la création (description seule) ou après
+// OCR (description enrichie du texte extrait des pièces jointes). Absent = ancienne suggestion.
+export type OrigineSuggestion = 'creation' | 'apres_ocr';
+
+// Details d'une suggestion CLASSIFICATION (Greffe 1 ; ré-évaluée « après OCR » au Lot B).
+export interface DetailClassificationIA {
+  origine?: OrigineSuggestion;
+  pieceJointeIds?: number[]; // pièces dont le texte OCR a nourri la ré-classification
+  categorieId: number;
+  probabilites: Record<string, number>;
+  modeleEmbedding: string;
+}
+
 // Décomposition glass-box de la scorecard (details d'une suggestion PRIORISATION).
 export interface DetailPrioriteIA {
   niveau: string;
@@ -115,6 +131,8 @@ export interface DetailPrioriteIA {
   explication: string; // « CRITIQUE car : production +2 · Réseau +1.5 »
   contributions: { famille: string; facteur: string; points: number; preuve: string }[];
   plafonnements: string[];
+  origine?: OrigineSuggestion; // 'apres_ocr' → priorité ré-évaluée avec le texte extrait
+  pieceJointeIds?: number[];
 }
 
 // Détail d'une suggestion SOLUTION (RAG, Greffe 2).

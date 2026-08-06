@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   CheckCheck,
   Clock,
+  FileText,
   Flag,
   Loader2,
   Lock,
@@ -285,6 +286,56 @@ function TicketsSimilaires({ docs }: { docs: DetailSolutionIA['similaires'] }) {
   );
 }
 
+// Seuil d'AFFICHAGE de confiance (distinct du seuil d'ABSTENTION du modèle, laissé au flywheel
+// J9) : sous ce seuil, la catégorie suggérée est présentée comme INCERTAINE (grisée + « à
+// préciser ») au lieu d'être donnée comme sûre — le modèle exprime son doute par une confiance
+// basse, pas en changeant de classe. Valeur par défaut, destinée à devenir réglable par
+// l'Administration (§6.5).
+const SEUIL_CONFIANCE_AFFICHAGE = 0.5;
+
+// Catégorie suggérée par l'IA : badge + confiance, avec deux variations —
+//  - sous le seuil → grisée + « à préciser » (incertaine, mais reste le top-1 RÉEL) ;
+//  - `avant` fourni et différent → « avant → après » (met en évidence la révision OCR).
+function CategorieIA({
+  suggestion,
+  avant,
+  surligne = false,
+}: {
+  suggestion: SuggestionIA;
+  avant?: string;
+  surligne?: boolean;
+}) {
+  const confiance = suggestion.scoreConfiance;
+  const incertaine = confiance != null && confiance < SEUIL_CONFIANCE_AFFICHAGE;
+  const different = Boolean(avant && avant !== suggestion.contenu);
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {different && (
+          <>
+            <span className="text-xs text-slate-400 line-through">{avant}</span>
+            <span aria-hidden className="text-xs text-slate-400">
+              →
+            </span>
+          </>
+        )}
+        <Badge
+          variant={!incertaine && surligne && different ? 'primary' : 'neutral'}
+          className={incertaine ? 'opacity-60' : undefined}
+        >
+          {suggestion.contenu}
+        </Badge>
+        {confiance != null && (
+          <span className="text-xs text-slate-500">confiance {Math.round(confiance * 100)} %</span>
+        )}
+      </div>
+      {incertaine && (
+        <p className="mt-1 text-[11px] font-medium text-amber-600">⚠ Faible confiance — à préciser</p>
+      )}
+    </>
+  );
+}
+
 // Panneau de suggestion RAG (Greffe 2) — réservé au support. Cinq états : rien / en cours /
 // prête+suggestion / prête+abstention / échec. La génération vit côté serveur (async) ;
 // ici on affiche l'état de la ligne SOLUTION que le polling met à jour.
@@ -549,10 +600,28 @@ export function TicketDetailPage() {
   const montrerSatisfaction =
     ticket.statut === 'RESOLU' || ticket.statut === 'CLOTURE' || ticket.satisfactionNote != null;
 
-  // Suggestions IA (Greffe 1) — affichage minimal glass-box sur le détail.
-  const suggestionCategorie = ticket.suggestionsIA.find((s) => s.typeSuggestion === 'CLASSIFICATION');
-  const suggestionPriorite = ticket.suggestionsIA.find((s) => s.typeSuggestion === 'PRIORISATION');
+  // Suggestions IA (Greffe 1) — séparées « création » (description seule) et « après OCR »
+  // (description + texte extrait). Rétrocompatible : une suggestion sans `origine` = création.
+  const estApresOcr = (s: SuggestionIA) =>
+    (s.details as { origine?: string } | null)?.origine === 'apres_ocr';
+  const suggestionCategorie = ticket.suggestionsIA.find(
+    (s) => s.typeSuggestion === 'CLASSIFICATION' && !estApresOcr(s),
+  );
+  const suggestionPriorite = ticket.suggestionsIA.find(
+    (s) => s.typeSuggestion === 'PRIORISATION' && !estApresOcr(s),
+  );
   const detailPriorite = suggestionPriorite?.details as DetailPrioriteIA | undefined;
+  // Paire « après OCR » : re-classification enrichie par le texte extrait des pièces jointes.
+  const categorieApresOcr = ticket.suggestionsIA.find(
+    (s) => s.typeSuggestion === 'CLASSIFICATION' && estApresOcr(s),
+  );
+  const prioriteApresOcr = ticket.suggestionsIA.find(
+    (s) => s.typeSuggestion === 'PRIORISATION' && estApresOcr(s),
+  );
+  const detailPrioriteApresOcr = prioriteApresOcr?.details as DetailPrioriteIA | undefined;
+  const prioriteDiffere = Boolean(
+    prioriteApresOcr && prioriteApresOcr.contenu !== suggestionPriorite?.contenu,
+  );
 
   // Suggestion RAG (Greffe 2) — réservée au support ; déclenchable quand le ticket est en cours.
   const suggestionSolution = ticket.suggestionsIA.find((s) => s.typeSuggestion === 'SOLUTION');
@@ -682,6 +751,27 @@ export function TicketDetailPage() {
         prev ? { ...prev, piecesJointes: [...prev.piecesJointes, res.pieceJointe] } : prev,
       );
       toast.success('Pièce jointe ajoutée', fichier.name);
+      // Extraction OCR = asynchrone et SANS ligne EN_COURS → le polling général ne se déclenche
+      // pas. On sonde brièvement (≈16 s) pour faire apparaître le texte extrait + la
+      // re-classification « après OCR », puis on s'arrête dès le résultat obtenu.
+      let restant = 8;
+      const timer = setInterval(() => {
+        restant -= 1;
+        ticketsApi
+          .detail(ticketId, token)
+          .then(({ ticket: t }) => {
+            setTicket(t);
+            const pret =
+              t.piecesJointes.some((p) => p.texteExtrait) ||
+              t.suggestionsIA.some(
+                (s) => (s.details as { origine?: string } | null)?.origine === 'apres_ocr',
+              );
+            if (pret || restant <= 0) clearInterval(timer);
+          })
+          .catch(() => {
+            if (restant <= 0) clearInterval(timer);
+          });
+      }, 2000);
     }
   }
 
@@ -994,7 +1084,7 @@ export function TicketDetailPage() {
               ) : (
                 <ul className="space-y-1.5">
                   {ticket.piecesJointes.map((pj) => (
-                    <li key={pj.id}>
+                    <li key={pj.id} className="space-y-1">
                       <a
                         href={`${API_BASE_URL}/tickets/${ticket.id}/pieces-jointes/${pj.id}/download?token=${token ?? ''}`}
                         target="_blank"
@@ -1003,8 +1093,25 @@ export function TicketDetailPage() {
                       >
                         <Paperclip className="size-3.5 shrink-0 text-slate-400" aria-hidden />
                         <span className="min-w-0 flex-1 truncate text-slate-700">{pj.nomFichier}</span>
+                        {pj.texteExtrait && (
+                          <Badge variant="primary" className="shrink-0">
+                            texte extrait
+                          </Badge>
+                        )}
                         <span className="shrink-0 text-slate-400">{formaterOctets(pj.taille)}</span>
                       </a>
+                      {pj.texteExtrait && (
+                        <details className="group pl-1">
+                          <summary className="flex cursor-pointer list-none items-center gap-1 text-[11px] font-medium text-primary-600 hover:underline">
+                            <FileText className="size-3 shrink-0" aria-hidden />
+                            <span className="group-open:hidden">Voir le texte extrait (OCR)</span>
+                            <span className="hidden group-open:inline">Masquer le texte extrait</span>
+                          </summary>
+                          <p className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-2 text-[11px] leading-relaxed text-slate-600">
+                            {pj.texteExtrait}
+                          </p>
+                        </details>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -1041,18 +1148,13 @@ export function TicketDetailPage() {
               </Badge>
             </div>
 
-            {suggestionCategorie || suggestionPriorite ? (
+            {suggestionCategorie || suggestionPriorite || categorieApresOcr || prioriteApresOcr ? (
               <div className="relative mt-3 space-y-3">
                 {suggestionCategorie && (
                   <div>
                     <p className="text-xs text-slate-400">Catégorie suggérée</p>
-                    <div className="mt-1 flex flex-wrap items-center gap-2">
-                      <Badge variant="neutral">{suggestionCategorie.contenu}</Badge>
-                      {suggestionCategorie.scoreConfiance != null && (
-                        <span className="text-xs text-slate-500">
-                          confiance {Math.round(suggestionCategorie.scoreConfiance * 100)} %
-                        </span>
-                      )}
+                    <div className="mt-1">
+                      <CategorieIA suggestion={suggestionCategorie} />
                     </div>
                   </div>
                 )}
@@ -1069,6 +1171,55 @@ export function TicketDetailPage() {
                     )}
                   </div>
                 )}
+
+                {/* Bloc « après OCR » — la ré-évaluation après extraction du texte des pièces
+                    jointes ; la différence avec la création est surlignée (valeur de l'OCR). */}
+                {(categorieApresOcr || prioriteApresOcr) && (
+                  <div className="rounded-xl border border-primary-200/70 bg-white/70 p-3">
+                    <p className="flex items-center gap-1.5 text-xs font-semibold text-primary-700">
+                      <Sparkles className="size-3.5" aria-hidden />
+                      Révisé grâce à la pièce jointe
+                    </p>
+                    <div className="mt-2 space-y-2.5">
+                      {categorieApresOcr && (
+                        <div>
+                          <p className="text-xs text-slate-400">Catégorie</p>
+                          <div className="mt-1">
+                            <CategorieIA
+                              suggestion={categorieApresOcr}
+                              avant={suggestionCategorie?.contenu}
+                              surligne
+                            />
+                          </div>
+                        </div>
+                      )}
+                      {prioriteApresOcr && (
+                        <div>
+                          <p className="text-xs text-slate-400">Priorité</p>
+                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                            {prioriteDiffere && suggestionPriorite && (
+                              <>
+                                <span className="text-xs text-slate-400 line-through">
+                                  {LABEL_PRIORITE[suggestionPriorite.contenu as PrioriteTicket]}
+                                </span>
+                                <span aria-hidden className="text-xs text-slate-400">
+                                  →
+                                </span>
+                              </>
+                            )}
+                            <PrioriteLabel priorite={prioriteApresOcr.contenu as PrioriteTicket} />
+                          </div>
+                          {detailPrioriteApresOcr?.explication && (
+                            <p className="mt-1.5 text-xs leading-relaxed text-slate-600">
+                              {detailPrioriteApresOcr.explication}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <p className="text-[11px] leading-relaxed text-slate-400">
                   Suggestions non contraignantes — à valider ou corriger par le support.
                 </p>

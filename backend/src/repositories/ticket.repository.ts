@@ -36,10 +36,10 @@ const ticketDetailInclude = {
   suggestionsIA: {
     orderBy: { dateCreation: 'desc' },
   },
-  // Pièces jointes (J8bis) — dans l'ordre d'ajout. `url`/`cloudinaryId`/`texteExtrait` NE sont
-  // PAS exposés au client (§10 : l'URL Cloudinary publique reste côté serveur ; le download
-  // passe par le proxy authentifié). Le texte OCR (texteExtrait) alimentera le pipeline en
-  // interne au Lot B, sans transiter par le client.
+  // Pièces jointes (J8bis) — dans l'ordre d'ajout. `url`/`cloudinaryId` restent CÔTÉ SERVEUR
+  // (§10 : l'URL Cloudinary publique n'est jamais exposée ; le download passe par le proxy
+  // authentifié). `texteExtrait` (OCR, Lot B) EST exposé aux personnes ayant accès au ticket :
+  // c'est le contenu d'un fichier qu'elles peuvent déjà télécharger — pas une nouvelle fuite.
   piecesJointes: {
     orderBy: { dateUpload: 'asc' },
     select: {
@@ -49,6 +49,7 @@ const ticketDetailInclude = {
       taille: true,
       dateUpload: true,
       ticketId: true,
+      texteExtrait: true,
     },
   },
 } satisfies Prisma.TicketInclude;

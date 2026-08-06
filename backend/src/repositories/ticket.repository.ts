@@ -176,6 +176,23 @@ export const ticketRepository = {
     return prisma.pieceJointe.findUnique({ where: { id } });
   },
 
+  // Écrit le texte OCR extrait (J8bis Lot B). Appelé UNIQUEMENT si l'extraction est fiable ;
+  // JAMAIS dans `description` (augmentation à l'usage : le texte OCR enrichit sans réécrire).
+  majTexteExtrait(id: number, texteExtrait: string) {
+    return prisma.pieceJointe.update({ where: { id }, data: { texteExtrait } });
+  },
+
+  // Textes OCR fiables déjà extraits des pièces d'un ticket (texte_extrait non nul = fiable),
+  // dans l'ordre d'ajout → concaténés pour la re-classification « après OCR ».
+  async textesExtraitsDuTicket(ticketId: number) {
+    const pieces = await prisma.pieceJointe.findMany({
+      where: { ticketId, texteExtrait: { not: null } },
+      orderBy: { dateUpload: 'asc' },
+      select: { id: true, texteExtrait: true },
+    });
+    return pieces.map((p) => ({ id: p.id, texteExtrait: p.texteExtrait as string }));
+  },
+
   // Statistiques agrégées sur un périmètre (tous les tickets, ou un sous-ensemble filtré).
   async statistiques(scope: Prisma.TicketWhereInput) {
     const [

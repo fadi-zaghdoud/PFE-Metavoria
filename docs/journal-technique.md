@@ -1271,9 +1271,26 @@ demande explicite.
   - **Preuve (serving figé avant le pont)** : 3 fixtures (image PNG, PDF scanné, PDF texte)
     validées **en direct ET en HTTP** — méthodes correctes, texte fidèle (VPN/erreur 691 ;
     Active Directory), confiances 92.8 / 92.5 / 100 ; cas d'erreur (type non supporté) → **422**.
-- **Statut** : **Lot A + Lot B serving livrés** ; **pont Node** (upload → `/extract` async
-  fire-and-forget → écrit `texte_extrait` si `fiable` → **nouvelle** `SuggestionIA` « après OCR »,
-  sans écraser la 1ʳᵉ) à suivre. Détail de conception : `docs/epic-4-module-ia-conception.md` §7 bis.
+- **Pont Node — intégration (LIVRÉ, 06/08/2026)** :
+  - **Déclencheur fire-and-forget** dans `ajouterPieceJointe` : Node a **déjà les octets**
+    (`fichier.buffer` du multer en mémoire) → `demarrerExtraction` **sans re-télécharger**
+    Cloudinary. La réponse d'upload part **immédiatement** ; l'OCR (0,5-2 s) + la
+    re-classification vivent dans le fire-and-forget. Timeout dédié `IA_EXTRACT_TIMEOUT_MS` (60 s).
+  - **`texte_extrait` écrit UNIQUEMENT si `fiable`** (jamais dans `description` : augmentation
+    à l'usage). OCR non fiable / service down / 422 / 503 → journalisé, **upload intact**.
+  - **Re-classification « après OCR »** : `enrichir` refactoré en `classerEtPrioriser(ticket,
+    {texteSupplementaire, origine})`. L'astuce `classify(titre, description\ntexteOCR)` produit
+    l'embedding enrichi `titre\ndescription\ntexte_extrait` **sans toucher au service** ni à
+    `tickets.description`. L'embedding du ticket est **écrasé** par le vecteur enrichi (meilleure
+    représentation RAG). Nouvelle paire `SuggestionIA` marquée `details.origine='apres_ocr'`
+    (+ `pieceJointeIds`), la paire `creation` **conservée** → démonstration « avant / après OCR ».
+  - **Uploads multiples** : la paire `apres_ocr` est **remplacée** (deleteMany filtre JSON
+    `origine` puis recréée sur la concat des textes fiables) → toujours 1 « avant » + 1 « après »
+    cohérente. **Zéro migration** (marqueur dans `details` JSON ; colonne dédiée = flywheel J9).
+  - **Validé à l'écran** (06/08) : upload image « erreur VPN » → `texte_extrait` peuplé + 2ᵉ
+    suggestion `apres_ocr`, 1ʳᵉ intacte ; fichier illisible → aucun effet, upload OK. `tsc` + ESLint verts.
+- **Statut** : **Lot B livré (serving + pont Node)** ; reste l'**UI** (indicateur « texte extrait »
+  + affichage avant/après OCR). Détail de conception : `docs/epic-4-module-ia-conception.md` §7 bis.
 
 ---
 

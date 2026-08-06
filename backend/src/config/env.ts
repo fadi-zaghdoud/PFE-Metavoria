@@ -26,6 +26,9 @@ const envSchema = z.object({
   // Budget de la génération RAG (Greffe 2), appelée en ASYNCHRONE : large (génération
   // 15-30 s) — sans jamais bloquer la réponse HTTP (le clic répond 202 immédiat).
   IA_SUGGESTION_TIMEOUT_MS: z.coerce.number().default(60000),
+  // Budget de l'extraction OCR (J8bis Lot B), appelée en ASYNCHRONE à l'upload : large
+  // (OCR d'un PDF scanné peut prendre plusieurs secondes) — sans bloquer la réponse d'upload.
+  IA_EXTRACT_TIMEOUT_MS: z.coerce.number().default(60000),
   // Interrupteur : IA_ACTIVE=false coupe toute la greffe (actif par défaut).
   IA_ACTIVE: z
     .string()

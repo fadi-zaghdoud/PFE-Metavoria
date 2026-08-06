@@ -2,6 +2,7 @@ import { env } from '../config/env';
 import { prisma } from '../config/prisma';
 import { Prisma } from '../generated/prisma/client';
 import { categorieRepository } from '../repositories/categorie.repository';
+import { ticketRepository } from '../repositories/ticket.repository';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Pont Node → microservice IA (Python/FastAPI). Contrats alignés sur `service/app.py`.
@@ -84,6 +85,27 @@ interface ReponseSummarize {
 const resumer = (titre: string, description: string, messages: MessageFil[]) =>
   appelerIA<ReponseSummarize>('/summarize', { titre, description, messages }, env.IA_SUGGESTION_TIMEOUT_MS);
 
+// Extraction OCR d'une pièce jointe (J8bis Lot B). Contrat aligné sur /extract. Timeout LONG
+// (OCR d'un scan) — appel fait en ASYNCHRONE, hors réponse d'upload.
+interface ReponseExtract {
+  texte: string;
+  fiable: boolean; // False → OCR trop bruité (seuil anti-bruit) : Node ne stocke rien
+  confiance: number; // 0-100 (moyenne OCR) ; 100 pour une couche texte PDF
+  methode: string; // texte_pdf | ocr_image | ocr_pdf_scanne
+  n_mots: number;
+  n_pages: number | null;
+  langue: string;
+  message: string;
+  latence_ms: number | null;
+}
+
+const extraire = (nomFichier: string, contenuBase64: string, typeMime: string) =>
+  appelerIA<ReponseExtract>(
+    '/extract',
+    { nom_fichier: nomFichier, contenu_base64: contenuBase64, type_mime: typeMime },
+    env.IA_EXTRACT_TIMEOUT_MS,
+  );
+
 // Écrit l'embedding renvoyé par /classify. Prisma ne sait pas écrire le type
 // `Unsupported("vector(1024)")` → SQL brut paramétré : le vecteur part en littéral
 // pgvector `[...]` casté ::vector. Le service ne touche jamais la DB (Node le fait).
@@ -98,23 +120,32 @@ async function ecrireEmbedding(ticketId: number, embedding: number[], modele: st
 const journaliser = (etape: string, ticketId: number, err: unknown) =>
   console.error(`[IA] ${etape} ticket #${ticketId} :`, err instanceof Error ? err.message : err);
 
-// Orchestration synchrone embed → classify → priority, étage par étage. Chaque
-// étage dégrade proprement (cf. tableau de dégradation gracieuse du plan).
-async function enrichir(ticket: { id: number; titre: string; description: string }): Promise<void> {
+// Classe + priorise un ticket, étage par étage, chaque étage dégradant proprement. Deux
+// appels : à la CRÉATION (`origine='creation'`, texte = description seule) et APRÈS OCR
+// (`origine='apres_ocr'`, texte = description + texte_extrait des pièces). `classify` encode
+// `titre\ndescription` → passer `description\ntexteOCR` produit l'embedding enrichi
+// `titre\ndescription\ntexte_extrait` SANS toucher au service ni à `tickets.description`.
+async function classerEtPrioriser(
+  ticket: { id: number; titre: string; description: string },
+  opts: { texteSupplementaire?: string; origine: 'creation' | 'apres_ocr'; pieceJointeIds?: number[] },
+): Promise<void> {
   const { id, titre, description } = ticket;
+  const { texteSupplementaire = '', origine, pieceJointeIds } = opts;
+  const descriptionEmbed = texteSupplementaire ? `${description}\n${texteSupplementaire}` : description;
+  const detailsOrigine = origine === 'apres_ocr' ? { origine, pieceJointeIds } : { origine };
 
   // ── Étage 1 : classification (le vecteur d'embedding est renvoyé au passage) ──
   let classification: ReponseClassify;
   try {
-    classification = await classifier(titre, description);
+    classification = await classifier(titre, descriptionEmbed);
   } catch (err) {
     // Service down / /classify KO / timeout → aucune suggestion, priorité sautée
     // (décision : soit le couple catégorie+priorité, soit rien). Ticket déjà créé.
-    journaliser('classify', id, err);
+    journaliser(`classify (${origine})`, id, err);
     return;
   }
 
-  // ── Étage 1b : persistance de l'embedding (indépendante des suggestions) ──
+  // ── Étage 1b : embedding — création = base ; après-OCR = ÉCRASE avec l'enrichi ──
   try {
     await ecrireEmbedding(id, classification.embedding, classification.modele_embedding);
   } catch (err) {
@@ -132,6 +163,20 @@ async function enrichir(ticket: { id: number; titre: string; description: string
     return;
   }
 
+  // Après-OCR : on REMPLACE la paire après-OCR précédente (toujours 1 « avant » création +
+  // 1 « après » cohérente, même après plusieurs uploads).
+  if (origine === 'apres_ocr') {
+    await prisma.suggestionIA
+      .deleteMany({
+        where: {
+          ticketId: id,
+          typeSuggestion: { in: ['CLASSIFICATION', 'PRIORISATION'] },
+          details: { path: ['origine'], equals: 'apres_ocr' },
+        },
+      })
+      .catch((err) => journaliser('purge après-OCR', id, err));
+  }
+
   // ── Étage 2 : suggestion CLASSIFICATION ──
   try {
     await prisma.suggestionIA.create({
@@ -141,6 +186,7 @@ async function enrichir(ticket: { id: number; titre: string; description: string
         contenu: categorie.nom,
         scoreConfiance: classification.confiance, // proba top-1
         details: {
+          ...detailsOrigine,
           categorieId: categorie.id, // permet au technicien d'accepter (changerCategorie)
           probabilites: classification.probabilites,
           modeleEmbedding: classification.modele_embedding,
@@ -151,12 +197,12 @@ async function enrichir(ticket: { id: number; titre: string; description: string
     journaliser('persistance CLASSIFICATION', id, err);
   }
 
-  // ── Étage 3 : priorité (dépend de la catégorie — dépendance J7) ──
+  // ── Étage 3 : priorité (dépend de la catégorie — dépendance J7 ; texte inclut l'OCR) ──
   let priorite: ReponsePriority;
   try {
-    priorite = await prioriser(titre, description, categorie.nom);
+    priorite = await prioriser(titre, descriptionEmbed, categorie.nom);
   } catch (err) {
-    journaliser('priority', id, err); // classification déjà persistée ; pas de priorité
+    journaliser(`priority (${origine})`, id, err); // classification déjà persistée
     return;
   }
   try {
@@ -166,7 +212,7 @@ async function enrichir(ticket: { id: number; titre: string; description: string
         typeSuggestion: 'PRIORISATION',
         contenu: priorite.niveau,
         scoreConfiance: null, // scorecard déterministe : pas de proba (on ne fabrique rien)
-        details: priorite as unknown as Prisma.InputJsonValue, // niveau + décomposition glass-box
+        details: { ...detailsOrigine, ...priorite } as unknown as Prisma.InputJsonValue,
       },
     });
   } catch (err) {
@@ -236,15 +282,63 @@ async function genererResume(
   }
 }
 
+// Extraction OCR + re-classification « après OCR » en ARRIÈRE-PLAN (fire-and-forget). Écrit
+// texte_extrait UNIQUEMENT si l'OCR est fiable (jamais dans description), puis re-classe/priorise
+// le ticket sur la concat des textes extraits fiables. Ne rejette JAMAIS : l'upload reste valide.
+async function genererExtraction(
+  pieceJointeId: number,
+  ticket: { id: number; titre: string; description: string },
+  buffer: Buffer,
+  typeMime: string,
+  nomFichier: string,
+): Promise<void> {
+  try {
+    const res = await extraire(nomFichier, buffer.toString('base64'), typeMime);
+    if (!res.fiable) {
+      // Seuil anti-bruit non franchi → on ne stocke rien et on ne reclasse pas.
+      console.warn(
+        `[IA] OCR non fiable pièce #${pieceJointeId} (ticket #${ticket.id}) : ${res.message}`,
+      );
+      return;
+    }
+    await ticketRepository.majTexteExtrait(pieceJointeId, res.texte);
+
+    // Re-classification « après OCR » sur la concat des textes fiables déjà extraits du ticket.
+    const pieces = await ticketRepository.textesExtraitsDuTicket(ticket.id);
+    await classerEtPrioriser(ticket, {
+      texteSupplementaire: pieces.map((p) => p.texteExtrait).join('\n'),
+      origine: 'apres_ocr',
+      pieceJointeIds: pieces.map((p) => p.id),
+    });
+  } catch (err) {
+    // Service/Tesseract down, timeout, 422/503… → aucune conséquence sur le ticket.
+    journaliser('extraction OCR', ticket.id, err);
+  }
+}
+
 export const iaService = {
   // Point d'entrée non bloquant : ne rejette jamais (filet de sécurité + étages internes).
   async enrichirTicket(ticket: { id: number; titre: string; description: string }): Promise<void> {
     if (!env.IA_ACTIVE) return;
     try {
-      await enrichir(ticket);
+      await classerEtPrioriser(ticket, { origine: 'creation' });
     } catch (err) {
       journaliser('enrichissement (interrompu)', ticket.id, err);
     }
+  },
+
+  // Déclenche l'extraction OCR d'une pièce jointe (J8bis Lot B) en ASYNCHRONE, à l'upload :
+  // la réponse d'upload part tout de suite, l'OCR (0,5-2 s) + la re-classification « après OCR »
+  // vivent dans le fire-and-forget. Non bloquant, ne rejette jamais.
+  async demarrerExtraction(
+    pieceJointeId: number,
+    ticket: { id: number; titre: string; description: string },
+    buffer: Buffer,
+    typeMime: string,
+    nomFichier: string,
+  ): Promise<void> {
+    if (!env.IA_ACTIVE) return;
+    void genererExtraction(pieceJointeId, ticket, buffer, typeMime, nomFichier);
   },
 
   // Démarre une suggestion RAG : réinitialise LA ligne SOLUTION du ticket en EN_COURS, puis

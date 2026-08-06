@@ -510,6 +510,12 @@ export const ticketService = {
       taille: fichier.size,
     });
     logAudit('TICKET_PIECE_JOINTE', { ticketId: id, pieceJointeId: piece.id, parUtilisateur: acteur.id });
+
+    // OCR (J8bis Lot B) : extraction en ARRIÈRE-PLAN à partir du buffer DÉJÀ en main (pas de
+    // re-téléchargement Cloudinary). Non bloquant → la réponse d'upload part immédiatement ;
+    // l'OCR fiable peuple `texte_extrait` et déclenche une re-classification « après OCR ».
+    void iaService.demarrerExtraction(piece.id, ticket, fichier.buffer, fichier.mimetype, fichier.originalname);
+
     return piece;
   },
 

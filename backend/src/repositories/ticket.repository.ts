@@ -194,6 +194,56 @@ export const ticketRepository = {
     return pieces.map((p) => ({ id: p.id, texteExtrait: p.texteExtrait as string }));
   },
 
+  // Flywheel (Greffe 3) — labels PROPRES pour le réentraînement : tickets RÉELS
+  // (synthetique=false) résolus/clôturés avec une catégorie (validée par un humain qui a
+  // traité le ticket). Texte = titre + description (+ texte_extrait OCR concaténé si présent,
+  // cohérent avec l'embedding enrichi). JAMAIS les tickets synthétiques (bootstrap).
+  async labelsValides() {
+    const tickets = await prisma.ticket.findMany({
+      where: {
+        synthetique: false,
+        statut: { in: ['RESOLU', 'CLOTURE'] },
+        categorieId: { not: null },
+      },
+      orderBy: { id: 'asc' },
+      select: {
+        id: true,
+        titre: true,
+        description: true,
+        categorie: { select: { nom: true } },
+        piecesJointes: {
+          where: { texteExtrait: { not: null } },
+          orderBy: { dateUpload: 'asc' },
+          select: { texteExtrait: true },
+        },
+      },
+    });
+    return tickets.map((t) => ({
+      id: t.id,
+      titre: t.titre,
+      description: t.description,
+      categorie: t.categorie?.nom ?? null,
+      texteExtrait: t.piecesJointes.map((p) => p.texteExtrait).join('\n') || null,
+    }));
+  },
+
+  // Flywheel — nb de tickets RÉELS devenus RESOLU (= nouveaux labels validés) depuis `date`
+  // (typiquement la date d'entraînement du modèle actif). Compté via l'événement de transition,
+  // dédupliqué par ticket. Aucun champ `dateResolution` n'existe → on lit l'événement.
+  async nbLabelsValidesDepuis(date: Date): Promise<number> {
+    const evenements = await prisma.evenementTicket.findMany({
+      where: {
+        type: 'CHANGEMENT_STATUT',
+        nouvelleValeur: 'RESOLU',
+        dateCreation: { gt: date },
+        ticket: { synthetique: false, categorieId: { not: null } },
+      },
+      distinct: ['ticketId'],
+      select: { ticketId: true },
+    });
+    return evenements.length;
+  },
+
   // Statistiques agrégées sur un périmètre (tous les tickets, ou un sous-ensemble filtré).
   async statistiques(scope: Prisma.TicketWhereInput) {
     const [

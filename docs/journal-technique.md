@@ -1309,6 +1309,41 @@ demande explicite.
 
 ---
 
+### Greffe 3 (flywheel, boucle complète) — Brique A : capture des labels validés (LIVRÉ, 07/08/2026)
+- **Objet** : capturer proprement « suggéré X / choisi Y » pour, à terme, **réentraîner le
+  classifieur sur les corrections RÉELLES des techniciens** — la voie durable pour combler
+  l'écart synthétique→réel (0,506 à J5).
+- **L'argument central (retourne le J5+ négatif)** : J5+ avait montré qu'ajouter du réel
+  **auto-étiqueté bruité** à l'entraînement **dégrade** le réel (−0,043) — *« la qualité de
+  l'étiquetage prime sur la proximité du domaine »*. Le flywheel apporte des étiquettes
+  **validées par le technicien = propres par construction** : c'est **exactement la condition
+  qui manquait** à J5+. Le résultat négatif devient la **motivation** du flywheel.
+- **Inventaire** : matière première présente (SuggestionIA, catégorie finale, événements) mais
+  **aucune paire propre requêtable** ; `valideeParTechnicien` déclaré mais **jamais écrit** ;
+  `origine` seulement dans `details` (JSON).
+- **Livré (Brique A)** :
+  - **Migration** `SuggestionIA.origine` (colonne dédiée + backfill depuis `details.origine`),
+    appliquée en **`migrate deploy`** — jamais `migrate dev`, qui **resetterait** la base à cause
+    du drift des index HNSW/full-text créés en SQL brut (invisibles à Prisma).
+  - **Réconciliation** `iaService.reconcilierSuggestions(ticketId, catégorieFinale)` : marque
+    chaque suggestion CLASSIFICATION `valideeParTechnicien = (contenu == catégorie finale)`.
+    Idempotente, best-effort (ne bloque jamais le workflow). Accrochée à **4 points** :
+    `resoudre` (label validé), `changerCategorie` (correction explicite), `cloturer` +
+    `evaluerSatisfaction` (filets).
+  - **Export** `ticketRepository.labelsValides()` : tickets **réels** (`synthetique=false`)
+    RESOLU/CLOTURE avec catégorie → `{titre, description, texteExtrait, catégorie}` (texte =
+    titre+description+texte_extrait OCR si présent ; jamais les synthétiques).
+  - **Compteur** `nbLabelsValidesDepuis(date)` (via événement RESOLU, dédup par ticket).
+- **Preuve (porte A — headless non destructif, ticket jetable)** : création=Matériel(0,48) /
+  après-OCR=Réseau(0,82), choix final Réseau → `apres_ocr` validée=**true**, `creation`
+  validée=**false** (« l'OCR a corrigé ») ; NOUVEAU exclu de `labelsValides`, RESOLU inclus avec
+  sa catégorie ; 7 labels réels en base. `tsc` vert.
+- **Suite** : **D1** (jeu de labels propres : spot-checks Kaggle **déjà relus** + export DB,
+  étanchéité `assert_disjoint` fail dur vs gold+externe) → **B** (réentraînement manuel, glass-box)
+  → **C** (preuve : courbe d'apprentissage + règle d'interprétation pré-enregistrée).
+
+---
+
 # Phase 6 — Intégration & tests
 - **Statut** : non commencée. `[reconstitué depuis Git — aucun harnais de test versionné à ce jour]`
 - **Prévu** : le **harnais d'évaluation du module IA (J3)** est un livrable de premier

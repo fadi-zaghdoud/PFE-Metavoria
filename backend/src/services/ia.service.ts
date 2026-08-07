@@ -183,6 +183,7 @@ async function classerEtPrioriser(
       data: {
         ticketId: id,
         typeSuggestion: 'CLASSIFICATION',
+        origine, // colonne dédiée (flywheel) : creation | apres_ocr
         contenu: categorie.nom,
         scoreConfiance: classification.confiance, // proba top-1
         details: {
@@ -210,6 +211,7 @@ async function classerEtPrioriser(
       data: {
         ticketId: id,
         typeSuggestion: 'PRIORISATION',
+        origine, // colonne dédiée (flywheel) : creation | apres_ocr
         contenu: priorite.niveau,
         scoreConfiance: null, // scorecard déterministe : pas de proba (on ne fabrique rien)
         details: { ...detailsOrigine, ...priorite } as unknown as Prisma.InputJsonValue,
@@ -367,5 +369,30 @@ export const iaService = {
       data: { ticketId, typeSuggestion: 'RESUME', contenu: '', statut: 'EN_COURS' },
     });
     void genererResume(ligne.id, ticketId, titre, description, messages);
+  },
+
+  // Flywheel (Greffe 3) — capture « suggéré vs choisi » : à la résolution / clôture / correction,
+  // on marque chaque suggestion CLASSIFICATION du ticket comme VALIDÉE (contenu == catégorie
+  // finale choisie par l'humain) ou CORRIGÉE. Idempotent (recalcule sur la catégorie courante)
+  // et best-effort : ne casse JAMAIS la mutation métier (la capture ne doit pas bloquer le
+  // workflow). Le label d'entraînement, lui, reste le ticket résolu (cf. labelsValides).
+  async reconcilierSuggestions(ticketId: number, categorieFinaleNom: string | null): Promise<void> {
+    if (!categorieFinaleNom) return;
+    try {
+      const suggestions = await prisma.suggestionIA.findMany({
+        where: { ticketId, typeSuggestion: 'CLASSIFICATION' },
+        select: { id: true, contenu: true },
+      });
+      await Promise.all(
+        suggestions.map((s) =>
+          prisma.suggestionIA.update({
+            where: { id: s.id },
+            data: { valideeParTechnicien: s.contenu === categorieFinaleNom },
+          }),
+        ),
+      );
+    } catch (err) {
+      journaliser('réconciliation flywheel', ticketId, err);
+    }
   },
 };

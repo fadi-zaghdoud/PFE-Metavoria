@@ -252,6 +252,9 @@ export const ticketService = {
     const misAJour = await ticketRepository.update(id, { statut: 'RESOLU' });
     logAudit('TICKET_STATUT', { ticketId: id, de: ticket.statut, vers: 'RESOLU', parUtilisateur: acteur.id });
 
+    // Flywheel : à la résolution, la catégorie du ticket devient un label validé par l'humain.
+    await iaService.reconcilierSuggestions(id, misAJour.categorie?.nom ?? null);
+
     // Inviter le demandeur à valider la résolution (sa validation clôturera le ticket).
     if (misAJour.demandeur.id !== acteur.id) {
       await notificationService.notifier({
@@ -289,6 +292,9 @@ export const ticketService = {
       dateCloture: new Date(),
     });
     logAudit('TICKET_STATUT', { ticketId: id, de: ticket.statut, vers: 'CLOTURE', parUtilisateur: acteur.id });
+
+    // Flywheel : filet (clôture admin) — la catégorie finale reste un label validé.
+    await iaService.reconcilierSuggestions(id, misAJour.categorie?.nom ?? null);
 
     // Informer le demandeur de la clôture.
     if (misAJour.demandeur.id !== acteur.id) {
@@ -403,6 +409,9 @@ export const ticketService = {
       vers: categorieId,
       parUtilisateur: acteur.id,
     });
+
+    // Flywheel : correction explicite → on marque les suggestions (validée / corrigée).
+    await iaService.reconcilierSuggestions(id, categorie.nom);
     return misAJour;
   },
 
@@ -604,6 +613,9 @@ export const ticketService = {
 
     const misAJour = await ticketRepository.update(id, data);
     logAudit('TICKET_SATISFACTION', { ticketId: id, note, parUtilisateur: acteur.id });
+
+    // Flywheel : filet (validation demandeur → clôture) — catégorie finale = label validé.
+    await iaService.reconcilierSuggestions(id, misAJour.categorie?.nom ?? null);
 
     // Notifier le technicien assigné du retour reçu.
     if (ticket.technicien && ticket.technicien.id !== acteur.id) {

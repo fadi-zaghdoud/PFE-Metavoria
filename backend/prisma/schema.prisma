@@ -238,6 +238,10 @@ model EvenementTicket {
 model SuggestionIA {
   id             Int      @id @default(autoincrement())
   typeSuggestion String   @map("type_suggestion") // CLASSIFICATION | PRIORISATION | SOLUTION | RESUME
+  // Origine (Greffe 3, flywheel) : 'creation' (à la création) | 'apres_ocr' (ré-évaluation
+  // après OCR d'une pièce jointe). Colonne dédiée (auparavant dans `details.origine`) pour
+  // requêter les métriques « suggéré vs choisi » par origine.
+  origine        String?  @map("origine")
   contenu        String   // valeur suggérée : nom de catégorie, niveau de priorité, …
   // Proba top-1 (classification) ; NULL pour la scorecard déterministe (priorité :
   // règle glass-box sans probabilité — on ne fabrique pas de fausse confiance).

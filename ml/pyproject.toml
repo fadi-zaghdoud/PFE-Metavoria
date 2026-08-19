@@ -43,6 +43,7 @@ packages = [
     "smart_ticketing_ml",
     "smart_ticketing_ml.data",
     "smart_ticketing_ml.eval",
+    "smart_ticketing_ml.flywheel",
     "smart_ticketing_ml.retrieval",
     "smart_ticketing_ml.service",
     "smart_ticketing_ml.training",

@@ -158,3 +158,57 @@ def assert_disjoint(
             f"(ex. : {apercu}). Le gold ne doit JAMAIS recouper le train."
         )
     return verdict
+
+
+def porte_etancheite(
+    candidats: list[Exemple],
+    test: list[Exemple],
+    seuil_jaccard: float = 0.5,
+) -> float:
+    """Porte DURE d'étanchéité pour les ajouts au TRAIN (flywheel J9).
+
+    Différence avec `assert_disjoint` (où le Jaccard n'est qu'un AVERTISSEMENT, car le
+    synthétique a des quasi-doublons légitimes avec le gold) : ici **toute** contamination
+    est FATALE. Lève `RuntimeError` si un candidat recoupe le `test` :
+      - **exact** : description normalisée identique (0 toléré) ;
+      - **approx** : Jaccard(titre+description) ≥ `seuil_jaccard` (0 toléré ; défaut 0,5,
+        renforcé — cohérent avec l'ingestion Kaggle, source commune train/test).
+
+    Sur succès, retourne le **Jaccard MAX** observé (candidats × test) — pour log/manifeste.
+    Porte OBLIGATOIRE : à appeler avant tout ajout d'exemples au train.
+    """
+    test_desc = {_norm(t.description) for t in test}
+    test_tok = [(_tokens(t.titre + " " + t.description), t.titre) for t in test]
+
+    exacts: list[str] = []
+    approx: list[tuple[str, str, float]] = []
+    sim_max = 0.0
+
+    for c in candidats:
+        if _norm(c.description) in test_desc:
+            exacts.append(c.titre)
+            continue
+        ctok = _tokens(c.titre + " " + c.description)
+        hit: tuple[str, float] | None = None
+        for ttok, ttitre in test_tok:
+            s = _jaccard(ctok, ttok)
+            if s > sim_max:
+                sim_max = s
+            if s >= seuil_jaccard and hit is None:
+                hit = (ttitre, round(s, 3))
+        if hit is not None:
+            approx.append((c.titre, hit[0], hit[1]))
+
+    if exacts or approx:
+        details: list[str] = []
+        if exacts:
+            details.append(f"{len(exacts)} EXACT(s) (ex. : {', '.join(exacts[:3])})")
+        if approx:
+            ex = ", ".join(f"« {a} » ~ « {b} » (J={s})" for a, b, s in approx[:3])
+            details.append(f"{len(approx)} APPROX Jaccard≥{seuil_jaccard} (ex. : {ex})")
+        raise RuntimeError(
+            "PORTE D'ÉTANCHÉITÉ VIOLÉE — un candidat au TRAIN recoupe le TEST : "
+            + " | ".join(details)
+            + ". Aucun ajout au train tant que ce n'est pas 0."
+        )
+    return round(sim_max, 3)

@@ -1338,9 +1338,37 @@ demande explicite.
   après-OCR=Réseau(0,82), choix final Réseau → `apres_ocr` validée=**true**, `creation`
   validée=**false** (« l'OCR a corrigé ») ; NOUVEAU exclu de `labelsValides`, RESOLU inclus avec
   sa catégorie ; 7 labels réels en base. `tsc` vert.
-- **Suite** : **D1** (jeu de labels propres : spot-checks Kaggle **déjà relus** + export DB,
-  étanchéité `assert_disjoint` fail dur vs gold+externe) → **B** (réentraînement manuel, glass-box)
-  → **C** (preuve : courbe d'apprentissage + règle d'interprétation pré-enregistrée).
+- **Suite** : **D1** (jeu de labels propres) → **B** (réentraînement manuel, glass-box) → **C**
+  (preuve : courbe d'apprentissage + règle d'interprétation pré-enregistrée).
+
+### Greffe 3 (flywheel) — D1 : lot d'entraînement propre + verrou d'étanchéité (LIVRÉ, 19/08/2026)
+- **Correction d'hypothèse (constat data)** : les « ~60 spot-checks Kaggle **déjà relus** » supposés
+  à l'architecture étaient en fait des **gabarits VIDES** (le J5+ n'avait gardé que les % agrégés).
+  État réel vérifié : **242** tickets Kaggle FR-IT dispo hors test (déjà exclus par exact + Jaccard
+  ≥ 0,5), **46** au test gelé, captures production **inexploitables** (~1 vraie correction #875, le
+  reste = tickets de test / junk). → une **relecture fraîche à l'aveugle** était nécessaire.
+- **D1.1 — porte dure `porte_etancheite(candidats, test, seuil=0.5)`** (`eval/dataset.py`) : lève sur
+  exact **OU** Jaccard ≥ 0,5 (0 toléré des deux). `assert_disjoint` **laissée intacte** (Jaccard =
+  simple avertissement) pour ne PAS casser le réentraînement J5. **Test versionné**
+  `tests/test_porte_etancheite.py` (4/4) : prouve, **relançable**, que copie exacte ET quasi-doublon
+  échouent DUR — l'intégrité méthodologique est *vérifiée*, pas promise.
+- **D1.2 — `flywheel/exporter_lot.py`** : 50 tickets (17 Réseau / 17 Logiciel / 16 Matériel selon
+  l'auto, seed 42) exportés **à l'aveugle** (`real/lot_v2/a_relire.csv` : catégorie vide, sans
+  auto-label ni signaux) ; auto-label isolé (`auto_labels.csv`). Porte jouée avant export
+  (Jaccard max **0,44** < 0,5).
+- **D1.3 — `flywheel/reconcilier_relecture.py`** : validation dure des libellés + comparaison relu
+  vs auto. **Taux de désaccord = 16/50 = 32 %** (auto-mapper juste à **68 %** sur échantillon
+  PROPRE — *plus* bruité que le 87 % optimiste du spot-check J5+ → renforce « labels propres > auto »).
+  Motif **systématique** : AWS/cloud reclassé **Réseau → Logiciel** (+ facturation AWS → Autre).
+- **Observation pour la Brique C** : le TEST gelé étiquette AWS de façon **incohérente**
+  (Accès/Réseau/Logiciel) → frontière **intrinsèquement ambiguë** du dataset qui **plafonne** les
+  gains mesurables sur AWS (limite de données, PAS échec du flywheel). À énoncer honnêtement au mémoire.
+- **D1.4 — `flywheel/construire_train_v2.py`** : `train_v2` = **852 synthétiques + 50 relus = 902** ;
+  porte re-jouée sur les 50 ajouts (fail dur) ; snapshot `artifacts/flywheel/train_v2_*.jsonl`
+  (dérivé → **gitignoré**) + **manifeste versionné** (`real/lot_v2/train_v2_manifest.json` : corpus
+  source + sha256, 50 ids + labels, distributions, sha256 du snapshot) → **reproductible**.
+- **Versionnement** : labels humains + manifestes + rapport → **versionnés** (`real/lot_v2/`) ;
+  snapshot dérivé **ignoré** (régénérable). **Suite : Brique B** (réentraînement manuel glass-box).
 
 ---
 

@@ -1,0 +1,130 @@
+{
+  "date": "2026-08-19T15:41:02Z",
+  "n": 50,
+  "n_desaccords": 16,
+  "taux": 0.32,
+  "justesse_auto": 0.68,
+  "dist_relu": {
+    "Logiciel": 20,
+    "Matériel": 15,
+    "Réseau": 11,
+    "Autre": 2,
+    "Accès": 2
+  },
+  "confusion": {
+    "Logiciel": {
+      "Logiciel": 13,
+      "Matériel": 1,
+      "Accès": 2,
+      "Autre": 1
+    },
+    "Réseau": {
+      "Logiciel": 7,
+      "Réseau": 8,
+      "Autre": 1,
+      "Matériel": 1
+    },
+    "Matériel": {
+      "Matériel": 13,
+      "Réseau": 3
+    }
+  },
+  "desaccords": [
+    {
+      "id": "kag-0010",
+      "titre": "",
+      "auto": "Réseau",
+      "relu": "Logiciel"
+    },
+    {
+      "id": "kag-0011",
+      "titre": "Problèmes avec le MacBook Air M1 qui plante",
+      "auto": "Logiciel",
+      "relu": "Matériel"
+    },
+    {
+      "id": "kag-0018",
+      "titre": "",
+      "auto": "Réseau",
+      "relu": "Logiciel"
+    },
+    {
+      "id": "kag-0024",
+      "titre": "Assistance nécessaire pour la facturation AWS",
+      "auto": "Réseau",
+      "relu": "Autre"
+    },
+    {
+      "id": "kag-0034",
+      "titre": "Problème de priorité moyenne avec la connectivité sans fil",
+      "auto": "Matériel",
+      "relu": "Réseau"
+    },
+    {
+      "id": "kag-0049",
+      "titre": "Demande de modifications pour l'amélioration de la stratégie AWS",
+      "auto": "Réseau",
+      "relu": "Logiciel"
+    },
+    {
+      "id": "kag-0058",
+      "titre": "Assistance immédiate nécessaire pour résoudre la panne du serveur",
+      "auto": "Réseau",
+      "relu": "Matériel"
+    },
+    {
+      "id": "kag-0062",
+      "titre": "Problème de déploiement AWS Cloud de haute priorité",
+      "auto": "Réseau",
+      "relu": "Logiciel"
+    },
+    {
+      "id": "kag-0069",
+      "titre": "Impossible d'accéder à l'email Outlook dans Office 365",
+      "auto": "Logiciel",
+      "relu": "Accès"
+    },
+    {
+      "id": "kag-0077",
+      "titre": "Problème d'accès au tableau de bord Jira Software",
+      "auto": "Logiciel",
+      "relu": "Accès"
+    },
+    {
+      "id": "kag-0101",
+      "titre": "Problème d'impression sans fil",
+      "auto": "Matériel",
+      "relu": "Réseau"
+    },
+    {
+      "id": "kag-0114",
+      "titre": "Difficultés de connexion",
+      "auto": "Matériel",
+      "relu": "Réseau"
+    },
+    {
+      "id": "kag-0119",
+      "titre": "Assistance Urgente Requise : Optimisation AWS",
+      "auto": "Réseau",
+      "relu": "Logiciel"
+    },
+    {
+      "id": "kag-0149",
+      "titre": "Piques des coûts d'instances AWS",
+      "auto": "Réseau",
+      "relu": "Logiciel"
+    },
+    {
+      "id": "kag-0200",
+      "titre": "Demande de support",
+      "auto": "Logiciel",
+      "relu": "Autre"
+    },
+    {
+      "id": "kag-0230",
+      "titre": "Changement de configuration AWS urgent",
+      "auto": "Réseau",
+      "relu": "Logiciel"
+    }
+  ]
+}

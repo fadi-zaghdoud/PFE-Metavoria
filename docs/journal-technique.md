@@ -1399,6 +1399,34 @@ demande explicite.
 - **Suite : Brique C** — courbe d'apprentissage macro-F1 réel vs nb labels (0→10→…→50), **base
   synthétique FIXÉE** pour isoler l'effet des labels du confond ; + admin UI (comparatif + déployer).
 
+### Greffe 3 (flywheel) — Brique C1 : courbe d'apprentissage (LIVRÉ, 21/08/2026)
+- **Objet** : mesurer PROPREMENT l'effet marginal des labels réels, **isolé du confond de B**.
+  `flywheel/courbe_apprentissage.py` : **base synthétique FIXE (852)** pour tous les points ;
+  seul varie le nb de relus réels **k ∈ {0,10,20,30,40,50}**. k=0 = baseline pur-synthétique.
+  **Porte d'étanchéité re-jouée** (fail dur) sur chaque sous-ensemble ; **test GELÉ** gold(102) +
+  externe réel(46) ; métrique de tête = **macro-F1 réel**. **Lissage 5 seeds** pour k intermédiaires
+  (moyenne + bande min/max). **Règle PRÉ-ENREGISTRÉE** (pente k0→k50, seuils de B) fixée avant les chiffres.
+- **Résultat en 3 phases (honnête, non maquillé)** :
+  1. **Bosse** k=10–20 : **+0,033** au-dessus de la baseline (0,4554 → 0,4888). Une petite dose de
+     labels propres **aide** — le flywheel fonctionne. *Non sur-vendu* : bande *ambiguë* (+0,02..+0,05),
+     min–max **0,409–0,536** à k=20 → **bruit n=46** (un tirage unique aurait menti : lissage justifié).
+  2. **Redescente** k=30→50 sous la baseline (0,4212 à k=50). Au volume actuel, ajouter *plus* de ces
+     relus nuit sur le test complet.
+  3. **Pente pré-enregistrée** k0→k50 = **−0,0342 → verdict DESCENDANT** (`< −0,02`). Rapportée telle quelle.
+- **Diagnostic hors-AWS (étiqueté, PAS le résultat de tête)** : le test réel a **8/46 items AWS/cloud**
+  aux labels gold **incohérents** (Accès/Réseau/Logiciel pour un même sujet). En les retirant (mots-clés
+  fixes, transparents), la pente **s'inverse : −0,034 → +0,011**. **Le bruit est dans le TEST, pas dans le
+  flywheel** — l'écart bleu↔vert après k=20 EST le plafond d'étiquetage AWS.
+- **Sanity check** : score **synthétique figé à 0,944** sur toute la courbe (base inchangée) → la mécanique
+  isole bien l'effet des labels réels. **Confond de B réglé** (base 852 constante, plus 852-vs-724).
+- **Leviers d'un gain réel (énoncés au mémoire)** : (a) **plus de labels propres** (50 ≈ 5 %, trop peu) ;
+  (b) **nettoyer l'ambiguïté AWS du test** (le plafond est un défaut de données, pas du modèle) ;
+  (c) test réel plus grand que n=46 (réduire les bandes). Le flywheel apporte le canal ; le volume viendra.
+- **Livrables VERSIONNÉS** : `eval/reports/j9_flywheel/` — `courbe.md`, `courbe.json`,
+  `courbe_apprentissage.png` (courbe complète + diagnostic hors-AWS, bandes min/max, réf. actif J5).
+- **Suite : Brique C2** — admin UI `/administration/ia` (compteur, réentraîner, comparatif candidat vs
+  actif, **déployer conditionnel**). Au volume actuel le bouton reste **désactivé** → démontre le refus glass-box.
+
 ---
 
 # Phase 6 — Intégration & tests

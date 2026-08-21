@@ -29,6 +29,9 @@ const envSchema = z.object({
   // Budget de l'extraction OCR (J8bis Lot B), appelée en ASYNCHRONE à l'upload : large
   // (OCR d'un PDF scanné peut prendre plusieurs secondes) — sans bloquer la réponse d'upload.
   IA_EXTRACT_TIMEOUT_MS: z.coerce.number().default(60000),
+  // Budget des appels flywheel admin (réentraînement / déploiement). Le service Python répond
+  // vite (202 async au déclenchement, copie+reload au déploiement) → marge confortable.
+  IA_REENTRAINEMENT_TIMEOUT_MS: z.coerce.number().default(30000),
   // Interrupteur : IA_ACTIVE=false coupe toute la greffe (actif par défaut).
   IA_ACTIVE: z
     .string()

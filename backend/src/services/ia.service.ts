@@ -50,6 +50,31 @@ async function appelerIA<T>(chemin: string, corps: unknown, timeoutMs = env.IA_T
   }
 }
 
+// Proxy vers le service IA qui RELAIE le statut + le corps (contrairement à `appelerIA` qui
+// dégrade en absorbant l'erreur) : les endpoints admin du flywheel doivent transmettre les
+// 202/409/404 du service tels quels. Un service injoignable lève → 503 côté contrôleur.
+async function proxyIA(
+  methode: string,
+  chemin: string,
+  corps?: unknown,
+  timeoutMs = env.IA_TIMEOUT_MS,
+): Promise<{ status: number; body: unknown }> {
+  const controleur = new AbortController();
+  const minuteur = setTimeout(() => controleur.abort(), timeoutMs);
+  try {
+    const reponse = await fetch(`${env.SERVICE_IA_URL}${chemin}`, {
+      method: methode,
+      headers: corps !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+      body: corps !== undefined ? JSON.stringify(corps) : undefined,
+      signal: controleur.signal,
+    });
+    const body = await reponse.json().catch(() => ({}));
+    return { status: reponse.status, body };
+  } finally {
+    clearTimeout(minuteur);
+  }
+}
+
 const classifier = (titre: string, description: string) =>
   appelerIA<ReponseClassify>('/classify', { titre, description });
 
@@ -395,4 +420,13 @@ export const iaService = {
       journaliser('réconciliation flywheel', ticketId, err);
     }
   },
+
+  // ── Flywheel (Greffe 3, B.3) — proxys ADMIN vers le service Python (relaient le statut) ──
+  // Node reste seul à toucher la DB (captures via labelsValides) ; le service Python reste sans état.
+  proxyReentrainer: (captures: unknown[]) =>
+    proxyIA('POST', '/reentrainer', { captures }, env.IA_REENTRAINEMENT_TIMEOUT_MS),
+  proxyEtatReentrainement: () => proxyIA('GET', '/reentrainer/etat'),
+  proxyDeployer: (stamp: string) =>
+    proxyIA('POST', '/deployer', { stamp }, env.IA_REENTRAINEMENT_TIMEOUT_MS),
+  proxySante: () => proxyIA('GET', '/sante'),
 };

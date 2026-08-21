@@ -1368,7 +1368,36 @@ demande explicite.
   (dérivé → **gitignoré**) + **manifeste versionné** (`real/lot_v2/train_v2_manifest.json` : corpus
   source + sha256, 50 ids + labels, distributions, sha256 du snapshot) → **reproductible**.
 - **Versionnement** : labels humains + manifestes + rapport → **versionnés** (`real/lot_v2/`) ;
-  snapshot dérivé **ignoré** (régénérable). **Suite : Brique B** (réentraînement manuel glass-box).
+  snapshot dérivé **ignoré** (régénérable).
+
+### Greffe 3 (flywheel) — Brique B : réentraînement manuel glass-box (LIVRÉ, 20/08/2026)
+- **Objet** : le MOTEUR — réentraîner un CANDIDAT, le comparer à l'actif sur le **test gelé**,
+  déployer **seulement si meilleur** (acte admin). B prouve le **mécanisme + la sécurité**, pas un gain.
+- **B.1 — `flywheel/reentrainer.py`** : assemble `train_v2` + captures (passées par Node) →
+  **porte d'étanchéité RE-JOUÉE** (fail dur, `verifier_etancheite`) sur les ajouts réels vs
+  réel + gold → entraîne un `EmbeddingLogReg` candidat (embeddings en cache `.npy`) → évalue
+  candidat ET actif sur le test gelé → rapport + **verdict PRÉ-ENREGISTRÉ**. Candidat écrit dans
+  `artifacts/models/candidates/` (**sous-dossier non récursif** → jamais servi par accident).
+  **Test versionné** `tests/test_reentrainer_etancheite.py` : une capture contaminée fait ABORT.
+- **Comparatif honnête (50 relus, captures=[])** : ACTIF (synth seul) macro-F1 réel **0,438** vs
+  CANDIDAT (synth + 50) **0,4212** → **Δ −0,0168 → verdict NUL → candidat NON déployable**.
+  Résultat PRÉ-ACCEPTÉ : 50 labels (~5 %) trop peu + **plafond AWS** (test ambigu) + n=46 bruité.
+  Ce que B prouve : le moteur tourne, et la sécurité glass-box **refuse un modèle non meilleur**.
+  *(Confond noté : candidat 852 synth vs actif J5 724 après split → C FIXERA la base pour isoler
+  l'effet des labels.)*
+- **B.2 — endpoints Python** : `POST /reentrainer` (async, thread de fond, 202) · `GET
+  /reentrainer/etat` (polling) · `POST /deployer` (**REFUSE 409 si non meilleur** + copie +
+  `predictors.recharger_classifieur()`) · `/sante` enrichi (date + macro-F1 actif). Preuve HTTP :
+  /deployer → **409 REFUSÉ**, /sante confirme le modèle actif **INCHANGÉ**.
+- **B.3 — proxy Node ADMIN** (`/api/ia`, `requireRole('ADMINISTRATEUR')`) : `POST /reentrainer`
+  (passe `labelsValides()` — **Node seul touche la DB**), `GET /flywheel` (compteur
+  `nbLabelsValidesDepuis(dateActif)` + état), `POST /deployer`. `proxyIA` **relaie** le statut
+  (202/409/404) ; service injoignable → 503. Preuve : proxy relaie **200/202/409** contre le vrai
+  Python. `IA_REENTRAINEMENT_TIMEOUT_MS`.
+- **Chemin heureux de déploiement** (copie + reload) : **même code**, simplement débloqué par la
+  garde — démontrable en Brique C dès qu'un candidat passe la barre. La GARDE, elle, est prouvée.
+- **Suite : Brique C** — courbe d'apprentissage macro-F1 réel vs nb labels (0→10→…→50), **base
+  synthétique FIXÉE** pour isoler l'effet des labels du confond ; + admin UI (comparatif + déployer).
 
 ---
 

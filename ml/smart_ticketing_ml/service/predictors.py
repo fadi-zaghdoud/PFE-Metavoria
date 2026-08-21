@@ -13,6 +13,7 @@ en mémoire : le classifieur réutilise l'embedder du service.
 from __future__ import annotations
 
 import glob
+import json
 import threading
 from pathlib import Path
 
@@ -64,6 +65,34 @@ def charger_classifieur() -> EmbeddingLogReg:
 def classifieur_charge() -> bool:
     """Vrai si le classifieur est déjà en mémoire (utile pour /sante)."""
     return _clf is not None
+
+
+def recharger_classifieur() -> None:
+    """Vide le classifieur en cache → le prochain `classer()` recharge le DERNIER
+    `classifier_*.joblib`. Appelé après un déploiement flywheel : le nouveau modèle est servi
+    sans redémarrer le service."""
+    global _clf
+    with _verrou:
+        _clf = None
+
+
+def infos_actif() -> dict:
+    """Métadonnées du classifieur ACTIF (pour /sante + le compteur flywheel) : chemin, date
+    d'entraînement, macro-F1 réel — lus du manifeste `classifier_*.manifest.json` s'il existe."""
+    try:
+        chemin = _chemin_modele()
+    except RuntimeError:
+        return {"present": False}
+    infos = {"present": True, "chemin": chemin.name, "date_entrainement": None, "macro_f1_reel": None}
+    manifeste = chemin.parent / f"{chemin.stem}.manifest.json"
+    if manifeste.exists():
+        try:
+            d = json.loads(manifeste.read_text(encoding="utf-8"))
+            infos["date_entrainement"] = d.get("date")
+            infos["macro_f1_reel"] = d.get("macro_f1_reel") or (d.get("gap_production") or {}).get("f1_reel")
+        except (ValueError, OSError):
+            pass
+    return infos
 
 
 def classer(titre: str, description: str) -> dict:

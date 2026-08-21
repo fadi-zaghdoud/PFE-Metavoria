@@ -12,12 +12,14 @@ Lancement (dév) :
 from __future__ import annotations
 
 import base64
+import threading
 import time
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from . import config, embedder, ocr, predictors, reranker
+from ..flywheel import reentrainer as flywheel_reentrainer
 from ..retrieval import hybrid, suggestion
 from ..summarize import resumer
 
@@ -26,6 +28,10 @@ app = FastAPI(
     version="0.1.0",
     description="Embeddings bge-m3 auto-hébergés (Epic 4, J4).",
 )
+
+# ── Flywheel (Greffe 3, B.2) — état du réentraînement (fichier-based + drapeau mémoire) ──
+_reent_lock = threading.Lock()
+_reent_etat: dict = {"en_cours": False, "dernier_rapport": None}
 
 
 class RequeteEmbed(BaseModel):
@@ -57,6 +63,7 @@ def sante() -> dict:
         },
         "classifieur": {
             "modele_charge": predictors.classifieur_charge(),
+            **predictors.infos_actif(),
         },
         "ocr": {
             "tesseract_disponible": ocr.tesseract_disponible(),
@@ -286,3 +293,65 @@ def extract(req: RequeteExtract) -> ReponseExtract:
     except RuntimeError as exc:    # Tesseract/pytesseract absent → Node dégrade (503)
         raise HTTPException(status_code=503, detail=str(exc))
     return ReponseExtract(**resultat)
+
+
+# ── Greffe 3 (flywheel B.2) : réentraînement manuel glass-box ────────────────────
+# `/reentrainer` lance un CANDIDAT en arrière-plan (async) ; `/reentrainer/etat` sert le
+# polling admin ; `/deployer` est l'acte ADMIN qui REFUSE un candidat non meilleur (garde
+# serveur). Node passe les captures propres (labelsValides) — le service ne touche pas la DB.
+
+class Capture(BaseModel):
+    titre: str = ""
+    description: str = ""
+    texteExtrait: str | None = None
+    categorie: str
+
+
+class RequeteReentrainer(BaseModel):
+    captures: list[Capture] = Field(default_factory=list, description="Labels propres (captures DB) passés par Node.")
+
+
+@app.post("/reentrainer", status_code=202)
+def reentrainer_endpoint(req: RequeteReentrainer) -> dict:
+    """Lance un réentraînement CANDIDAT en arrière-plan (minutes) ; renvoie 202 tout de suite.
+    Le candidat n'est JAMAIS déployé ici (voir /deployer)."""
+    with _reent_lock:
+        if _reent_etat["en_cours"]:
+            raise HTTPException(status_code=409, detail="Un réentraînement est déjà en cours.")
+        _reent_etat["en_cours"] = True
+        _reent_etat["dernier_rapport"] = None
+
+    captures = [c.model_dump() for c in req.captures]
+
+    def _tache() -> None:
+        try:
+            _reent_etat["dernier_rapport"] = flywheel_reentrainer.reentrainer(captures=captures)
+        except Exception as exc:  # on remonte l'erreur dans l'état, jamais de crash du service
+            _reent_etat["dernier_rapport"] = {"erreur": str(exc)}
+        finally:
+            _reent_etat["en_cours"] = False
+
+    threading.Thread(target=_tache, daemon=True).start()
+    return {"demarre": True}
+
+
+@app.get("/reentrainer/etat")
+def reentrainer_etat() -> dict:
+    """État du dernier réentraînement (polling admin) : en cours + rapport comparatif."""
+    return {"en_cours": _reent_etat["en_cours"], "dernier_rapport": _reent_etat["dernier_rapport"]}
+
+
+class RequeteDeployer(BaseModel):
+    stamp: str = Field(..., description="Horodatage du candidat à déployer.")
+
+
+@app.post("/deployer")
+def deployer_endpoint(req: RequeteDeployer) -> dict:
+    """Déploie un candidat — REFUSE (409) s'il n'est pas meilleur sur le réel. Recharge le
+    classifieur servi, sans redémarrage."""
+    try:
+        return flywheel_reentrainer.deployer(req.stamp)
+    except ValueError as exc:      # candidat non meilleur → refus glass-box
+        raise HTTPException(status_code=409, detail=str(exc))
+    except RuntimeError as exc:    # candidat introuvable
+        raise HTTPException(status_code=404, detail=str(exc))

@@ -142,7 +142,11 @@ def reentrainer(
         verdict = f"AMBIGU (+{SEUIL_AMBIGU}..+{SEUIL_SOLIDE})"
     else:
         verdict = f"NUL (<+{SEUIL_AMBIGU})"
-    meilleur = delta_reel > 0.0  # candidat STRICTEMENT meilleur sur le réel → déployable
+    # Garde de déploiement ALIGNÉE sur la règle pré-enregistrée : déployable seulement si le gain
+    # réel est AU MOINS AMBIGU (Δ ≥ +0,02). Un Δ « NUL » (< +0,02) est dans le bruit (n=46) — on
+    # ne déploie JAMAIS dans le bruit, sinon on contredirait la règle qui sert à LIRE la courbe.
+    # L'admin voit le verdict (AMBIGU vs SOLIDE) et tranche : glass-box préservé.
+    meilleur = delta_reel >= SEUIL_AMBIGU
 
     # 8) Écrire le CANDIDAT + le rapport (candidates/, JAMAIS déployé)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")

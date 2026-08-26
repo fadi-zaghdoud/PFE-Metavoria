@@ -1427,6 +1427,31 @@ demande explicite.
 - **Suite : Brique C2** — admin UI `/administration/ia` (compteur, réentraîner, comparatif candidat vs
   actif, **déployer conditionnel**). Au volume actuel le bouton reste **désactivé** → démontre le refus glass-box.
 
+### Greffe 3 (flywheel) — Brique C2 : admin UI + garde de déploiement alignée (LIVRÉ, 27/08/2026)
+- **Objet** : le flywheel **piloté à l'écran** par un admin (glass-box), et un correctif de rigueur
+  révélé par le test live.
+- **UI** (`/administration/ia`, `RequireRole('ADMINISTRATEUR')`) : `features/ia/iaApi.ts` (client typé
+  calqué sur le contrat B.3) + `pages/FlywheelPage.tsx` (4 blocs) + route (`App.tsx`) + nav « Modèle IA »
+  (`Sidebar.tsx`). Blocs : **compteur** (labels réels depuis le modèle actif) · **réentraîner** (POST →
+  **polling** `/flywheel` 2 s) · **comparatif** candidat vs actif (macro-F1 réel+synth, Δ, verdict, **F1
+  par classe**) · **déployer** activé **seulement si `candidat_meilleur`**, sinon **grisé + motif**.
+- **Test écran RÉEL** (Postgres + Node + service Python, JWT admin) : compteur DB `nbLabelsDepuis=1`,
+  réentraînement avec **6 captures réelles** (`labelsValides`), comparatif rendu, refus de déploiement
+  affiché. Le F1 par classe rend **littérale** l'histoire de la courbe C1 : candidat **↑ Logiciel +0,21 /
+  Matériel +0,17** (labels propres) mais **↓ Accès −0,22 / Autre −0,17** (petit support + ambiguïté AWS)
+  → macro noyée → **Δ +0,0042 = NUL**.
+- **Correctif de rigueur (garde de déploiement)** : le test live a montré que l'ancienne garde
+  `candidat_meilleur = (delta > 0)` **déployait dans le bruit** (Δ+0,0042 accepté alors qu'il est NUL, et
+  le candidat **régressait sur le synth** 0,944→0,919). C'est **incohérent** avec la règle pré-enregistrée
+  qui sert à LIRE la courbe. **Garde alignée** → `candidat_meilleur = (delta ≥ SEUIL_AMBIGU = +0,02)` :
+  on ne déploie **jamais** un gain NUL. Re-testé en direct : même candidat → `candidat_meilleur=False`,
+  `/deployer` → **409 REFUSÉ**, modèle servi **inchangé** (0718). Tests anti-triche : 6 passed.
+- **Chemin heureux prouvé** : avant le correctif, le déploiement a **réussi** (200, copie + reload) — la
+  mécanique de déploiement fonctionne de bout en bout ; le correctif règle seulement **le SEUIL**, pas le
+  chemin. Un candidat ≥ +0,02 se déploiera honnêtement.
+- **Note UI** : Δ coloré selon la **décision** (vert si déployable / ambre si positif-NUL / rouge si
+  négatif), pas selon le seul signe — la couleur ne ment pas sur le refus.
+
 ---
 
 # Phase 6 — Intégration & tests

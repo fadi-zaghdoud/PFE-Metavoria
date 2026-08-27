@@ -50,7 +50,8 @@ import { Card, CardContent, CardHeader } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Avatar } from '../components/ui/Avatar';
-import { Select, Textarea } from '../components/ui/Input';
+import { Field, Select, Textarea } from '../components/ui/Input';
+import { Dialog } from '../components/ui/Dialog';
 import { Skeleton } from '../components/ui/Skeleton';
 import { EmptyState } from '../components/ui/EmptyState';
 import { useToast } from '../components/ui/Toast';
@@ -510,6 +511,9 @@ export function TicketDetailPage() {
   const [envoiCommentaire, setEnvoiCommentaire] = useState(false);
   const [action, setAction] = useState(false); // transition / priorité / catégorie / affectation en cours
   const [envoiSatisfaction, setEnvoiSatisfaction] = useState(false);
+  // K1 : dialog de résolution — le technicien saisit (facultatif) la solution appliquée.
+  const [resoudreOuvert, setResoudreOuvert] = useState(false);
+  const [solutionTexte, setSolutionTexte] = useState('');
 
   useEffect(() => {
     if (!token || !Number.isInteger(ticketId)) {
@@ -672,13 +676,21 @@ export function TicketDetailPage() {
 
   async function handleResoudre() {
     if (!token) return;
+    const solution = solutionTexte.trim() || undefined;
     const res = await withAction(
-      () => ticketsApi.resoudre(ticket!.id, token),
+      () => ticketsApi.resoudre(ticket!.id, token, solution),
       "Le ticket n'a pas pu être marqué résolu",
     );
     if (res) {
       setTicket(res.ticket);
-      toast.success('Ticket résolu', 'Le demandeur va être invité à valider la résolution.');
+      setResoudreOuvert(false);
+      setSolutionTexte('');
+      toast.success(
+        'Ticket résolu',
+        solution
+          ? 'Solution enregistrée — elle enrichira les suggestions IA. Le demandeur va valider.'
+          : 'Le demandeur va être invité à valider la résolution.',
+      );
     }
   }
 
@@ -830,7 +842,7 @@ export function TicketDetailPage() {
   if (estTechnicienAssigne && ticket.statut === 'EN_ATTENTE') {
     actionPrincipale = { label: 'Prendre en charge', icon: Wrench, onClick: handlePrendreEnCharge };
   } else if (estTechnicienAssigne && ticket.statut === 'EN_COURS') {
-    actionPrincipale = { label: 'Marquer résolu', icon: CheckCheck, onClick: handleResoudre };
+    actionPrincipale = { label: 'Marquer résolu', icon: CheckCheck, onClick: () => setResoudreOuvert(true) };
   } else if (estAdmin && ticket.statut === 'RESOLU') {
     actionPrincipale = { label: 'Clôturer le ticket', icon: Lock, onClick: handleCloturer };
   }
@@ -1232,6 +1244,38 @@ export function TicketDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* K1 — dialog de résolution : la solution appliquée (facultative) enrichira la KB du RAG. */}
+      <Dialog
+        open={resoudreOuvert}
+        onClose={() => {
+          if (!action) setResoudreOuvert(false);
+        }}
+        title="Marquer le ticket résolu"
+        description="Décrivez la solution appliquée. Facultatif — mais une solution enregistrée nourrit les suggestions IA des prochains tickets similaires."
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setResoudreOuvert(false)} disabled={action}>
+              Annuler
+            </Button>
+            <Button onClick={handleResoudre} loading={action}>
+              <CheckCheck className="size-4" aria-hidden />
+              Marquer résolu
+            </Button>
+          </>
+        }
+      >
+        <Field label="Solution appliquée" hint="Comment le problème a-t-il été résolu ?">
+          <Textarea
+            rows={5}
+            value={solutionTexte}
+            onChange={(e) => setSolutionTexte(e.target.value)}
+            placeholder="Ex. : réinitialisation du profil VPN puis réinstallation du client…"
+            maxLength={5000}
+            aria-label="Solution appliquée"
+          />
+        </Field>
+      </Dialog>
     </div>
   );
 }

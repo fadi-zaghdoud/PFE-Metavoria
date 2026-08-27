@@ -74,6 +74,15 @@ export const statistiquesQuerySchema = z.object({
   service: z.string().trim().max(100).optional(),
 });
 
+// Résolution (K1) : la solution appliquée est FACULTATIVE — sans elle, le ticket reste hors KB.
+export const resolutionSchema = z.object({
+  solution: z
+    .string()
+    .trim()
+    .max(5000, 'La solution ne peut pas dépasser 5000 caractères')
+    .optional(),
+});
+
 export const satisfactionSchema = z.object({
   note: z.coerce
     .number('La note est requise')
@@ -93,5 +102,6 @@ export type ChangerPrioriteDto = z.infer<typeof changerPrioriteSchema>;
 export type ChangerCategorieDto = z.infer<typeof changerCategorieSchema>;
 export type AffectationDto = z.infer<typeof affectationSchema>;
 export type CommentaireDto = z.infer<typeof commentaireSchema>;
+export type ResolutionDto = z.infer<typeof resolutionSchema>;
 export type SatisfactionDto = z.infer<typeof satisfactionSchema>;
 export type StatistiquesQueryDto = z.infer<typeof statistiquesQuerySchema>;

@@ -123,6 +123,13 @@ model Ticket {
   satisfactionCommentaire String?   @map("satisfaction_commentaire") // retour libre optionnel du demandeur
   satisfactionDate        DateTime? @map("satisfaction_date") // horodatage de l'évaluation
 
+  // Solution appliquée, SAISIE PAR LE TECHNICIEN à la résolution (module IA, K1). Facultative :
+  // un ticket résolu sans solution reste hors KB. Sa présence (resolution IS NOT NULL) fait
+  // entrer le ticket RÉEL dans la base de connaissances du RAG (exclut naturellement le bruit
+  // de dev, qui n'en a pas). Le RAG la cite comme « source réelle » (texte du doc, pas la recherche).
+  resolution      String?   @map("resolution")
+  resolutionDate  DateTime? @map("resolution_date")
+
   // Embedding du ticket pour la recherche de similarité (module IA, phase 5).
   // Dimension 1024 = bge-m3 (modèle retenu J4). L'index HNSW cosinus est créé en
   // SQL brut dans la migration (Prisma ne sait pas exprimer un index HNSW).

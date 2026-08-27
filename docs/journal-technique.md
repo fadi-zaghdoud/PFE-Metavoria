@@ -1452,6 +1452,35 @@ demande explicite.
 - **Note UI** : Δ coloré selon la **décision** (vert si déployable / ambre si positif-NUL / rouge si
   négatif), pas selon le seul signe — la couleur ne ment pas sur le refus.
 
+### KB réelle du RAG — capture de la solution + ingestion (K1+K2, LIVRÉ 27/08/2026)
+- **Trou identifié par audit** : le RAG ne cherchait QUE dans le synthétique (`_FILTRE_KB = t.synthetique`),
+  jamais l'historique RÉEL — contraire à la lettre du CDC §6.3. Cause profonde : **`resoudre()`
+  n'enregistrait AUCUN texte de solution** (juste un événement de statut) → pour un vrai ticket, la
+  solution n'existait **nulle part**. Lever le filtre sans capturer d'abord aurait fait citer le
+  **1er commentaire** comme « solution » (faux pour un vrai fil). Le flywheel ne comble pas ça
+  (canaux séparés : il nourrit la CLASSIFICATION, pas la KB).
+- **K1 — capturer la solution** : nouveau champ **`Ticket.resolution` (+ `resolutionDate`)**, migration
+  via **`migrate deploy`** (règle drift HNSW/fulltext). `resoudre(acteur, id, solution?)` capture la
+  solution **FACULTATIVE** (zod `resolutionSchema`, ≤5000) ; sans solution → `resolution` NULL → **hors
+  KB** (zéro pollution, on ne force pas le technicien). **UI** : l'action « Marquer résolu » ouvre un
+  **dialog « Solution appliquée »**. *Alternatives écartées* : dernier commentaire (fragile, conversation
+  multi-auteurs), texte de l'événement (l'événement ne porte pas de texte) → **champ dédié** non ambigu.
+- **K2 — ingérer le réel dans la KB** (`retrieval/hybrid.py`) : filtre **`(t.synthetique OR t.resolution
+  IS NOT NULL) AND statut∈KB`** → **mix** bootstrap synthétique + vraies résolutions ; `resolution IS
+  NOT NULL` **exclut naturellement le bruit de dev** (pas de solution). Résolution du doc =
+  **`COALESCE(t.resolution, 1er commentaire)`** (le réel cite la vraie solution, le synthétique garde la
+  sienne). **Embeddings réels déjà utilisables** (Node les écrit à la création, titre+desc, cohérent avec
+  le synthétique — pas de ré-embed ; la résolution sert au texte du doc, pas à la recherche). Drapeau
+  **`DocKB.synthetique`** ajouté (provenance, pour K3).
+- **Preuves** : K1 → résoudre #865 **avec** solution → DB `resolution` peuplée + `resolutionDate` ; #866
+  **sans** → NULL (via l'API réelle, token du tech assigné). *(Bonus : #868 résolu par l'utilisateur via
+  le dialog navigateur → chemin UI validé de bout en bout.)* K2 → sur « VPN coupé… », **#865 ressort #1**
+  des candidats RRF, `synthetique=False`, résolution citée = la solution saisie (pas un commentaire).
+- **Note éval** : la KB grandit avec l'usage réel (intention CDC) ; à l'instant 2 vraies résolutions →
+  `run_retrieval` quasi inchangé. Étanchéité intacte (gold/test = JSONL séparés ; `garde_anti_fuite` OK).
+- **Suite : K3** — provenance dans l'UI (badge « source réelle » vs « exemple synthétique » sur les
+  citations), en exposant `synthetique` via `/suggest` → `DocSimilaire`.
+
 ---
 
 # Phase 6 — Intégration & tests

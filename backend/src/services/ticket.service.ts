@@ -233,7 +233,7 @@ export const ticketService = {
 
   // Résolution : le technicien assigné marque le ticket résolu (EN_COURS → RESOLU).
   // La clôture reste une étape séparée (validation du demandeur, ou clôture admin).
-  async resoudre(acteur: Acteur, id: number): Promise<TicketDetail> {
+  async resoudre(acteur: Acteur, id: number, solution?: string): Promise<TicketDetail> {
     const ticket = await ticketRepository.findById(id);
     if (!ticket) throw new NotFoundError('Ticket introuvable');
     if (!estTechnicienAssigne(acteur, ticket)) {
@@ -249,7 +249,15 @@ export const ticketService = {
       nouvelleValeur: 'RESOLU',
     });
 
-    const misAJour = await ticketRepository.update(id, { statut: 'RESOLU' });
+    // K1 : la solution appliquée (facultative) est capturée à la résolution. Sans elle,
+    // resolution reste NULL → le ticket n'entrera pas dans la KB du RAG (K2). Avec elle,
+    // on horodate resolutionDate — le couple sert de source « réelle » citable.
+    const texteSolution = solution?.trim() ? solution.trim() : null;
+    const misAJour = await ticketRepository.update(id, {
+      statut: 'RESOLU',
+      resolution: texteSolution,
+      resolutionDate: texteSolution ? new Date() : null,
+    });
     logAudit('TICKET_STATUT', { ticketId: id, de: ticket.statut, vers: 'RESOLU', parUtilisateur: acteur.id });
 
     // Flywheel : à la résolution, la catégorie du ticket devient un label validé par l'humain.

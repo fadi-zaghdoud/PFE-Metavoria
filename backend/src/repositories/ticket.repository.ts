@@ -97,6 +97,8 @@ export interface MettreAJourTicketData {
   satisfactionNote?: number | null;
   satisfactionCommentaire?: string | null;
   satisfactionDate?: Date | null;
+  resolution?: string | null;
+  resolutionDate?: Date | null;
 }
 
 // Couche repository : seule couche à parler directement à Prisma.

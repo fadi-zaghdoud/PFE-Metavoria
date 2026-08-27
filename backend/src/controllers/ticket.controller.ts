@@ -7,6 +7,7 @@ import {
   commentaireSchema,
   creerTicketSchema,
   listeTicketsQuerySchema,
+  resolutionSchema,
   satisfactionSchema,
   statistiquesQuerySchema,
 } from '../validators/ticket.validator';
@@ -53,7 +54,8 @@ export const ticketController = {
 
   async resoudre(req: Request, res: Response) {
     const id = parseIdParam(req.params.id);
-    const ticket = await ticketService.resoudre(acteur(req), id);
+    const { solution } = resolutionSchema.parse(req.body ?? {});
+    const ticket = await ticketService.resoudre(acteur(req), id, solution);
     res.status(200).json({ ticket });
   },
 

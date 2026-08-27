@@ -3,10 +3,14 @@ J6 — Recherche hybride : dense (pgvector) + lexical (full-text Postgres), fusi
 puis reranking cross-encoder. Les 3 arms sont exposés SÉPARÉMENT (`dense`, `lexical`,
 `rrf`) — plus `rrf_rerank` — pour mesurer la contribution de chaque composant.
 
-KB indexable = `synthetique AND statut ∈ {RESOLU,CLOTURE}` (723 docs). Le drapeau
-`synthetique` exclut proprement les 9 bruits de dev (dont 7 résolus). Chaque doc porte
-sa **résolution** (Commentaire lié). Unité requête = titre+description (cohérente avec
-les embeddings J4) ; unité document rerankée/jugée = titre+description+résolution.
+KB indexable = **synthétique (bootstrap) OU vrai ticket avec `resolution` capturée**, tous
+`statut ∈ {RESOLU,CLOTURE}`. Le bootstrap synthétique (723 docs) démarre la KB ; les vraies
+résolutions (K1 — champ `resolution` saisi par le technicien) l'enrichissent au fil de l'usage
+(exigence CDC : « historique des tickets déjà traités »). La condition `resolution IS NOT NULL`
+exclut naturellement les bruits de dev (pas de résolution) que le filtre `synthetique` seul
+écartait avant. Résolution du doc = `COALESCE(resolution réelle, 1er commentaire)` (le synthétique
+garde sa résolution en commentaire). Unité requête = titre+description (cohérente avec les
+embeddings J4) ; unité document rerankée/jugée = titre+description+résolution.
 
 Décisions (pré-enregistrées, cf. journal J6) : RRF k=60, 50/50 non pondéré ; retrieval
 en Python (le harnais lit la base directement) ; reranker importé en direct (même
@@ -25,8 +29,10 @@ from ..service import embedder, reranker
 from ..service.backfill import _vecteur_en_litteral
 from . import config
 
-# Filtre du corpus indexable, factorisé (réutilisé par chaque arm).
-_FILTRE_KB = "t.synthetique AND t.statut = ANY(%s)"
+# Filtre du corpus indexable, factorisé (réutilisé par chaque arm). K2 : le synthétique
+# (bootstrap) OU un vrai ticket dont la solution a été capturée (K1) ; `resolution IS NOT NULL`
+# exclut le bruit de dev sans avoir besoin du seul drapeau `synthetique`.
+_FILTRE_KB = "(t.synthetique OR t.resolution IS NOT NULL) AND t.statut = ANY(%s)"
 
 
 @dataclass
@@ -37,6 +43,7 @@ class DocKB:
     description: str
     resolution: str
     categorie: str | None
+    synthetique: bool  # provenance (K3) : False = vraie résolution d'entreprise, True = bootstrap
     score: float  # sens dépend de l'arm : sim cosinus / ts_rank / score RRF / score reranker
 
     @property
@@ -94,22 +101,31 @@ def rrf_fusion(classements: list[list[int]], k: int = config.RRF_K) -> dict[int,
 
 # ── Chargement des documents ─────────────────────────────────────────────────
 
-def _charger_docs(cur: psycopg.Cursor, ids: list[int]) -> dict[int, tuple[str, str, str, str | None]]:
-    """Pour un ensemble d'ids KB : (titre, description, résolution liée, catégorie)."""
+def _charger_docs(
+    cur: psycopg.Cursor, ids: list[int]
+) -> dict[int, tuple[str, str, str, str | None, bool]]:
+    """Pour un ensemble d'ids KB : (titre, description, résolution, catégorie, synthétique).
+
+    Résolution = `COALESCE(t.resolution, 1er commentaire)` : le vrai ticket cite la solution
+    saisie par le technicien (K1) ; le synthétique garde sa résolution stockée en commentaire.
+    """
     if not ids:
         return {}
     cur.execute(
         """
         SELECT t.id, t.titre, t.description,
-               (SELECT contenu FROM commentaires WHERE ticket_id = t.id ORDER BY id LIMIT 1) AS resolution,
-               c.nom AS categorie
+               COALESCE(
+                 t.resolution,
+                 (SELECT contenu FROM commentaires WHERE ticket_id = t.id ORDER BY id LIMIT 1)
+               ) AS resolution,
+               c.nom AS categorie, t.synthetique
         FROM tickets t
         LEFT JOIN categories c ON c.id = t.categorie_id
         WHERE t.id = ANY(%s)
         """,
         (ids,),
     )
-    return {r[0]: (r[1], r[2], r[3] or "", r[4]) for r in cur.fetchall()}
+    return {r[0]: (r[1], r[2], r[3] or "", r[4], r[5]) for r in cur.fetchall()}
 
 
 def _en_docs(cur: psycopg.Cursor, ids_scores: list[tuple[int, float]]) -> list[DocKB]:
@@ -119,8 +135,8 @@ def _en_docs(cur: psycopg.Cursor, ids_scores: list[tuple[int, float]]) -> list[D
     for doc_id, score in ids_scores:
         if doc_id not in details:  # sécurité : un id disparu entre deux requêtes
             continue
-        titre, description, resolution, categorie = details[doc_id]
-        docs.append(DocKB(doc_id, titre, description, resolution, categorie, score))
+        titre, description, resolution, categorie, synthetique = details[doc_id]
+        docs.append(DocKB(doc_id, titre, description, resolution, categorie, synthetique, score))
     return docs
 
 

@@ -39,8 +39,13 @@ export const ticketsApi = {
   prendreEnCharge: (id: number, token: string) =>
     apiRequest<{ ticket: TicketDetail }>(`/tickets/${id}/prise-en-charge`, { method: 'POST', token }),
 
-  resoudre: (id: number, token: string) =>
-    apiRequest<{ ticket: TicketDetail }>(`/tickets/${id}/resolution`, { method: 'POST', token }),
+  // La solution est FACULTATIVE (K1) : fournie, elle est capturée et alimentera la KB du RAG.
+  resoudre: (id: number, token: string, solution?: string) =>
+    apiRequest<{ ticket: TicketDetail }>(`/tickets/${id}/resolution`, {
+      method: 'POST',
+      body: solution ? { solution } : undefined,
+      token,
+    }),
 
   cloturer: (id: number, token: string) =>
     apiRequest<{ ticket: TicketDetail }>(`/tickets/${id}/cloture`, { method: 'POST', token }),

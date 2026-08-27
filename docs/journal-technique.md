@@ -1478,8 +1478,16 @@ demande explicite.
   des candidats RRF, `synthetique=False`, résolution citée = la solution saisie (pas un commentaire).
 - **Note éval** : la KB grandit avec l'usage réel (intention CDC) ; à l'instant 2 vraies résolutions →
   `run_retrieval` quasi inchangé. Étanchéité intacte (gold/test = JSONL séparés ; `garde_anti_fuite` OK).
-- **Suite : K3** — provenance dans l'UI (badge « source réelle » vs « exemple synthétique » sur les
-  citations), en exposant `synthetique` via `/suggest` → `DocSimilaire`.
+- **K3 — provenance dans l'UI (LIVRÉ 27/08/2026)** : le drapeau `DocKB.synthetique` remonte
+  jusqu'à l'UI — `suggestion.suggerer` l'ajoute aux `similaires` ; `app.py` l'expose sur `DocSimilaire`
+  ET `SourceCitee` (map `{id→synthetique}` depuis les similaires, sources ⊆ similaires) ; Node relaie
+  les tableaux bruts (le drapeau traverse `SuggestionIA.details`) ; le frontend affiche un **badge
+  « réel » vert** sur les tickets **non synthétiques**, dans « Tickets similaires » **et** sur les chips
+  de **sources citées** (rien sur le synthétique → pas de bruit visuel). Le technicien voit que la réponse
+  s'ancre sur une **vraie résolution d'entreprise**. Preuve (génération stubbée, sans Ollama) : sur « VPN
+  coupé… », `similaires` et `sources` portent #865 `synthetique=False` → badge affiché ; synthétiques sans
+  badge. tsc backend+frontend + lint verts. **KB RÉELLE DU RAG COMPLÈTE** (K1 capture → K2 ingestion → K3
+  provenance) : le RAG s'appuie sur l'historique réel, honore la lettre du CDC §6.3, et le montre.
 
 ---
 

@@ -139,8 +139,9 @@ export interface DetailPrioriteIA {
 export interface DetailSolutionIA {
   abstenu: boolean; // true → aucune suggestion pertinente (pas d'invention)
   message: string; // motif d'abstention le cas échéant
-  sources: { id: number; titre: string }[]; // #id cités par la génération
-  similaires: { id: number; titre: string; categorie: string | null }[]; // candidats RRF
+  // `synthetique` (K3) : false = vraie résolution d'entreprise (badge « réel »).
+  sources: { id: number; titre: string; synthetique: boolean }[]; // #id cités par la génération
+  similaires: { id: number; titre: string; categorie: string | null; synthetique: boolean }[]; // candidats RRF
   latenceMs: number | null;
 }
 

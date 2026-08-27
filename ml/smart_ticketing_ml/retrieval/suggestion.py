@@ -52,7 +52,11 @@ def suggerer(
                           latence_ms=(time.perf_counter() - t0) * 1000)
 
     # Candidats récupérés — exposés pour l'affichage, même si l'on abstient ensuite.
-    similaires = [{"id": d.id, "titre": d.titre, "categorie": d.categorie} for d in docs]
+    # `synthetique` (K3) : provenance du doc → l'UI badge « réel » les vraies résolutions.
+    similaires = [
+        {"id": d.id, "titre": d.titre, "categorie": d.categorie, "synthetique": d.synthetique}
+        for d in docs
+    ]
 
     confiance: float | None = None
     if seuil is not None:  # porte d'abstention active seulement si un seuil est réglé

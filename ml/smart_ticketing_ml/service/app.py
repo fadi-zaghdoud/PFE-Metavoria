@@ -176,12 +176,14 @@ class RequeteSuggest(BaseModel):
 class SourceCitee(BaseModel):
     id: int
     titre: str
+    synthetique: bool = True  # provenance (K3) : False = vraie résolution d'entreprise
 
 
 class DocSimilaire(BaseModel):
     id: int
     titre: str
     categorie: str | None = None
+    synthetique: bool = True  # provenance (K3) : False = vraie résolution d'entreprise
 
 
 class ReponseSuggest(BaseModel):
@@ -203,10 +205,16 @@ def suggest(req: RequeteSuggest) -> ReponseSuggest:
     with hybrid.connexion() as conn, conn.cursor() as cur:
         sugg = suggestion.suggerer(cur, requete)
     titres = {d["id"]: d["titre"] for d in sugg.similaires}
+    # Provenance (K3) : les sources citées sont un sous-ensemble des similaires → on y retrouve
+    # le drapeau `synthetique` pour badger « source réelle » ce sur quoi la réponse s'ancre.
+    provenance = {d["id"]: d["synthetique"] for d in sugg.similaires}
     return ReponseSuggest(
         abstenu=sugg.abstenu,
         texte=sugg.texte,
-        sources=[SourceCitee(id=i, titre=titres.get(i, f"#{i}")) for i in sugg.sources],
+        sources=[
+            SourceCitee(id=i, titre=titres.get(i, f"#{i}"), synthetique=provenance.get(i, True))
+            for i in sugg.sources
+        ],
         similaires=[DocSimilaire(**d) for d in sugg.similaires],
         confiance=sugg.confiance,
         message=sugg.message,

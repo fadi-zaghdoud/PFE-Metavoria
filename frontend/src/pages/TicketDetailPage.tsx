@@ -272,14 +272,18 @@ function TicketsSimilaires({ docs }: { docs: DetailSolutionIA['similaires'] }) {
       <p className="text-xs text-slate-400">Tickets similaires</p>
       <ul className="mt-1 space-y-1">
         {docs.map((d) => (
-          <li key={d.id}>
+          <li key={d.id} className="flex items-center gap-1.5">
             <Link
               to={`/tickets/${d.id}`}
-              className="text-xs text-slate-600 hover:text-primary-700 hover:underline"
+              className="min-w-0 truncate text-xs text-slate-600 hover:text-primary-700 hover:underline"
             >
               <span className="font-mono">#{d.id}</span> {d.titre}
               {d.categorie && <span className="text-slate-400"> · {d.categorie}</span>}
             </Link>
+            {/* Provenance (K3) : badge « réel » pour une vraie résolution d'entreprise. */}
+            {!d.synthetique && (
+              <Badge variant="success" className="shrink-0 text-[10px]">réel</Badge>
+            )}
           </li>
         ))}
       </ul>
@@ -410,6 +414,12 @@ function PanneauSuggestionRAG({
                     >
                       <span className="font-mono">#{s.id}</span>
                       <span className="max-w-[160px] truncate">{s.titre}</span>
+                      {/* Provenance (K3) : la réponse s'ancre sur une vraie résolution d'entreprise. */}
+                      {!s.synthetique && (
+                        <span className="rounded-full bg-emerald-100 px-1 text-[10px] font-medium text-emerald-700">
+                          réel
+                        </span>
+                      )}
                     </Link>
                   ))}
                 </div>

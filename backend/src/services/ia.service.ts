@@ -85,8 +85,9 @@ const prioriser = (titre: string, description: string, categorie: string) =>
 interface ReponseSuggest {
   abstenu: boolean; // True → aucune suggestion ancrée : on n'invente pas
   texte: string; // suggestion citée (vide si abstention)
-  sources: { id: number; titre: string }[]; // #id réellement cités
-  similaires: { id: number; titre: string; categorie: string | null }[]; // candidats RRF
+  // `synthetique` (K3) : provenance stockée telle quelle et relayée à l'UI (badge « réel »).
+  sources: { id: number; titre: string; synthetique: boolean }[]; // #id réellement cités
+  similaires: { id: number; titre: string; categorie: string | null; synthetique: boolean }[]; // candidats RRF
   confiance: number | null;
   message: string;
   latence_ms: number | null;

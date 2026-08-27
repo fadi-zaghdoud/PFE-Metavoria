@@ -1492,10 +1492,27 @@ demande explicite.
 ---
 
 # Phase 6 — Intégration & tests
-- **Statut** : non commencée. `[reconstitué depuis Git — aucun harnais de test versionné à ce jour]`
-- **Prévu** : le **harnais d'évaluation du module IA (J3)** est un livrable de premier
-  ordre (macro-F1, kappa pondéré, Recall@k/nDCG, latence p95, coût). Tests unitaires /
-  fonctionnels backend/frontend : `[À COMPLÉTER PAR FEDI]`
+
+### Tests unitaires du module IA (LIVRÉ 27/08/2026)
+- **Contexte** : audit → **0 test** hors anti-triche flywheel. Comblé par une suite **ciblée**,
+  **déterministe** et **offline** (pas de modèle/DB/Ollama pour la suite rapide) — `pytest` +
+  **FastAPI TestClient** + `monkeypatch`. Placement `ml/tests/` ; config `pyproject.toml`
+  (`testpaths=["tests"]`, marker `slow`). **`pytest -m "not slow"` = CI rapide.**
+- **Stratégie** : *fonctions PURES + I/O stubbée + validation HTTP*. Les chemins lourds (modèle
+  bge-m3, Tesseract) = tests `slow` **skippables** (`skipif`) → prouvent le chemin RÉEL quand la
+  dépendance est là, se skippent proprement sinon.
+- **Fichiers (5)** : `test_priority.py` (scorecard pur : 4 niveaux, bornes de seuils, escalade /
+  désescalade / négation, **invariant : sortie ∈ 4 niveaux**) · `test_suggestion.py` (abstention RAG
+  stubbée : aucun candidat / rien d'ancré / suggestion citée `sources ⊆ similaires` + drapeau K3 /
+  porte de seuil) · `test_ocr.py` (`_sniff` magic bytes, `_fiabilite` anti-bruit ; +OCR réel `slow`) ·
+  `test_classifier.py` (abstention pure : sentinelle ≠ classe ; +`/classify` réel `slow`) ·
+  `test_service_contracts.py` (TestClient : `/sante` 200 ; `/classify` `/priority` `/suggest` `/summarize`
+  vides → **422** ; `/extract` requis/invalide/type inconnu → **422**, trop volumineux → **413**).
+- **Résultat** : **suite rapide 51 passed / 2 deselected (5,7 s)** ; **complète 53 passed (25,6 s)** —
+  les 2 `slow` (OCR Tesseract réel + `/classify` chargeant bge-m3) inclus.
+- **Hors périmètre (assumé)** : le harnais d'**évaluation** (`eval/`, métriques sur datasets) existe
+  déjà ; la **génération LLM réelle** (Ollama) et le **pont Node** (tsc + preuves écran) ne sont pas
+  re-testés unitairement ici. Tests fonctionnels backend/frontend : `[À COMPLÉTER PAR FEDI]`
 
 ---
 

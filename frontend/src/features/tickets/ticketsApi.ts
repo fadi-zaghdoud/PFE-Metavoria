@@ -5,9 +5,9 @@ import type {
   CreerTicketPayload,
   FiltresStatistiques,
   FiltresTickets,
+  PieceJointe,
   PrioriteTicket,
   StatistiquesTickets,
-  StatutTicket,
   TicketDetail,
   TicketResume,
 } from '../../types/ticket';
@@ -34,12 +34,21 @@ export const ticketsApi = {
   creer: (payload: CreerTicketPayload, token: string) =>
     apiRequest<{ ticket: TicketDetail }>('/tickets', { method: 'POST', body: payload, token }),
 
-  changerStatut: (id: number, statut: StatutTicket, token: string) =>
-    apiRequest<{ ticket: TicketDetail }>(`/tickets/${id}/statut`, {
-      method: 'PATCH',
-      body: { statut },
+  // Transitions du cycle de vie (voir ticket.service.ts) — corps vide, l'action
+  // est portée par l'URL et l'acteur (contrôle des droits côté serveur).
+  prendreEnCharge: (id: number, token: string) =>
+    apiRequest<{ ticket: TicketDetail }>(`/tickets/${id}/prise-en-charge`, { method: 'POST', token }),
+
+  // La solution est FACULTATIVE (K1) : fournie, elle est capturée et alimentera la KB du RAG.
+  resoudre: (id: number, token: string, solution?: string) =>
+    apiRequest<{ ticket: TicketDetail }>(`/tickets/${id}/resolution`, {
+      method: 'POST',
+      body: solution ? { solution } : undefined,
       token,
     }),
+
+  cloturer: (id: number, token: string) =>
+    apiRequest<{ ticket: TicketDetail }>(`/tickets/${id}/cloture`, { method: 'POST', token }),
 
   changerPriorite: (id: number, priorite: PrioriteTicket, token: string) =>
     apiRequest<{ ticket: TicketDetail }>(`/tickets/${id}/priorite`, {
@@ -47,6 +56,34 @@ export const ticketsApi = {
       body: { priorite },
       token,
     }),
+
+  // Correction de la catégorie (socle du flywheel J9).
+  changerCategorie: (id: number, categorieId: number, token: string) =>
+    apiRequest<{ ticket: TicketDetail }>(`/tickets/${id}/categorie`, {
+      method: 'PATCH',
+      body: { categorieId },
+      token,
+    }),
+
+  // Demande d'une suggestion RAG (Greffe 2) — répond 202 immédiat, la génération est
+  // asynchrone ; l'UI sonde ensuite le détail jusqu'à PRETE/ECHEC.
+  demanderSuggestion: (id: number, token: string) =>
+    apiRequest<{ ticket: TicketDetail }>(`/tickets/${id}/suggestion`, { method: 'POST', token }),
+
+  // Demande d'un résumé du fil (J8) — même mécanique async (202 immédiat + polling).
+  demanderResume: (id: number, token: string) =>
+    apiRequest<{ ticket: TicketDetail }>(`/tickets/${id}/resume`, { method: 'POST', token }),
+
+  // Upload d'une pièce jointe (J8bis) — multipart via FormData (champ `fichier`).
+  uploaderPieceJointe: (id: number, fichier: File, token: string) => {
+    const form = new FormData();
+    form.append('fichier', fichier);
+    return apiRequest<{ pieceJointe: PieceJointe }>(`/tickets/${id}/pieces-jointes`, {
+      method: 'POST',
+      body: form,
+      token,
+    });
+  },
 
   affecter: (id: number, technicienId: number | null, token: string) =>
     apiRequest<{ ticket: TicketDetail }>(`/tickets/${id}/affectation`, {

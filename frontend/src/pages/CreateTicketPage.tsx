@@ -1,10 +1,12 @@
-import { useEffect, useState, type SubmitEvent } from 'react';
+import { useEffect, useState, type ChangeEvent, type SubmitEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Send } from 'lucide-react';
+import { ArrowLeft, Paperclip, Send, X } from 'lucide-react';
 import { ticketsApi } from '../features/tickets/ticketsApi';
 import { useAuthStore } from '../store/authStore';
 import { ApiError } from '../lib/apiClient';
 import { useToast } from '../components/ui/Toast';
+import { formaterOctets } from '../lib/format';
+import { ACCEPT_PJ, MAX_PJ, validerPieceJointe } from '../features/tickets/pieceJointe';
 import type { Categorie } from '../types/ticket';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Card, CardContent } from '../components/ui/Card';
@@ -21,9 +23,22 @@ export function CreateTicketPage() {
   const [description, setDescription] = useState('');
   const [categorieId, setCategorieId] = useState('');
   const [categories, setCategories] = useState<Categorie[]>([]);
+  const [fichiers, setFichiers] = useState<File[]>([]);
   const [enCours, setEnCours] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [erreursChamps, setErreursChamps] = useState<Record<string, string | undefined>>({});
+
+  function ajouterFichiers(e: ChangeEvent<HTMLInputElement>) {
+    const selection = Array.from(e.target.files ?? []);
+    e.target.value = ''; // autorise la re-sélection du même fichier
+    const valides: File[] = [];
+    for (const f of selection) {
+      const err = validerPieceJointe(f);
+      if (err) toast.error(f.name, err);
+      else valides.push(f);
+    }
+    setFichiers((prev) => [...prev, ...valides].slice(0, MAX_PJ));
+  }
 
   useEffect(() => {
     if (!token) return;
@@ -50,6 +65,21 @@ export function CreateTicketPage() {
         },
         token,
       );
+
+      // Upload des pièces jointes après création (séquentiel) — best-effort : un échec
+      // d'envoi n'annule pas la création du ticket.
+      let echecs = 0;
+      for (const f of fichiers) {
+        try {
+          await ticketsApi.uploaderPieceJointe(ticket.id, f, token);
+        } catch {
+          echecs += 1;
+        }
+      }
+      if (echecs > 0) {
+        toast.error('Pièces jointes', `${echecs} fichier(s) n'ont pas pu être envoyé(s).`);
+      }
+
       toast.success('Ticket créé', `Votre demande « ${ticket.titre} » a bien été enregistrée.`);
       navigate(`/tickets/${ticket.id}`);
     } catch (err) {
@@ -128,6 +158,44 @@ export function CreateTicketPage() {
                   </option>
                 ))}
               </Select>
+            </Field>
+
+            <Field
+              label="Pièces jointes (facultatif)"
+              htmlFor="pj"
+              hint="Captures d'écran ou PDF (message d'erreur, log…) — PDF, PNG, JPG, 10 Mo max, 5 fichiers."
+            >
+              <input
+                id="pj"
+                type="file"
+                accept={ACCEPT_PJ}
+                multiple
+                onChange={ajouterFichiers}
+                disabled={fichiers.length >= MAX_PJ}
+                className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-200 disabled:opacity-50"
+              />
+              {fichiers.length > 0 && (
+                <ul className="mt-2 space-y-1">
+                  {fichiers.map((f, i) => (
+                    <li
+                      key={`${f.name}-${f.lastModified}-${i}`}
+                      className="flex items-center gap-2 rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs"
+                    >
+                      <Paperclip className="size-3.5 shrink-0 text-slate-400" aria-hidden />
+                      <span className="min-w-0 flex-1 truncate text-slate-700">{f.name}</span>
+                      <span className="shrink-0 text-slate-400">{formaterOctets(f.size)}</span>
+                      <button
+                        type="button"
+                        onClick={() => setFichiers((prev) => prev.filter((_, j) => j !== i))}
+                        aria-label={`Retirer ${f.name}`}
+                        className="shrink-0 text-slate-400 hover:text-rose-600"
+                      >
+                        <X className="size-3.5" aria-hidden />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </Field>
 
             {erreur && <Alert variant="danger">{erreur}</Alert>}

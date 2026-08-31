@@ -1,0 +1,28 @@
+{
+  "genere_le": "2026-07-17T18:02:42Z",
+  "source": "Kaggle « Customer IT Support Ticket Dataset » (Tobias Bueck), CC BY 4.0",
+  "licence": "CC BY 4.0",
+  "source_xlsx": "artifacts\\gold\\validation_externe_complet.xlsx",
+  "n_tickets": 46,
+  "regle_perimetre": "Valider = O ET sujet non vide",
+  "o_total": 50,
+  "o_sans_sujet_ecartes": 4,
+  "corrections_categorie": 10,
+  "corrections_priorite": 26,
+  "repartition_categorie": {
+    "Logiciel": 21,
+    "Accès": 5,
+    "Matériel": 8,
+    "Réseau": 10,
+    "Autre": 2
+  },
+  "repartition_priorite": {
+    "HAUTE": 15,
+    "MOYENNE": 11,
+    "CRITIQUE": 16,
+    "FAIBLE": 4
+  },
+  "sha256": "69700409ef5b6684497096cf80d9ca3df8edf074c686a8e51e9e4ea49de32970",
+  "avertissements": [],
+  "regle": "validation externe réelle — JAMAIS utilisée à l'entraînement ; `text` = sujet + corps (jamais la réponse de l'agent)."
+}

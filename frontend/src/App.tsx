@@ -8,6 +8,8 @@ import { ActivateAccountPage } from './pages/ActivateAccountPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { UsersManagementPage } from './pages/UsersManagementPage';
+import { CategoriesManagementPage } from './pages/CategoriesManagementPage';
+import { FlywheelPage } from './pages/FlywheelPage';
 import { TicketsListPage } from './pages/TicketsListPage';
 import { CreateTicketPage } from './pages/CreateTicketPage';
 import { TicketDetailPage } from './pages/TicketDetailPage';
@@ -74,6 +76,8 @@ function App() {
 
           <Route element={<RequireRole roles={['ADMINISTRATEUR']} />}>
             <Route path="/administration/utilisateurs" element={<UsersManagementPage />} />
+            <Route path="/administration/categories" element={<CategoriesManagementPage />} />
+            <Route path="/administration/ia" element={<FlywheelPage />} />
           </Route>
         </Route>
       </Route>

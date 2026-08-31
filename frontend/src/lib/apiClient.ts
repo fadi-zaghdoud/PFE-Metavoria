@@ -70,10 +70,17 @@ export async function apiRequest<T>(
 ): Promise<T> {
   const { method = 'GET', body, token } = options;
 
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  // FormData (upload de fichier) : on NE fixe PAS Content-Type (le navigateur pose la
+  // frontière multipart) et on n'en fait pas du JSON. Sinon corps JSON classique.
+  const estFormData = body instanceof FormData;
+  const headers: Record<string, string> = {};
+  if (!estFormData) headers['Content-Type'] = 'application/json';
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
+
+  let corps: BodyInit | undefined;
+  if (body) corps = estFormData ? (body as FormData) : JSON.stringify(body);
 
   let response: Response;
   try {
@@ -81,7 +88,7 @@ export async function apiRequest<T>(
       method,
       headers,
       credentials: 'include', // envoie le cookie refresh aux routes /api/auth
-      body: body ? JSON.stringify(body) : undefined,
+      body: corps,
     });
   } catch {
     // fetch ne rejette que sur erreur réseau (serveur injoignable, connexion perdue).

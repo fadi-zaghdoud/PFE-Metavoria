@@ -1,0 +1,12 @@
+# Environnements Python
+.venv/
+__pycache__/
+*.egg-info/
+
+# Artefacts générés — le corpus versionné n'est PAS committé ici (volumineux,
+# régénérable) ; seul le gold set relu à la main le sera (J2), sous un chemin dédié.
+artifacts/
+!artifacts/.gitkeep
+
+# Secrets
+.env

@@ -103,6 +103,10 @@ model Categorie {
   id          Int     @id @default(autoincrement())
   nom         String  @unique
   description String?
+  // Horodatage de création (Phase A — cycle de vie des catégories) : sert à afficher
+  // « en apprentissage depuis … » côté admin. Le STATUT (en apprentissage / apprenable /
+  // active) reste CALCULÉ (classes du modèle IA vs base + compteur de labels), jamais stocké.
+  dateCreation DateTime @default(now()) @map("date_creation")
 
   tickets Ticket[]
 
@@ -115,15 +119,32 @@ model Ticket {
   description      String
   statut           StatutTicket @default(NOUVEAU)
   priorite         Priorite     @default(MOYENNE)
+  // Ticket issu du corpus synthétique (bootstrap IA) : exclu des KPI réels (§6.4).
+  synthetique      Boolean      @default(false)
   dateCreation     DateTime     @default(now()) @map("date_creation")
   dateCloture      DateTime?    @map("date_cloture")
   satisfactionNote        Int?      @map("satisfaction_note") // 1..5, renseignée à la clôture
   satisfactionCommentaire String?   @map("satisfaction_commentaire") // retour libre optionnel du demandeur
   satisfactionDate        DateTime? @map("satisfaction_date") // horodatage de l'évaluation
 
+  // Solution appliquée, SAISIE PAR LE TECHNICIEN à la résolution (module IA, K1). Facultative :
+  // un ticket résolu sans solution reste hors KB. Sa présence (resolution IS NOT NULL) fait
+  // entrer le ticket RÉEL dans la base de connaissances du RAG (exclut naturellement le bruit
+  // de dev, qui n'en a pas). Le RAG la cite comme « source réelle » (texte du doc, pas la recherche).
+  resolution      String?   @map("resolution")
+  resolutionDate  DateTime? @map("resolution_date")
+
   // Embedding du ticket pour la recherche de similarité (module IA, phase 5).
-  // Dimension 1536 = standard des modèles d'embedding actuels ; ajustable via migration.
-  embedding Unsupported("vector(1536)")?
+  // Dimension 1024 = bge-m3 (modèle retenu J4). L'index HNSW cosinus est créé en
+  // SQL brut dans la migration (Prisma ne sait pas exprimer un index HNSW).
+  embedding       Unsupported("vector(1024)")?
+  embeddingModele String?                      @map("embedding_modele") // repro : modèle/version ayant produit le vecteur
+
+  // Recherche plein-texte (module IA, J6 — arm lexical de la recherche hybride RRF).
+  // Colonne tsvector GÉNÉRÉE STORED (titre + description, config 'french') + index GIN,
+  // créées en SQL brut dans la migration : Prisma ne sait exprimer ni une colonne
+  // générée ni un index GIN sur tsvector. Toujours en phase, jamais écrite par Node.
+  rechercheTexte  Unsupported("tsvector")?     @map("recherche_texte")
 
   categorieId Int? @map("categorie_id")
   categorie   Categorie? @relation(fields: [categorieId], references: [id], onDelete: SetNull)
@@ -164,10 +185,16 @@ model Commentaire {
 }
 
 model PieceJointe {
-  id         Int      @id @default(autoincrement())
-  nomFichier String   @map("nom_fichier")
-  url        String
-  dateUpload DateTime @default(now()) @map("date_upload")
+  id           Int     @id @default(autoincrement())
+  nomFichier   String  @map("nom_fichier")
+  url          String                         // URL Cloudinary (secure_url)
+  cloudinaryId String? @map("cloudinary_id")  // public_id Cloudinary (suppression)
+  typeMime     String? @map("type_mime")
+  taille       Int?                           // octets
+  // Texte extrait par OCR (J8bis, Lot B) — rempli après extraction si confiance suffisante ;
+  // JAMAIS injecté dans `description` (augmentation à l'usage). Vide jusqu'au Lot B.
+  texteExtrait String? @map("texte_extrait")
+  dateUpload   DateTime @default(now()) @map("date_upload")
 
   ticketId Int    @map("ticket_id")
   ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
@@ -215,12 +242,28 @@ model EvenementTicket {
   @@map("evenements_ticket")
 }
 
-// Prévu dans le schéma dès maintenant ; la logique IA sera implémentée en phase 5.
+// Suggestion produite par le module IA (Greffe 1 : CLASSIFICATION, PRIORISATION ;
+// Greffes suivantes : SOLUTION, RESUME). L'IA SUGGÈRE, elle n'impose pas : le
+// technicien valide/corrige (via changerCategorie/changerPriorite), ce qui alimente
+// le flywheel J9 (comparaison « suggéré X / choisi Y »).
 model SuggestionIA {
   id             Int      @id @default(autoincrement())
   typeSuggestion String   @map("type_suggestion") // CLASSIFICATION | PRIORISATION | SOLUTION | RESUME
-  contenu        String
-  scoreConfiance Float    @map("score_confiance") // 0..1, affiché au technicien (validation humaine obligatoire)
+  // Origine (Greffe 3, flywheel) : 'creation' (à la création) | 'apres_ocr' (ré-évaluation
+  // après OCR d'une pièce jointe). Colonne dédiée (auparavant dans `details.origine`) pour
+  // requêter les métriques « suggéré vs choisi » par origine.
+  origine        String?  @map("origine")
+  contenu        String   // valeur suggérée : nom de catégorie, niveau de priorité, …
+  // Proba top-1 (classification) ; NULL pour la scorecard déterministe (priorité :
+  // règle glass-box sans probabilité — on ne fabrique pas de fausse confiance).
+  scoreConfiance Float?   @map("score_confiance")
+  // Détail structuré : probabilités par classe (classification) OU décomposition
+  // glass-box de la scorecard (priorité) OU sources+similaires (solution RAG).
+  details        Json?
+  // Cycle de la suggestion. PRETE d'emblée pour les suggestions SYNCHRONES
+  // (CLASSIFICATION/PRIORISATION, Greffe 1). Pour la SOLUTION RAG (Greffe 2, générée
+  // en ASYNCHRONE 15-30 s) : EN_COURS → PRETE (texte + sources) ou ECHEC.
+  statut         String   @default("PRETE")
   valideeParTechnicien Boolean? @map("validee_par_technicien")
   dateCreation   DateTime @default(now()) @map("date_creation")
 

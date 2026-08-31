@@ -1,0 +1,396 @@
+{
+  "jalon": "J7",
+  "date": "2026-07-27T00:03:01Z",
+  "modele_llm": "qwen2.5:14b",
+  "seuils_gelés": {
+    "MOYENNE": 1.0,
+    "HAUTE": 2.5,
+    "CRITIQUE": 4.0
+  },
+  "sensibilite": [
+    {
+      "decalage": -1.0,
+      "Gold synthétique": 0.278695846359982,
+      "Validation externe réelle": 0.2893745290128109
+    },
+    {
+      "decalage": -0.5,
+      "Gold synthétique": 0.17348356227812933,
+      "Validation externe réelle": 0.27471940138963125
+    },
+    {
+      "decalage": 0.0,
+      "Gold synthétique": 0.22554711924966508,
+      "Validation externe réelle": 0.1576263328697265
+    },
+    {
+      "decalage": 0.5,
+      "Gold synthétique": 0.15770883054892615,
+      "Validation externe réelle": 0.14185445142223851
+    },
+    {
+      "decalage": 1.0,
+      "Gold synthétique": 0.06596132798248822,
+      "Validation externe réelle": 0.11952630129440933
+    }
+  ],
+  "decompositions": [
+    {
+      "titre": "Petite coquille dans le libellé du menu",
+      "categorie": "Logiciel",
+      "score": 0.0,
+      "explication": "FAIBLE car : Logiciel (+1.00) · coquille (−1.00)"
+    },
+    {
+      "titre": "Outlook lent depuis ce matin, c'est urgent",
+      "categorie": "Logiciel",
+      "score": 1.5,
+      "explication": "MOYENNE car : Logiciel (+1.00) · urgent (+0.50)"
+    },
+    {
+      "titre": "Impossible de me connecter à mon compte",
+      "categorie": "Accès",
+      "score": 2.5,
+      "explication": "HAUTE car : Accès (+1.50) · bloque (+1.00)"
+    },
+    {
+      "titre": "Serveur de fichiers down, tout le service bloqué",
+      "categorie": "Réseau",
+      "score": 7.5,
+      "explication": "CRITIQUE (plafonné) car : production (+2.00) · en production (+2.00) · tout le service (+2.00) · Réseau (+1.50) · bloque (+1.00)"
+    }
+  ],
+  "demo_sla": {
+    "titre": "Imprimante d'étage en panne",
+    "categorie": "Matériel",
+    "etats": [
+      {
+        "age": 0,
+        "niveau": "MOYENNE",
+        "score": 2.0
+      },
+      {
+        "age": 30,
+        "niveau": "HAUTE",
+        "score": 3.0
+      },
+      {
+        "age": 60,
+        "niveau": "CRITIQUE",
+        "score": 4.0
+      }
+    ]
+  },
+  "jeux": [
+    {
+      "nom": "Gold synthétique",
+      "n": 102,
+      "source": "gold/gold.jsonl",
+      "predicteurs": {
+        "Classe majoritaire (MOYENNE)": {
+          "kappa_w": 0.0,
+          "acc_pm1": 0.8529,
+          "acc_exacte": 0.2941,
+          "labels": [
+            "FAIBLE",
+            "MOYENNE",
+            "HAUTE",
+            "CRITIQUE"
+          ],
+          "matrice": [
+            [
+              0,
+              14,
+              0,
+              0
+            ],
+            [
+              0,
+              30,
+              0,
+              0
+            ],
+            [
+              0,
+              43,
+              0,
+              0
+            ],
+            [
+              0,
+              15,
+              0,
+              0
+            ]
+          ]
+        },
+        "Priorité-source": {
+          "kappa_w": 0.604,
+          "acc_pm1": 0.902,
+          "acc_exacte": 0.5882,
+          "labels": [
+            "FAIBLE",
+            "MOYENNE",
+            "HAUTE",
+            "CRITIQUE"
+          ],
+          "matrice": [
+            [
+              12,
+              2,
+              0,
+              0
+            ],
+            [
+              3,
+              24,
+              1,
+              2
+            ],
+            [
+              5,
+              15,
+              17,
+              6
+            ],
+            [
+              0,
+              3,
+              5,
+              7
+            ]
+          ]
+        },
+        "Scorecard (glass-box)": {
+          "kappa_w": 0.2255,
+          "acc_pm1": 0.8824,
+          "acc_exacte": 0.402,
+          "labels": [
+            "FAIBLE",
+            "MOYENNE",
+            "HAUTE",
+            "CRITIQUE"
+          ],
+          "matrice": [
+            [
+              5,
+              8,
+              1,
+              0
+            ],
+            [
+              0,
+              25,
+              4,
+              1
+            ],
+            [
+              0,
+              30,
+              11,
+              2
+            ],
+            [
+              1,
+              9,
+              5,
+              0
+            ]
+          ]
+        },
+        "LLM few-shot": {
+          "kappa_w": 0.4557,
+          "acc_pm1": 0.8922,
+          "acc_exacte": 0.451,
+          "labels": [
+            "FAIBLE",
+            "MOYENNE",
+            "HAUTE",
+            "CRITIQUE"
+          ],
+          "matrice": [
+            [
+              7,
+              4,
+              3,
+              0
+            ],
+            [
+              2,
+              9,
+              12,
+              7
+            ],
+            [
+              0,
+              5,
+              27,
+              11
+            ],
+            [
+              0,
+              1,
+              11,
+              3
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "nom": "Validation externe réelle",
+      "n": 46,
+      "source": "gold/validation_externe.jsonl",
+      "predicteurs": {
+        "Classe majoritaire (MOYENNE)": {
+          "kappa_w": 0.0,
+          "acc_pm1": 0.6522,
+          "acc_exacte": 0.2391,
+          "labels": [
+            "FAIBLE",
+            "MOYENNE",
+            "HAUTE",
+            "CRITIQUE"
+          ],
+          "matrice": [
+            [
+              0,
+              4,
+              0,
+              0
+            ],
+            [
+              0,
+              11,
+              0,
+              0
+            ],
+            [
+              0,
+              15,
+              0,
+              0
+            ],
+            [
+              0,
+              16,
+              0,
+              0
+            ]
+          ]
+        },
+        "Priorité-source": {
+          "kappa_w": 0.612,
+          "acc_pm1": 0.9565,
+          "acc_exacte": 0.4348,
+          "labels": [
+            "FAIBLE",
+            "MOYENNE",
+            "HAUTE",
+            "CRITIQUE"
+          ],
+          "matrice": [
+            [
+              3,
+              1,
+              0,
+              0
+            ],
+            [
+              4,
+              6,
+              1,
+              0
+            ],
+            [
+              1,
+              3,
+              11,
+              0
+            ],
+            [
+              0,
+              1,
+              15,
+              0
+            ]
+          ]
+        },
+        "Scorecard (glass-box)": {
+          "kappa_w": 0.1576,
+          "acc_pm1": 0.7391,
+          "acc_exacte": 0.2826,
+          "labels": [
+            "FAIBLE",
+            "MOYENNE",
+            "HAUTE",
+            "CRITIQUE"
+          ],
+          "matrice": [
+            [
+              1,
+              3,
+              0,
+              0
+            ],
+            [
+              1,
+              9,
+              0,
+              1
+            ],
+            [
+              1,
+              13,
+              1,
+              0
+            ],
+            [
+              2,
+              8,
+              4,
+              2
+            ]
+          ]
+        },
+        "LLM few-shot": {
+          "kappa_w": 0.7845,
+          "acc_pm1": 1.0,
+          "acc_exacte": 0.5652,
+          "labels": [
+            "FAIBLE",
+            "MOYENNE",
+            "HAUTE",
+            "CRITIQUE"
+          ],
+          "matrice": [
+            [
+              3,
+              1,
+              0,
+              0
+            ],
+            [
+              3,
+              4,
+              4,
+              0
+            ],
+            [
+              0,
+              7,
+              6,
+              2
+            ],
+            [
+              0,
+              0,
+              3,
+              13
+            ]
+          ]
+        }
+      }
+    }
+  ]
+}

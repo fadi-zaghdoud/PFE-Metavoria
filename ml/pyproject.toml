@@ -1,0 +1,63 @@
+[project]
+name = "smart-ticketing-ml"
+version = "0.1.0"
+description = "Module IA (Epic 4) — génération de corpus, embeddings, classification, RAG, évaluation."
+requires-python = ">=3.10"
+dependencies = [
+    "ollama>=0.4",            # client LLM local (zéro coût API)
+    "psycopg[binary]>=3.1",   # lecture read-only des catégories en base
+    "pydantic>=2.6",
+]
+
+[project.optional-dependencies]
+# Installés au fil des jalons ultérieurs (J3+). Gardés séparés pour que J1 reste léger.
+ml = [
+    "scikit-learn>=1.4",
+    "numpy>=1.26",
+    "matplotlib>=3.8",
+    "openpyxl>=3.1",         # lecture de la feuille de relecture du gold set (J2)
+    "joblib>=1.3",           # sérialisation du classifieur figé (J5) — fourni avec sklearn
+]
+# Microservice d'embeddings (J4) : bge-m3 auto-hébergé + API FastAPI. Séparé pour
+# ne pas imposer torch aux jalons qui n'en ont pas besoin (J1/J2).
+service = [
+    "sentence-transformers>=2.7",  # sert bge-m3 (tête dense 1024d)
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+]
+# OCR des pièces jointes (J8bis, Lot B) : extraction de texte PDF + images scannées.
+# Tesseract est un binaire SYSTÈME (pack `fra`), à installer hors pip (dév Windows :
+# UB Mannheim ; prod : apt-get tesseract-ocr tesseract-ocr-fra).
+ocr = [
+    "pytesseract>=0.3",
+    "pdfplumber>=0.11",  # couche texte + rasterisation (pypdfium2) des scans pour l'OCR
+    "Pillow>=10",
+]
+# Tests unitaires du module IA (Phase 6) : contrats de sortie + cas limites, hors modèles lourds.
+test = [
+    "pytest>=7.4",
+    "httpx>=0.27",       # requis par fastapi.testclient (contrats HTTP)
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# `pytest -m "not slow"` = suite rapide 100 % offline (CI) ; les tests `slow` chargent un
+# modèle (bge-m3) ou Tesseract et se skippent proprement si la dépendance manque.
+markers = [
+    "slow: test lent nécessitant un modèle lourd ou Tesseract (skippable, exclu par -m 'not slow')",
+]
+
+[tool.setuptools]
+packages = [
+    "smart_ticketing_ml",
+    "smart_ticketing_ml.data",
+    "smart_ticketing_ml.eval",
+    "smart_ticketing_ml.flywheel",
+    "smart_ticketing_ml.retrieval",
+    "smart_ticketing_ml.service",
+    "smart_ticketing_ml.training",
+]

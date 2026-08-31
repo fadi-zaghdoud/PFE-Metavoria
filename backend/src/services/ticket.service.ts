@@ -9,7 +9,11 @@ import {
 import { categorieRepository } from '../repositories/categorie.repository';
 import { utilisateurRepository } from '../repositories/utilisateur.repository';
 import { notificationService } from './notification.service';
-import { ForbiddenError, NotFoundError, ValidationError } from '../utils/AppError';
+import { iaService } from './ia.service';
+import { env } from '../config/env';
+import { estConfigure, uploaderBuffer } from '../config/cloudinary';
+import { MAX_PIECES_PAR_TICKET } from '../middlewares/upload.middleware';
+import { AppError, ForbiddenError, NotFoundError, ValidationError } from '../utils/AppError';
 import { logAudit } from '../utils/logger';
 import { Prisma } from '../generated/prisma/client';
 import type { Priorite, Role, StatutTicket } from '../generated/prisma/enums';
@@ -61,14 +65,22 @@ export interface CreerTicketInput {
   priorite?: Priorite;
 }
 
-// Transitions de statut autorisées (cycle de vie du ticket). Un ticket clôturé
-// ou résolu peut être rouvert (retour « En cours »).
+// Cycle de vie LINÉAIRE du ticket (workflow métier). Chaque arête est déclenchée
+// par une action nommée portée par un acteur précis :
+//
+//   NOUVEAU ──assignation (admin)──▶ EN_ATTENTE ──prise en charge (tech. assigné)──▶
+//   EN_COURS ──résolution (tech. assigné)──▶ RESOLU ──validation (demandeur) | clôture (admin)──▶ CLOTURE
+//
+// CLOTURE est TERMINAL : aucune réouverture. Limite assumée — un problème
+// récurrent donne lieu à un NOUVEAU ticket (pas de retour arrière dans le cycle).
+// NB : l'(dé)assignation n'emprunte PAS cette table (elle force EN_ATTENTE ou
+// NOUVEAU depuis plusieurs états) ; sa légalité est gérée dans `affecter`.
 const TRANSITIONS_STATUT: Record<StatutTicket, StatutTicket[]> = {
-  NOUVEAU: ['EN_COURS', 'EN_ATTENTE', 'RESOLU', 'CLOTURE'],
-  EN_COURS: ['EN_ATTENTE', 'RESOLU', 'CLOTURE'],
-  EN_ATTENTE: ['EN_COURS', 'RESOLU', 'CLOTURE'],
-  RESOLU: ['EN_COURS', 'CLOTURE'],
-  CLOTURE: ['EN_COURS'],
+  NOUVEAU: ['EN_ATTENTE'],
+  EN_ATTENTE: ['EN_COURS'],
+  EN_COURS: ['RESOLU'],
+  RESOLU: ['CLOTURE'],
+  CLOTURE: [],
 };
 
 const LABEL_STATUT: Record<StatutTicket, string> = {
@@ -79,17 +91,41 @@ const LABEL_STATUT: Record<StatutTicket, string> = {
   CLOTURE: 'Clôturé',
 };
 
+// Garde-fou de la machine à états : rejette toute transition hors du cycle linéaire.
+// Appelé par chaque action de progression (prise en charge, résolution, clôture).
+function verifierTransition(actuel: StatutTicket, cible: StatutTicket): void {
+  if (!TRANSITIONS_STATUT[actuel].includes(cible)) {
+    throw new ValidationError(
+      `Transition impossible de « ${LABEL_STATUT[actuel]} » vers « ${LABEL_STATUT[cible]} »`,
+    );
+  }
+}
+
 // Un employé ne voit que ses propres tickets ; technicien et administrateur voient tout.
 function peutVoir(acteur: Acteur, ticket: { demandeurId: number }): boolean {
   return acteur.role !== 'EMPLOYE' || ticket.demandeurId === acteur.id;
 }
 
-// Peut modifier (statut / priorité) : l'administrateur, ou le technicien assigné au ticket.
+// Peut modifier la priorité : l'administrateur, ou le technicien assigné au ticket.
 function estGestionnaire(acteur: Acteur, ticket: { technicienId: number | null }): boolean {
   return (
     acteur.role === 'ADMINISTRATEUR' ||
     (acteur.role === 'TECHNICIEN' && ticket.technicienId === acteur.id)
   );
+}
+
+// Prédicats d'autorisation atomiques — chaque action du workflow appelle celui de
+// sa ligne dans le tableau des permissions (un acteur par transition).
+function estAdmin(acteur: Acteur): boolean {
+  return acteur.role === 'ADMINISTRATEUR';
+}
+
+function estTechnicienAssigne(acteur: Acteur, ticket: { technicienId: number | null }): boolean {
+  return acteur.role === 'TECHNICIEN' && ticket.technicienId === acteur.id;
+}
+
+function estDemandeur(acteur: Acteur, ticket: { demandeurId: number }): boolean {
+  return ticket.demandeurId === acteur.id;
 }
 
 function nomComplet(personne: { prenom: string; nom: string }): string {
@@ -105,25 +141,6 @@ function refusModification(role: Role): never {
 }
 
 type UtilisateurEntite = NonNullable<Awaited<ReturnType<typeof utilisateurRepository.findById>>>;
-
-// Contrôle qui peut affecter : admin sans restriction, technicien seulement à lui-même
-// sur un ticket non déjà pris par un autre, employé jamais.
-function verifierDroitAffectation(
-  acteur: Acteur,
-  ticket: { technicienId: number | null },
-  technicienId: number | null,
-): void {
-  if (acteur.role === 'EMPLOYE') {
-    throw new ForbiddenError('Action réservée au support');
-  }
-  if (acteur.role !== 'TECHNICIEN') return; // administrateur
-  if (technicienId !== acteur.id) {
-    throw new ForbiddenError("Un technicien ne peut s'attribuer qu'à lui-même");
-  }
-  if (ticket.technicienId && ticket.technicienId !== acteur.id) {
-    throw new ForbiddenError('Ce ticket est déjà pris en charge par un autre technicien');
-  }
-}
 
 // Valide la cible d'affectation (null = désaffectation) : doit être un membre du support actif.
 async function resoudreTechnicien(technicienId: number | null): Promise<UtilisateurEntite | null> {
@@ -171,44 +188,129 @@ export const ticketService = {
       categorieId: ticket.categorieId,
       priorite: ticket.priorite,
     });
-    return ticket;
+
+    // Enrichissement IA (Greffe 1) — NON bloquant : le ticket est déjà committé.
+    // `enrichirTicket` absorbe toute erreur (service down, timeout, écriture) → la
+    // création réussit toujours. On relit ensuite pour renvoyer d'éventuelles suggestions.
+    await iaService.enrichirTicket(ticket);
+    return (await ticketRepository.findById(ticket.id)) ?? ticket;
   },
 
-  async changerStatut(acteur: Acteur, id: number, statut: StatutTicket): Promise<TicketDetail> {
+  // Prise en charge : le technicien ASSIGNÉ démarre le traitement (EN_ATTENTE → EN_COURS).
+  // Action distincte de l'assignation (décidée par l'admin) — c'est le technicien qui choisit
+  // de commencer. L'événement `PRISE_EN_CHARGE` sert de repère au délai de prise en charge.
+  async prendreEnCharge(acteur: Acteur, id: number): Promise<TicketDetail> {
     const ticket = await ticketRepository.findById(id);
     if (!ticket) throw new NotFoundError('Ticket introuvable');
-    if (!estGestionnaire(acteur, ticket)) refusModification(acteur.role);
-
-    if (ticket.statut === statut) return ticket;
-    if (!TRANSITIONS_STATUT[ticket.statut].includes(statut)) {
-      throw new ValidationError(
-        `Transition impossible de « ${LABEL_STATUT[ticket.statut]} » vers « ${LABEL_STATUT[statut]} »`,
-      );
+    if (!estTechnicienAssigne(acteur, ticket)) {
+      throw new ForbiddenError('Seul le technicien assigné peut prendre ce ticket en charge');
     }
+    verifierTransition(ticket.statut, 'EN_COURS');
 
-    const data: { statut: StatutTicket; dateCloture?: Date | null } = { statut };
-    if (statut === 'CLOTURE') data.dateCloture = new Date();
-    else if (ticket.dateCloture) data.dateCloture = null; // réouverture : on efface la date de clôture
+    await ticketRepository.creerEvenement({
+      ticketId: id,
+      auteurId: acteur.id,
+      type: 'PRISE_EN_CHARGE',
+      ancienneValeur: ticket.statut,
+      nouvelleValeur: 'EN_COURS',
+    });
 
-    // Trace dans le fil du ticket (créée avant la mise à jour pour être incluse dans le détail renvoyé).
+    const misAJour = await ticketRepository.update(id, { statut: 'EN_COURS' });
+    logAudit('TICKET_PRISE_EN_CHARGE', { ticketId: id, parUtilisateur: acteur.id });
+
+    // Informer le demandeur que son ticket est pris en charge.
+    if (misAJour.demandeur.id !== acteur.id) {
+      await notificationService.notifier({
+        destinataire: misAJour.demandeur,
+        type: 'CHANGEMENT_STATUT',
+        sujet: `Ticket #${id} — pris en charge`,
+        message: `Votre ticket « ${misAJour.titre} » est pris en charge par le support.`,
+        ticketId: id,
+      });
+    }
+    return misAJour;
+  },
+
+  // Résolution : le technicien assigné marque le ticket résolu (EN_COURS → RESOLU).
+  // La clôture reste une étape séparée (validation du demandeur, ou clôture admin).
+  async resoudre(acteur: Acteur, id: number, solution?: string): Promise<TicketDetail> {
+    const ticket = await ticketRepository.findById(id);
+    if (!ticket) throw new NotFoundError('Ticket introuvable');
+    if (!estTechnicienAssigne(acteur, ticket)) {
+      throw new ForbiddenError('Seul le technicien assigné peut résoudre ce ticket');
+    }
+    verifierTransition(ticket.statut, 'RESOLU');
+
     await ticketRepository.creerEvenement({
       ticketId: id,
       auteurId: acteur.id,
       type: 'CHANGEMENT_STATUT',
       ancienneValeur: ticket.statut,
-      nouvelleValeur: statut,
+      nouvelleValeur: 'RESOLU',
     });
 
-    const misAJour = await ticketRepository.update(id, data);
-    logAudit('TICKET_STATUT', { ticketId: id, de: ticket.statut, vers: statut, parUtilisateur: acteur.id });
+    // K1 : la solution appliquée (facultative) est capturée à la résolution. Sans elle,
+    // resolution reste NULL → le ticket n'entrera pas dans la KB du RAG (K2). Avec elle,
+    // on horodate resolutionDate — le couple sert de source « réelle » citable.
+    const texteSolution = solution?.trim() ? solution.trim() : null;
+    const misAJour = await ticketRepository.update(id, {
+      statut: 'RESOLU',
+      resolution: texteSolution,
+      resolutionDate: texteSolution ? new Date() : null,
+    });
+    logAudit('TICKET_STATUT', { ticketId: id, de: ticket.statut, vers: 'RESOLU', parUtilisateur: acteur.id });
 
-    // Notifier le demandeur du changement de statut (sauf s'il en est l'auteur).
+    // Flywheel : à la résolution, la catégorie du ticket devient un label validé par l'humain.
+    await iaService.reconcilierSuggestions(id, misAJour.categorie?.nom ?? null);
+
+    // Inviter le demandeur à valider la résolution (sa validation clôturera le ticket).
     if (misAJour.demandeur.id !== acteur.id) {
       await notificationService.notifier({
         destinataire: misAJour.demandeur,
         type: 'CHANGEMENT_STATUT',
-        sujet: `Ticket #${id} — ${LABEL_STATUT[statut]}`,
-        message: `Votre ticket « ${misAJour.titre} » est passé au statut « ${LABEL_STATUT[statut]} ».`,
+        sujet: `Ticket #${id} — résolu`,
+        message: `Votre ticket « ${misAJour.titre} » a été marqué résolu. Merci de valider la résolution.`,
+        ticketId: id,
+      });
+    }
+    return misAJour;
+  },
+
+  // Clôture directe par l'ADMINISTRATEUR (RESOLU → CLOTURE) — typiquement quand le
+  // demandeur ne valide pas (absent). L'autre voie vers CLOTURE est la validation du
+  // demandeur (`evaluerSatisfaction`). Un technicien seul ne clôture jamais (T-W4).
+  async cloturer(acteur: Acteur, id: number): Promise<TicketDetail> {
+    const ticket = await ticketRepository.findById(id);
+    if (!ticket) throw new NotFoundError('Ticket introuvable');
+    if (!estAdmin(acteur)) {
+      throw new ForbiddenError('Seul un administrateur peut clôturer directement un ticket');
+    }
+    verifierTransition(ticket.statut, 'CLOTURE');
+
+    await ticketRepository.creerEvenement({
+      ticketId: id,
+      auteurId: acteur.id,
+      type: 'CHANGEMENT_STATUT',
+      ancienneValeur: ticket.statut,
+      nouvelleValeur: 'CLOTURE',
+    });
+
+    const misAJour = await ticketRepository.update(id, {
+      statut: 'CLOTURE',
+      dateCloture: new Date(),
+    });
+    logAudit('TICKET_STATUT', { ticketId: id, de: ticket.statut, vers: 'CLOTURE', parUtilisateur: acteur.id });
+
+    // Flywheel : filet (clôture admin) — la catégorie finale reste un label validé.
+    await iaService.reconcilierSuggestions(id, misAJour.categorie?.nom ?? null);
+
+    // Informer le demandeur de la clôture.
+    if (misAJour.demandeur.id !== acteur.id) {
+      await notificationService.notifier({
+        destinataire: misAJour.demandeur,
+        type: 'CHANGEMENT_STATUT',
+        sujet: `Ticket #${id} — clôturé`,
+        message: `Votre ticket « ${misAJour.titre} » a été clôturé par l'administration.`,
         ticketId: id,
       });
     }
@@ -233,32 +335,41 @@ export const ticketService = {
     return misAJour;
   },
 
-  // Affectation manuelle (l'affectation automatique par charge/catégorie arrive en Phase 5).
-  // Un administrateur affecte à n'importe quel technicien (ou désaffecte) ; un technicien
-  // ne peut que s'attribuer lui-même un ticket non encore pris en charge.
+  // Assignation manuelle par l'ADMINISTRATEUR (seul habilité — T-W1).
+  //  - assigner / réassigner un technicien → le ticket (re)passe EN_ATTENTE ; le
+  //    technicien devra ensuite « prendre en charge » pour passer EN_COURS ;
+  //  - désassigner (technicienId = null)   → le ticket revient à NOUVEAU (T-W3).
+  // Interdit une fois le ticket résolu ou clôturé (fin de cycle).
   async affecter(acteur: Acteur, id: number, technicienId: number | null): Promise<TicketDetail> {
     const ticket = await ticketRepository.findById(id);
     if (!ticket) throw new NotFoundError('Ticket introuvable');
+    if (!estAdmin(acteur)) {
+      throw new ForbiddenError('Seul un administrateur peut affecter un ticket');
+    }
+    if (ticket.statut === 'RESOLU' || ticket.statut === 'CLOTURE') {
+      throw new ValidationError('Un ticket résolu ou clôturé ne peut plus être (ré)affecté');
+    }
+    // Rien à changer (même technicien, ou déjà non assigné) : no-op idempotent.
+    if (technicienId === ticket.technicienId) return ticket;
 
-    verifierDroitAffectation(acteur, ticket, technicienId);
     const technicien = await resoudreTechnicien(technicienId);
-
-    const data: { technicienId: number | null; statut?: StatutTicket } = { technicienId };
-    // Première prise en charge : un ticket « Nouveau » passe automatiquement « En cours ».
-    if (technicienId !== null && ticket.statut === 'NOUVEAU') data.statut = 'EN_COURS';
+    const desaffectation = technicienId === null;
 
     await ticketRepository.creerEvenement({
       ticketId: id,
       auteurId: acteur.id,
-      type: technicienId === null ? 'DESAFFECTATION' : 'AFFECTATION',
+      type: desaffectation ? 'DESAFFECTATION' : 'AFFECTATION',
       ancienneValeur: ticket.technicien ? nomComplet(ticket.technicien) : null,
       nouvelleValeur: technicien ? nomComplet(technicien) : null,
     });
 
-    const misAJour = await ticketRepository.update(id, data);
+    const misAJour = await ticketRepository.update(id, {
+      technicienId,
+      statut: desaffectation ? 'NOUVEAU' : 'EN_ATTENTE',
+    });
     logAudit('TICKET_AFFECTATION', { ticketId: id, technicienId, parUtilisateur: acteur.id });
 
-    // Notifier le technicien affecté (sauf auto-affectation).
+    // Notifier le technicien nouvellement affecté (jamais lors d'une désaffectation).
     if (technicien && technicien.id !== acteur.id) {
       await notificationService.notifier({
         destinataire: { id: technicien.id, email: technicien.email, prenom: technicien.prenom },
@@ -271,12 +382,55 @@ export const ticketService = {
     return misAJour;
   },
 
+  // Correction de la catégorie après création (T-W6 — socle du flywheel J9).
+  // Le technicien assigné ou un administrateur peut recatégoriser tant que le ticket
+  // n'est pas clôturé. L'événement CHANGEMENT_CATEGORIE trace ancienne → nouvelle
+  // catégorie : c'est ce couple qui capturera « l'IA suggérait X, l'humain a choisi Y ».
+  async changerCategorie(acteur: Acteur, id: number, categorieId: number): Promise<TicketDetail> {
+    const ticket = await ticketRepository.findById(id);
+    if (!ticket) throw new NotFoundError('Ticket introuvable');
+    if (!estAdmin(acteur) && !estTechnicienAssigne(acteur, ticket)) {
+      throw new ForbiddenError(
+        'Seul le technicien assigné ou un administrateur peut corriger la catégorie',
+      );
+    }
+    if (ticket.statut === 'CLOTURE') {
+      throw new ValidationError("La catégorie d'un ticket clôturé ne peut plus être modifiée");
+    }
+
+    const categorie = await categorieRepository.findById(categorieId);
+    if (!categorie) throw new ValidationError('Catégorie invalide');
+    if (ticket.categorieId === categorieId) return ticket; // no-op idempotent
+
+    await ticketRepository.creerEvenement({
+      ticketId: id,
+      auteurId: acteur.id,
+      type: 'CHANGEMENT_CATEGORIE',
+      ancienneValeur: ticket.categorie?.nom ?? null,
+      nouvelleValeur: categorie.nom,
+    });
+
+    const misAJour = await ticketRepository.update(id, { categorieId });
+    logAudit('TICKET_CATEGORIE', {
+      ticketId: id,
+      de: ticket.categorieId,
+      vers: categorieId,
+      parUtilisateur: acteur.id,
+    });
+
+    // Flywheel : correction explicite → on marque les suggestions (validée / corrigée).
+    await iaService.reconcilierSuggestions(id, categorie.nom);
+    return misAJour;
+  },
+
   async commenter(acteur: Acteur, id: number, contenu: string): Promise<CommentaireAvecAuteur> {
     const ticket = await ticketRepository.findById(id);
     if (!ticket) throw new NotFoundError('Ticket introuvable');
 
-    const estDemandeur = ticket.demandeurId === acteur.id;
-    if (!estDemandeur && !estGestionnaire(acteur, ticket)) {
+    // Peuvent commenter : le demandeur, le technicien assigné, ou un administrateur
+    // (supervision — décision workflow #5). estGestionnaire couvre admin + tech. assigné.
+    const parDemandeur = estDemandeur(acteur, ticket);
+    if (!parDemandeur && !estGestionnaire(acteur, ticket)) {
       throw new ForbiddenError('Vous ne participez pas à ce ticket');
     }
 
@@ -287,7 +441,7 @@ export const ticketService = {
     });
 
     // Notifier l'autre partie : demandeur → technicien affecté ; support → demandeur.
-    if (estDemandeur) {
+    if (parDemandeur) {
       if (ticket.technicien && ticket.technicien.id !== acteur.id) {
         await notificationService.notifier({
           destinataire: ticket.technicien,
@@ -309,9 +463,125 @@ export const ticketService = {
     return commentaire;
   },
 
-  // Évaluation de satisfaction par le demandeur (note 1..5 + commentaire optionnel).
-  // Évaluer un ticket « Résolu » le clôture définitivement ; l'évaluation reste
-  // modifiable par le demandeur tant qu'il le souhaite.
+  // Demande d'une suggestion RAG (Greffe 2). Règle workflow : le technicien ASSIGNÉ (ou un
+  // admin), et uniquement quand le ticket est EN_COURS (le moment où il le traite). La
+  // génération (15-30 s) est lancée en ASYNCHRONE ; on renvoie immédiatement le ticket avec
+  // la ligne SOLUTION en EN_COURS (l'UI affiche « génération en cours » et sonde ensuite).
+  async demanderSuggestion(acteur: Acteur, id: number): Promise<TicketDetail> {
+    if (!env.IA_ACTIVE) throw new ValidationError('Le module IA est désactivé');
+    const ticket = await ticketRepository.findById(id);
+    if (!ticket) throw new NotFoundError('Ticket introuvable');
+    if (!estAdmin(acteur) && !estTechnicienAssigne(acteur, ticket)) {
+      throw new ForbiddenError(
+        'Seul le technicien assigné ou un administrateur peut demander une suggestion',
+      );
+    }
+    if (ticket.statut !== 'EN_COURS') {
+      throw new ValidationError(
+        'Une suggestion ne peut être demandée que sur un ticket en cours de traitement',
+      );
+    }
+
+    await iaService.demarrerSuggestion(id, ticket.titre, ticket.description);
+    logAudit('TICKET_SUGGESTION', { ticketId: id, parUtilisateur: acteur.id });
+    return (await ticketRepository.findById(id)) ?? ticket;
+  },
+
+  // Ajout d'une pièce jointe (J8bis, Lot A) : upload vers Cloudinary puis persistance.
+  // Peut ajouter : le demandeur (son ticket) ou le support (technicien assigné / admin).
+  async ajouterPieceJointe(
+    acteur: Acteur,
+    id: number,
+    fichier: { buffer: Buffer; originalname: string; mimetype: string; size: number },
+  ) {
+    if (!estConfigure()) {
+      throw new ValidationError("Le stockage des pièces jointes n'est pas configuré");
+    }
+    const ticket = await ticketRepository.findById(id);
+    if (!ticket) throw new NotFoundError('Ticket introuvable');
+    if (!estDemandeur(acteur, ticket) && !estGestionnaire(acteur, ticket)) {
+      throw new ForbiddenError('Vous ne participez pas à ce ticket');
+    }
+    const nb = await ticketRepository.compterPiecesJointes(id);
+    if (nb >= MAX_PIECES_PAR_TICKET) {
+      throw new ValidationError(`Maximum ${MAX_PIECES_PAR_TICKET} pièces jointes par ticket`);
+    }
+
+    // L'upload dépend d'un service externe (Cloudinary) : une erreur (mauvaise config,
+    // réseau, quota) ne doit pas remonter en 500 opaque → message explicite (502).
+    // PDF → 'raw' (livraison sans réglage compte, original propre pour l'OCR) ; images → 'image'.
+    const resourceType = fichier.mimetype === 'application/pdf' ? 'raw' : 'image';
+    let stockage: { url: string; publicId: string };
+    try {
+      stockage = await uploaderBuffer(fichier.buffer, `smart-ticketing/tickets/${id}`, resourceType);
+    } catch (err) {
+      console.error('[PieceJointe] upload Cloudinary échoué :', err instanceof Error ? err.message : err);
+      throw new AppError(502, "L'envoi vers le stockage de fichiers a échoué (réessayez plus tard).");
+    }
+    const piece = await ticketRepository.creerPieceJointe({
+      ticketId: id,
+      nomFichier: fichier.originalname,
+      url: stockage.url,
+      cloudinaryId: stockage.publicId,
+      typeMime: fichier.mimetype,
+      taille: fichier.size,
+    });
+    logAudit('TICKET_PIECE_JOINTE', { ticketId: id, pieceJointeId: piece.id, parUtilisateur: acteur.id });
+
+    // OCR (J8bis Lot B) : extraction en ARRIÈRE-PLAN à partir du buffer DÉJÀ en main (pas de
+    // re-téléchargement Cloudinary). Non bloquant → la réponse d'upload part immédiatement ;
+    // l'OCR fiable peuple `texte_extrait` et déclenche une re-classification « après OCR ».
+    void iaService.demarrerExtraction(piece.id, ticket, fichier.buffer, fichier.mimetype, fichier.originalname);
+
+    return piece;
+  },
+
+  // Résout une pièce jointe pour le téléchargement proxifié (J8bis) : contrôle d'accès au
+  // ticket (peutVoir) + appartenance de la pièce. Renvoie l'URL Cloudinary (jamais exposée
+  // au client) que le contrôleur va récupérer côté serveur.
+  async pieceJointePourTelechargement(acteur: Acteur, id: number, pieceJointeId: number) {
+    const ticket = await ticketRepository.findById(id);
+    if (!ticket) throw new NotFoundError('Ticket introuvable');
+    if (!peutVoir(acteur, ticket)) throw new ForbiddenError('Accès refusé à ce ticket');
+    // Lecture serveur avec l'url Cloudinary (jamais dans le payload client) ; on vérifie que
+    // la pièce appartient bien au ticket dont l'accès vient d'être contrôlé.
+    const piece = await ticketRepository.findPieceJointe(pieceJointeId);
+    if (!piece || piece.ticketId !== id) throw new NotFoundError('Pièce jointe introuvable');
+    return piece;
+  },
+
+  // Demande d'un résumé du fil (J8). Règle : le technicien assigné ou un admin, à N'IMPORTE
+  // QUEL statut, dès que le fil a ≥ 2 messages (en dessous, la description suffit). La
+  // génération (21-55 s) est ASYNCHRONE ; on renvoie tout de suite le ticket avec la ligne
+  // RESUME en EN_COURS (l'UI sonde ensuite jusqu'à PRETE/ECHEC).
+  async demanderResume(acteur: Acteur, id: number): Promise<TicketDetail> {
+    if (!env.IA_ACTIVE) throw new ValidationError('Le module IA est désactivé');
+    const ticket = await ticketRepository.findById(id);
+    if (!ticket) throw new NotFoundError('Ticket introuvable');
+    if (!estAdmin(acteur) && !estTechnicienAssigne(acteur, ticket)) {
+      throw new ForbiddenError('Seul le technicien assigné ou un administrateur peut demander un résumé');
+    }
+    if (ticket.commentaires.length < 2) {
+      throw new ValidationError("Un résumé n'a d'intérêt qu'à partir de 2 messages dans le fil");
+    }
+
+    // Fil = description + commentaires chronologiques (SANS les événements de statut : ce sont
+    // des métadonnées, pas de la conversation). Auteur annoté demandeur / technicien.
+    const messages = ticket.commentaires.map((c) => ({
+      auteur: `${c.auteur.prenom} ${c.auteur.nom} (${
+        c.auteur.id === ticket.demandeur.id ? 'demandeur' : 'technicien'
+      })`,
+      contenu: c.contenu,
+    }));
+    await iaService.demarrerResume(id, ticket.titre, ticket.description, messages);
+    logAudit('TICKET_RESUME', { ticketId: id, parUtilisateur: acteur.id });
+    return (await ticketRepository.findById(id)) ?? ticket;
+  },
+
+  // Validation de la résolution par le DEMANDEUR (note 1..5 + commentaire optionnel).
+  // C'est l'une des deux voies vers CLOTURE (l'autre = clôture admin). N'est possible
+  // que depuis RESOLU et clôture systématiquement le ticket ; une fois CLOTURÉ,
+  // l'évaluation est VERROUILLÉE — intégrité des données (décision workflow #6).
   async evaluerSatisfaction(
     acteur: Acteur,
     id: number,
@@ -320,35 +590,40 @@ export const ticketService = {
   ): Promise<TicketDetail> {
     const ticket = await ticketRepository.findById(id);
     if (!ticket) throw new NotFoundError('Ticket introuvable');
-    if (ticket.demandeurId !== acteur.id) {
+    if (!estDemandeur(acteur, ticket)) {
       throw new ForbiddenError('Seul le demandeur peut évaluer la résolution');
     }
-    if (ticket.statut !== 'RESOLU' && ticket.statut !== 'CLOTURE') {
+    if (ticket.statut === 'CLOTURE') {
+      throw new ValidationError("L'évaluation n'est plus modifiable après la clôture du ticket");
+    }
+    if (ticket.statut !== 'RESOLU') {
       throw new ValidationError("L'évaluation n'est possible qu'une fois le ticket résolu");
     }
 
     const commentaireNettoye = commentaire?.trim() ? commentaire.trim() : null;
+    // La validation clôture toujours le ticket (RESOLU → CLOTURE).
     const data: MettreAJourTicketData = {
       satisfactionNote: note,
       satisfactionCommentaire: commentaireNettoye,
       satisfactionDate: new Date(),
+      statut: 'CLOTURE',
+      dateCloture: new Date(),
     };
-    if (ticket.statut === 'RESOLU') {
-      data.statut = 'CLOTURE';
-      data.dateCloture = new Date();
-    }
 
-    // Trace de l'évaluation dans le fil du ticket.
+    // Trace de la validation dans le fil du ticket.
     await ticketRepository.creerEvenement({
       ticketId: id,
       auteurId: acteur.id,
       type: 'EVALUATION',
-      ancienneValeur: ticket.satisfactionNote !== null ? `${ticket.satisfactionNote}/5` : null,
+      ancienneValeur: null,
       nouvelleValeur: `${note}/5`,
     });
 
     const misAJour = await ticketRepository.update(id, data);
     logAudit('TICKET_SATISFACTION', { ticketId: id, note, parUtilisateur: acteur.id });
+
+    // Flywheel : filet (validation demandeur → clôture) — catégorie finale = label validé.
+    await iaService.reconcilierSuggestions(id, misAJour.categorie?.nom ?? null);
 
     // Notifier le technicien assigné du retour reçu.
     if (ticket.technicien && ticket.technicien.id !== acteur.id) {
@@ -376,7 +651,7 @@ export const ticketService = {
       repartitionNotes,
       chargeTechniciens,
       clotures,
-      affectations,
+      prisesEnCharge,
     } = await ticketRepository.statistiques(scope);
 
     const compter = (s: StatutTicket) => parStatut.find((g) => g.statut === s)?._count._all ?? 0;
@@ -386,14 +661,15 @@ export const ticketService = {
       clotures.map((t) => (t.dateCloture as Date).getTime() - t.dateCreation.getTime()),
     );
 
-    // Délai moyen de première prise en charge (création -> 1re affectation).
-    const premiereAffectation = new Map<number, number>();
-    for (const a of affectations) {
-      if (!premiereAffectation.has(a.ticketId)) {
-        premiereAffectation.set(a.ticketId, a.dateCreation.getTime() - a.ticket.dateCreation.getTime());
+    // Délai moyen de prise en charge (création -> 1re prise en charge par le technicien).
+    // `prisesEnCharge` = événements PRISE_EN_CHARGE (voir ticketRepository.statistiques).
+    const premierePriseEnCharge = new Map<number, number>();
+    for (const a of prisesEnCharge) {
+      if (!premierePriseEnCharge.has(a.ticketId)) {
+        premierePriseEnCharge.set(a.ticketId, a.dateCreation.getTime() - a.ticket.dateCreation.getTime());
       }
     }
-    const delaiPriseEnChargeMoyenHeures = moyenneHeures([...premiereAffectation.values()]);
+    const delaiPriseEnChargeMoyenHeures = moyenneHeures([...premierePriseEnCharge.values()]);
 
     // Noms lisibles pour les répartitions par catégorie et la charge par technicien.
     const categories = await categorieRepository.findMany();

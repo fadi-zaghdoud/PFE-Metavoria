@@ -1,0 +1,147 @@
+{
+  "genere_le": "2026-08-21T20:18:51Z",
+  "modele_embedding": "BAAI/bge-m3",
+  "base_synthetique_fixe": 852,
+  "relus_disponibles": 50,
+  "grille_k": [
+    0,
+    10,
+    20,
+    30,
+    40,
+    50
+  ],
+  "n_seeds_intermediaires": 5,
+  "test_gele": {
+    "gold": 102,
+    "externe_reel": 46,
+    "externe_hors_aws": 38
+  },
+  "actif_reference": {
+    "chemin": "classifier_20260718T204355Z.joblib",
+    "note": "base 724 synth (J5) — HORS courbe, référence contexte seulement",
+    "macro_f1_reel": 0.438,
+    "macro_f1_reel_hors_aws": 0.426
+  },
+  "points": [
+    {
+      "k": 0,
+      "n_seeds": 1,
+      "reel_moy": 0.4554,
+      "reel_min": 0.4554,
+      "reel_max": 0.4554,
+      "hors_aws_moy": 0.4443,
+      "hors_aws_min": 0.4443,
+      "hors_aws_max": 0.4443,
+      "synth_moy": 0.9438,
+      "jaccard_max": 0.0
+    },
+    {
+      "k": 10,
+      "n_seeds": 5,
+      "reel_moy": 0.4863,
+      "reel_min": 0.4548,
+      "reel_max": 0.5179,
+      "hors_aws_moy": 0.4692,
+      "hors_aws_min": 0.4333,
+      "hors_aws_max": 0.5032,
+      "synth_moy": 0.9438,
+      "jaccard_max": 0.373
+    },
+    {
+      "k": 20,
+      "n_seeds": 5,
+      "reel_moy": 0.4888,
+      "reel_min": 0.409,
+      "reel_max": 0.5357,
+      "hors_aws_moy": 0.4737,
+      "hors_aws_min": 0.4399,
+      "hors_aws_max": 0.5125,
+      "synth_moy": 0.9438,
+      "jaccard_max": 0.44
+    },
+    {
+      "k": 30,
+      "n_seeds": 5,
+      "reel_moy": 0.4593,
+      "reel_min": 0.4,
+      "reel_max": 0.5373,
+      "hors_aws_moy": 0.4701,
+      "hors_aws_min": 0.4392,
+      "hors_aws_max": 0.5106,
+      "synth_moy": 0.9438,
+      "jaccard_max": 0.44
+    },
+    {
+      "k": 40,
+      "n_seeds": 5,
+      "reel_moy": 0.436,
+      "reel_min": 0.4196,
+      "reel_max": 0.4605,
+      "hors_aws_moy": 0.4592,
+      "hors_aws_min": 0.4366,
+      "hors_aws_max": 0.4706,
+      "synth_moy": 0.9438,
+      "jaccard_max": 0.44
+    },
+    {
+      "k": 50,
+      "n_seeds": 1,
+      "reel_moy": 0.4212,
+      "reel_min": 0.4212,
+      "reel_max": 0.4212,
+      "hors_aws_moy": 0.4553,
+      "hors_aws_min": 0.4553,
+      "hors_aws_max": 0.4553,
+      "synth_moy": 0.9438,
+      "jaccard_max": 0.44
+    }
+  ],
+  "delta_pente_reel": -0.0342,
+  "verdict_pre_enregistre": "DESCENDANT (<−0.02)",
+  "regle": "Δ pente > 0.05 solide / 0.02..0.05 ambigu / |Δ|<0.02 plat / <−0.02 descendant",
+  "diagnostic_hors_aws": {
+    "delta_pente": 0.011,
+    "mots_cles": "\\b(aws|ec2|s3|rds|lambda|cloud|azure|gcp|kubernetes|k8s|docker|serverless)\\b",
+    "n_items_retires": 8,
+    "items": [
+      {
+        "categorie": "Accès",
+        "titre": "Problèmes d'authentification AWS"
+      },
+      {
+        "categorie": "Réseau",
+        "titre": "Support urgent requis pour la configuration AWS"
+      },
+      {
+        "categorie": "Accès",
+        "titre": "Dépannage de l'instance AWS"
+      },
+      {
+        "categorie": "Logiciel",
+        "titre": "Demande d'amélioration de la scalabilité et de l'efficacité de l'infrastructure AWS"
+      },
+      {
+        "categorie": "Accès",
+        "titre": "Problème de connectivité AWS urgent"
+      },
+      {
+        "categorie": "Logiciel",
+        "titre": "Demande de modification de la configuration AWS"
+      },
+      {
+        "categorie": "Réseau",
+        "titre": "Urgent : Erreur inattendue dans le déploiement du service de gestion AWS"
+      },
+      {
+        "categorie": "Logiciel",
+        "titre": "Assistance immédiate requise"
+      }
+    ],
+    "note": "diagnostic ÉTIQUETÉ — isole l'effet du plafond d'étiquetage AWS, PAS le résultat de tête"
+  },
+  "provenance": {
+    "train_v2": "train_v2_20260819T154457Z.jsonl",
+    "sha256_train_v2": "d5d275e6ded40aaab23eaec93c3355e6d7135daf49875141fc29f93d8ce1b8ae"
+  }
+}

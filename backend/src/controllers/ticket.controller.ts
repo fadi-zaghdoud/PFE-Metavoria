@@ -2,15 +2,17 @@ import type { Request, Response } from 'express';
 import { ticketService, type Acteur } from '../services/ticket.service';
 import {
   affectationSchema,
+  changerCategorieSchema,
   changerPrioriteSchema,
-  changerStatutSchema,
   commentaireSchema,
   creerTicketSchema,
   listeTicketsQuerySchema,
+  resolutionSchema,
   satisfactionSchema,
   statistiquesQuerySchema,
 } from '../validators/ticket.validator';
-import { UnauthorizedError, ValidationError } from '../utils/AppError';
+import { AppError, UnauthorizedError, ValidationError } from '../utils/AppError';
+import { authentifierToken } from '../middlewares/auth.middleware';
 
 function acteur(req: Request): Acteur {
   if (!req.user) throw new UnauthorizedError();
@@ -44,11 +46,77 @@ export const ticketController = {
     res.status(200).json({ ticket });
   },
 
-  async changerStatut(req: Request, res: Response) {
+  async prendreEnCharge(req: Request, res: Response) {
     const id = parseIdParam(req.params.id);
-    const { statut } = changerStatutSchema.parse(req.body);
-    const ticket = await ticketService.changerStatut(acteur(req), id, statut);
+    const ticket = await ticketService.prendreEnCharge(acteur(req), id);
     res.status(200).json({ ticket });
+  },
+
+  async resoudre(req: Request, res: Response) {
+    const id = parseIdParam(req.params.id);
+    const { solution } = resolutionSchema.parse(req.body ?? {});
+    const ticket = await ticketService.resoudre(acteur(req), id, solution);
+    res.status(200).json({ ticket });
+  },
+
+  async cloturer(req: Request, res: Response) {
+    const id = parseIdParam(req.params.id);
+    const ticket = await ticketService.cloturer(acteur(req), id);
+    res.status(200).json({ ticket });
+  },
+
+  async changerCategorie(req: Request, res: Response) {
+    const id = parseIdParam(req.params.id);
+    const { categorieId } = changerCategorieSchema.parse(req.body);
+    const ticket = await ticketService.changerCategorie(acteur(req), id, categorieId);
+    res.status(200).json({ ticket });
+  },
+
+  // 202 Accepted : la génération RAG (15-30 s) part en arrière-plan ; on renvoie tout de
+  // suite le ticket avec la ligne SOLUTION en EN_COURS (l'UI sonde ensuite jusqu'à PRETE).
+  async demanderSuggestion(req: Request, res: Response) {
+    const id = parseIdParam(req.params.id);
+    const ticket = await ticketService.demanderSuggestion(acteur(req), id);
+    res.status(202).json({ ticket });
+  },
+
+  // 202 Accepted : la génération du résumé (21-55 s) part en arrière-plan (ligne RESUME EN_COURS).
+  async demanderResume(req: Request, res: Response) {
+    const id = parseIdParam(req.params.id);
+    const ticket = await ticketService.demanderResume(acteur(req), id);
+    res.status(202).json({ ticket });
+  },
+
+  // Upload d'une pièce jointe (multipart, champ `fichier`) — multer a rempli req.file en amont.
+  async ajouterPieceJointe(req: Request, res: Response) {
+    const id = parseIdParam(req.params.id);
+    if (!req.file) {
+      throw new ValidationError('Fichier manquant ou format non supporté (PDF, PNG ou JPG, ≤ 10 Mo)');
+    }
+    const pieceJointe = await ticketService.ajouterPieceJointe(acteur(req), id, req.file);
+    res.status(201).json({ pieceJointe });
+  },
+
+  // Téléchargement PROXIFIÉ d'une pièce jointe : le backend récupère le fichier chez Cloudinary
+  // et le re-sert avec le bon Content-Type + nom (PDF/image corrects). Auth par token en query
+  // (navigation <a>, pas d'en-tête Bearer possible) — même patron que le flux SSE.
+  async telechargerPieceJointe(req: Request, res: Response) {
+    const token = typeof req.query.token === 'string' ? req.query.token : '';
+    if (!token) throw new UnauthorizedError('Jeton manquant', 'TOKEN_INVALIDE');
+    const auth = await authentifierToken(token);
+    const id = parseIdParam(req.params.id);
+    const pjId = parseIdParam(req.params.pjId);
+    const piece = await ticketService.pieceJointePourTelechargement(
+      { id: auth.sub, role: auth.role },
+      id,
+      pjId,
+    );
+    const reponse = await fetch(piece.url);
+    if (!reponse.ok) throw new AppError(502, 'Fichier indisponible');
+    const buffer = Buffer.from(await reponse.arrayBuffer());
+    res.setHeader('Content-Type', piece.typeMime ?? 'application/octet-stream');
+    res.setHeader('Content-Disposition', `inline; filename="${piece.nomFichier.replaceAll('"', '')}"`);
+    res.send(buffer);
   },
 
   async changerPriorite(req: Request, res: Response) {

@@ -26,6 +26,19 @@ services:
       timeout: 5s
       retries: 10
 
+  # ── LLM local (module IA, Epic 4) — génération & inférence sans coût API ────
+  # Open-source, auto-hébergé (conforme CDC §10) ; aucune donnée ne sort de la
+  # machine. Modèles à récupérer une fois : `docker exec smart-ticketing-ollama
+  # ollama pull qwen2.5:14b` (fallback : qwen2.5:7b).
+  ollama:
+    image: ollama/ollama:latest
+    container_name: smart-ticketing-ollama
+    restart: unless-stopped
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+
   # ── API backend (Express + Prisma) ──────────────────────────────────────────
   backend:
     build: ./backend
@@ -66,3 +79,4 @@ services:
 
 volumes:
   postgres-data:
+  ollama-data:

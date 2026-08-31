@@ -18,6 +18,31 @@ const envSchema = z.object({
   // URL du frontend, utilisée pour construire le lien de réinitialisation de mot de passe.
   FRONTEND_URL: z.string().default('http://localhost:5173'),
 
+  // Module IA (Greffe 1) — microservice Python (FastAPI). L'IA est un enrichissement
+  // NON bloquant : si le service est indisponible ou lent, le ticket se crée quand même.
+  SERVICE_IA_URL: z.string().default('http://127.0.0.1:8000'),
+  // Budget par appel IA (ms) : borne la latence ajoutée à la création (AbortController).
+  IA_TIMEOUT_MS: z.coerce.number().default(4000),
+  // Budget de la génération RAG (Greffe 2), appelée en ASYNCHRONE : large (génération
+  // 15-30 s) — sans jamais bloquer la réponse HTTP (le clic répond 202 immédiat).
+  IA_SUGGESTION_TIMEOUT_MS: z.coerce.number().default(60000),
+  // Budget de l'extraction OCR (J8bis Lot B), appelée en ASYNCHRONE à l'upload : large
+  // (OCR d'un PDF scanné peut prendre plusieurs secondes) — sans bloquer la réponse d'upload.
+  IA_EXTRACT_TIMEOUT_MS: z.coerce.number().default(60000),
+  // Budget des appels flywheel admin (réentraînement / déploiement). Le service Python répond
+  // vite (202 async au déclenchement, copie+reload au déploiement) → marge confortable.
+  IA_REENTRAINEMENT_TIMEOUT_MS: z.coerce.number().default(30000),
+  // Interrupteur : IA_ACTIVE=false coupe toute la greffe (actif par défaut).
+  IA_ACTIVE: z
+    .string()
+    .optional()
+    .transform((v) => v !== 'false'),
+  // Cycle de vie des catégories (Phase A) : nombre de labels validés (tickets réels
+  // RESOLU/CLOTURE) à partir duquel une catégorie encore inconnue du modèle passe
+  // « apprenable » (signal admin « prête à réentraîner »). Réglable ici en attendant la
+  // config admin (§6.5, Phase C). Sous ce seuil : « en apprentissage ».
+  SEUIL_EXEMPLES_APPRENABLE: z.coerce.number().int().min(1).default(10),
+
   // SMTP — optionnels au démarrage (l'app doit pouvoir booter sans e-mail configuré) ;
   // le service d'e-mail échoue explicitement à l'envoi si ces valeurs sont absentes.
   SMTP_HOST: z.string().default('smtp.gmail.com'),
@@ -31,6 +56,12 @@ const envSchema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASSWORD: z.string().optional(),
   SMTP_FROM: z.string().default('Smart Ticketing <no-reply@metavoria.tn>'),
+
+  // Cloudinary — stockage des pièces jointes (J8bis). Optionnels au démarrage : sans eux,
+  // l'app boote mais l'upload est désactivé (l'endpoint répond une erreur explicite).
+  CLOUDINARY_CLOUD_NAME: z.string().optional(),
+  CLOUDINARY_API_KEY: z.string().optional(),
+  CLOUDINARY_API_SECRET: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

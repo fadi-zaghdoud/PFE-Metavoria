@@ -1,0 +1,40 @@
+{
+  "genere_le": "2026-07-17T12:58:15Z",
+  "source_xlsx": "artifacts\\gold\\gold_final.xlsx",
+  "source_candidats": "artifacts/gold\\gold_candidates_20260715T112610Z.jsonl",
+  "n_gold": 102,
+  "n_candidats_lus": 119,
+  "repartition_valider": {
+    "N": 17,
+    "O": 102
+  },
+  "corrections_categorie_cellules": 6,
+  "corrections_categorie_effectives": 5,
+  "corrections_priorite_cellules": 44,
+  "corrections_priorite_effectives": 42,
+  "resolutions_integrales_recuperees": 56,
+  "resolutions_non_appariees": 0,
+  "repartition_categorie": {
+    "Logiciel": 32,
+    "Autre": 5,
+    "Réseau": 22,
+    "Matériel": 25,
+    "Accès": 18
+  },
+  "repartition_priorite": {
+    "HAUTE": 43,
+    "FAIBLE": 14,
+    "CRITIQUE": 15,
+    "MOYENNE": 30
+  },
+  "repartition_statut": {
+    "RESOLU": 56,
+    "CLOTURE": 35,
+    "EN_COURS": 5,
+    "NOUVEAU": 3,
+    "EN_ATTENTE": 3
+  },
+  "sha256_gold_jsonl": "f3ca38bea66dc3aabeeb5b58e83e5017ac8fd8c1b44c0d323f73abf369f8bafd",
+  "avertissements": [],
+  "regle": "gold set relu à la main — JAMAIS utilisé à l'entraînement."
+}

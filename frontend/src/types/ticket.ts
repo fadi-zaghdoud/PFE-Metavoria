@@ -20,6 +20,20 @@ export interface Categorie {
   description: string | null;
 }
 
+// Cycle de vie d'une catégorie (Phase A) — statut CALCULÉ côté serveur (classes du modèle IA
+// actif + compteur de labels validés), jamais stocké :
+//   ACTIVE           : le modèle sait déjà classer dedans
+//   APPRENABLE       : hors modèle, mais assez d'exemples validés → prête à réentraîner
+//   EN_APPRENTISSAGE : hors modèle, pas encore assez d'exemples
+//   INDETERMINE      : service IA injoignable → statut inconnu (fail-safe)
+export type StatutCategorie = 'ACTIVE' | 'APPRENABLE' | 'EN_APPRENTISSAGE' | 'INDETERMINE';
+
+export interface CategorieAdmin extends Categorie {
+  dateCreation: string;
+  nLabelsValides: number;
+  statut: StatutCategorie;
+}
+
 export interface Commentaire {
   id: number;
   contenu: string;
@@ -29,11 +43,27 @@ export interface Commentaire {
   auteur: PersonnePublique;
 }
 
+// Pièce jointe (J8bis). L'URL Cloudinary N'est PAS exposée au client (§10) : le
+// téléchargement passe par le proxy backend authentifié (GET …/pieces-jointes/:id/download).
+export interface PieceJointe {
+  id: number;
+  nomFichier: string;
+  typeMime: string | null;
+  taille: number | null;
+  dateUpload: string;
+  ticketId: number;
+  // Texte extrait par OCR (J8bis Lot B) — présent après extraction fiable, sinon absent/null.
+  // Exposé aux personnes ayant accès au ticket (contenu d'un fichier déjà téléchargeable).
+  texteExtrait?: string | null;
+}
+
 export type TypeEvenement =
   | 'CHANGEMENT_STATUT'
   | 'CHANGEMENT_PRIORITE'
+  | 'CHANGEMENT_CATEGORIE'
   | 'AFFECTATION'
   | 'DESAFFECTATION'
+  | 'PRISE_EN_CHARGE'
   | 'EVALUATION';
 
 // Entrée d'historique d'un ticket (changement de statut, priorité, affectation),
@@ -90,6 +120,59 @@ export interface TicketDetail {
   technicien: PersonnePublique | null;
   commentaires: Commentaire[];
   evenements: EvenementTicket[];
+  suggestionsIA: SuggestionIA[];
+  piecesJointes: PieceJointe[];
+}
+
+// Origine d'une suggestion catégorie/priorité : à la création (description seule) ou après
+// OCR (description enrichie du texte extrait des pièces jointes). Absent = ancienne suggestion.
+export type OrigineSuggestion = 'creation' | 'apres_ocr';
+
+// Details d'une suggestion CLASSIFICATION (Greffe 1 ; ré-évaluée « après OCR » au Lot B).
+export interface DetailClassificationIA {
+  origine?: OrigineSuggestion;
+  pieceJointeIds?: number[]; // pièces dont le texte OCR a nourri la ré-classification
+  categorieId: number;
+  probabilites: Record<string, number>;
+  modeleEmbedding: string;
+}
+
+// Décomposition glass-box de la scorecard (details d'une suggestion PRIORISATION).
+export interface DetailPrioriteIA {
+  niveau: string;
+  score: number;
+  plafonne: boolean;
+  explication: string; // « CRITIQUE car : production +2 · Réseau +1.5 »
+  contributions: { famille: string; facteur: string; points: number; preuve: string }[];
+  plafonnements: string[];
+  origine?: OrigineSuggestion; // 'apres_ocr' → priorité ré-évaluée avec le texte extrait
+  pieceJointeIds?: number[];
+}
+
+// Détail d'une suggestion SOLUTION (RAG, Greffe 2).
+export interface DetailSolutionIA {
+  abstenu: boolean; // true → aucune suggestion pertinente (pas d'invention)
+  message: string; // motif d'abstention le cas échéant
+  // `synthetique` (K3) : false = vraie résolution d'entreprise (badge « réel »).
+  sources: { id: number; titre: string; synthetique: boolean }[]; // #id cités par la génération
+  similaires: { id: number; titre: string; categorie: string | null; synthetique: boolean }[]; // candidats RRF
+  latenceMs: number | null;
+}
+
+// Suggestion produite par le module IA. L'IA suggère, le technicien valide/corrige.
+// `statut` : PRETE d'emblée pour les suggestions synchrones (CLASSIFICATION/PRIORISATION) ;
+// EN_COURS → PRETE/ECHEC pour la SOLUTION RAG (générée en asynchrone). `details` dépend du
+// type : PRIORISATION → DetailPrioriteIA ; SOLUTION → DetailSolutionIA.
+export interface SuggestionIA {
+  id: number;
+  typeSuggestion: 'CLASSIFICATION' | 'PRIORISATION' | 'SOLUTION' | 'RESUME';
+  contenu: string;
+  scoreConfiance: number | null; // proba (classification) ; null pour la scorecard déterministe
+  details: unknown; // cast au point d'usage selon le type
+  statut: 'EN_COURS' | 'PRETE' | 'ECHEC';
+  valideeParTechnicien: boolean | null;
+  dateCreation: string;
+  ticketId: number;
 }
 
 export interface Notification {

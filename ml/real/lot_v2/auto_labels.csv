@@ -1,0 +1,51 @@
+﻿id,categorie_auto,signaux,scores
+kag-0003,Logiciel,kw:application→Logiciel(+1) ; tag:Software Bug→Logiciel(+1),Logiciel:2
+kag-0010,Réseau,ent:aws→Réseau(+2) ; kw:application→Logiciel(+1),Réseau:2 Logiciel:1
+kag-0011,Logiciel,ent:zoom→Logiciel(+2) ; ent:teams→Logiciel(+2) ; ent:macos→Logiciel(+2) ; ent:macbook→Matériel(+2) ; kw:matériel→Matériel(+1) ; kw:réinitialis→Accès(+1) ; kw:application→Logiciel(+1) ; kw:installation→Logiciel(+1) ; kw:mise à jour→Logiciel(+1) ; kw:plante→Logiciel(+1) ; kw:version→Logiciel(+1) ; tag:Hardware Failure→Matériel(+3),Logiciel:12 Matériel:8 Accès:1
+kag-0016,Matériel,ent:dell→Matériel(+2) ; ent:xps→Matériel(+2) ; ent:batterie→Matériel(+2) ; tag:Hardware Failure→Matériel(+3),Matériel:9
+kag-0017,Réseau,ent:cisco→Réseau(+2) ; ent:routeur→Réseau(+2) ; ent:router→Réseau(+2) ; kw:connectivité→Réseau(+1) ; kw:internet→Réseau(+1) ; tag:Network Issue→Réseau(+2.5),Réseau:10.5
+kag-0018,Réseau,ent:aws→Réseau(+2),Réseau:2
+kag-0024,Réseau,ent:aws→Réseau(+2),Réseau:2
+kag-0033,Matériel,ent:dell→Matériel(+2) ; ent:xps→Matériel(+2) ; ent:clavier→Matériel(+2) ; kw:logiciel→Logiciel(+1) ; kw:mise à jour→Logiciel(+1) ; tag:Hardware Failure→Matériel(+3) ; tag:Software Bug→Logiciel(+1),Matériel:9 Logiciel:3
+kag-0034,Matériel,ent:hp→Matériel(+2) ; ent:deskjet→Matériel(+2) ; ent:imprimante→Matériel(+2) ; kw:connectivité→Réseau(+1) ; kw:se connecter à→Accès(+1) ; tag:Login Issue→Accès(+1.5) ; tag:Network Issue→Réseau(+2.5),Matériel:6 Réseau:3.5 Accès:2.5
+kag-0035,Logiciel,kw:logiciel→Logiciel(+1) ; tag:Software Bug→Logiciel(+1),Logiciel:2
+kag-0044,Logiciel,ent:zoom→Logiciel(+2) ; kw:mise à jour→Logiciel(+1) ; kw:version→Logiciel(+1) ; tag:Software Bug→Logiciel(+1),Logiciel:5
+kag-0045,Logiciel,ent:jira→Logiciel(+2) ; kw:version→Logiciel(+1) ; tag:System Crash→Logiciel(+1),Logiciel:4
+kag-0046,Matériel,ent:dell→Matériel(+2) ; ent:xps→Matériel(+2) ; kw:physique→Matériel(+1) ; tag:Hardware Failure→Matériel(+3) ; tag:Product Replacement→Matériel(+2),Matériel:10
+kag-0049,Réseau,ent:aws→Réseau(+2),Réseau:2
+kag-0055,Matériel,ent:dell→Matériel(+2) ; ent:xps→Matériel(+2) ; ent:clavier→Matériel(+2) ; kw:internet→Réseau(+1) ; tag:Hardware Failure→Matériel(+3) ; tag:Warranty Claim→Matériel(+2),Matériel:11 Réseau:1
+kag-0058,Réseau,tag:Service Outage→Réseau(+2),Réseau:2
+kag-0062,Réseau,ent:aws→Réseau(+2),Réseau:2
+kag-0069,Logiciel,ent:office→Logiciel(+2) ; ent:outlook→Logiciel(+2) ; kw:erreur→Logiciel(+1) ; tag:Account Assistance→Accès(+1) ; tag:Login Issue→Accès(+1.5),Logiciel:5 Accès:2.5
+kag-0072,Réseau,ent:cisco→Réseau(+2) ; ent:routeur→Réseau(+2) ; kw:connectivité→Réseau(+1) ; kw:déconnexion→Réseau(+1) ; tag:Network Issue→Réseau(+2.5),Réseau:8.5
+kag-0077,Logiciel,ent:jira→Logiciel(+2) ; kw:erreur→Logiciel(+1) ; kw:version→Logiciel(+1) ; tag:Software Bug→Logiciel(+1),Logiciel:5
+kag-0082,Logiciel,ent:visual studio code→Logiciel(+2) ; kw:mise à jour→Logiciel(+1) ; kw:erreur→Logiciel(+1) ; kw:version→Logiciel(+1) ; kw:compatibilité→Logiciel(+1) ; tag:Software Bug→Logiciel(+1) ; tag:Feature Request→Logiciel(+1),Logiciel:8
+kag-0100,Réseau,ent:cisco→Réseau(+2) ; ent:routeur→Réseau(+2) ; kw:connectivité→Réseau(+1) ; kw:internet→Réseau(+1) ; kw:réinitialis→Accès(+1) ; kw:sso→Accès(+1) ; tag:Network Issue→Réseau(+2.5) ; tag:Hardware Failure→Matériel(+3),Réseau:8.5 Matériel:3 Accès:2
+kag-0101,Matériel,ent:hp→Matériel(+2) ; ent:deskjet→Matériel(+2) ; ent:imprimante→Matériel(+2) ; ent:wi-fi→Réseau(+2) ; kw:erreur→Logiciel(+1) ; tag:Software Bug→Logiciel(+1) ; tag:Network Issue→Réseau(+2.5),Matériel:6 Réseau:4.5 Logiciel:2
+kag-0104,Réseau,ent:cisco→Réseau(+2) ; ent:routeur→Réseau(+2) ; kw:connectivité→Réseau(+1) ; tag:Network Issue→Réseau(+2.5),Réseau:7.5
+kag-0106,Logiciel,kw:application→Logiciel(+1) ; kw:erreur→Logiciel(+1) ; tag:Database Issue→Logiciel(+2) ; tag:Software Bug→Logiciel(+1),Logiciel:5
+kag-0111,Matériel,ent:dell→Matériel(+2) ; ent:xps→Matériel(+2) ; kw:surchauffe→Matériel(+1) ; kw:mise à jour→Logiciel(+1) ; tag:Hardware Failure→Matériel(+3) ; tag:Warranty Claim→Matériel(+2),Matériel:10 Logiciel:1
+kag-0114,Matériel,ent:canon→Matériel(+2) ; ent:imprimante→Matériel(+2) ; kw:réinitialis→Accès(+1) ; tag:Hardware Failure→Matériel(+3) ; tag:Network Issue→Réseau(+2.5) ; tag:Account Assistance→Accès(+1) ; tag:Warranty Claim→Matériel(+2),Matériel:9 Réseau:2.5 Accès:2
+kag-0117,Réseau,ent:cisco→Réseau(+2) ; ent:routeur→Réseau(+2) ; kw:connectivité→Réseau(+1) ; tag:Network Issue→Réseau(+2.5),Réseau:7.5
+kag-0119,Réseau,ent:aws→Réseau(+2) ; kw:sso→Accès(+1),Réseau:2 Accès:1
+kag-0128,Logiciel,ent:office→Logiciel(+2) ; ent:excel→Logiciel(+2) ; tag:Software Bug→Logiciel(+1),Logiciel:5
+kag-0131,Matériel,ent:iphone→Matériel(+2) ; ent:batterie→Matériel(+2) ; kw:identifiant→Accès(+1) ; tag:Hardware Failure→Matériel(+3),Matériel:7 Accès:1
+kag-0132,Réseau,ent:cisco→Réseau(+2) ; ent:routeur→Réseau(+2) ; ent:router→Réseau(+2) ; tag:Network Issue→Réseau(+2.5),Réseau:8.5
+kag-0133,Matériel,ent:surface→Matériel(+2) ; ent:clavier→Matériel(+2) ; tag:Hardware Failure→Matériel(+3) ; tag:Warranty Claim→Matériel(+2),Matériel:9
+kag-0135,Matériel,ent:macbook→Matériel(+2) ; ent:batterie→Matériel(+2) ; tag:Hardware Failure→Matériel(+3),Matériel:7
+kag-0139,Matériel,ent:macbook→Matériel(+2) ; kw:ne s'allume→Matériel(+1) ; tag:Hardware Failure→Matériel(+3) ; tag:Warranty Claim→Matériel(+2),Matériel:8
+kag-0149,Réseau,ent:aws→Réseau(+2) ; kw:sso→Accès(+1),Réseau:2 Accès:1
+kag-0150,Réseau,ent:cisco→Réseau(+2) ; ent:routeur→Réseau(+2) ; kw:connectivité→Réseau(+1) ; tag:Network Issue→Réseau(+2.5),Réseau:7.5
+kag-0159,Logiciel,tag:Software Bug→Logiciel(+1) ; tag:Virus Removal→Logiciel(+2),Logiciel:3
+kag-0162,Logiciel,ent:teams→Logiciel(+2) ; ent:office→Logiciel(+2) ; ent:sharepoint→Logiciel(+2) ; kw:sso→Accès(+1) ; kw:logiciel→Logiciel(+1) ; tag:Software Bug→Logiciel(+1) ; tag:Account Assistance⊘visio,Logiciel:8 Accès:1
+kag-0170,Matériel,ent:hp→Matériel(+2) ; ent:deskjet→Matériel(+2) ; ent:imprimante→Matériel(+2) ; ent:wi-fi→Réseau(+2),Matériel:6 Réseau:2
+kag-0175,Logiciel,kw:application→Logiciel(+1) ; kw:mise à jour→Logiciel(+1) ; kw:plantage→Logiciel(+1) ; kw:se ferme→Logiciel(+1) ; tag:Software Bug→Logiciel(+1) ; tag:System Crash→Logiciel(+1),Logiciel:6
+kag-0200,Logiciel,kw:logiciel→Logiciel(+1) ; tag:Software Bug→Logiciel(+1),Logiciel:2
+kag-0203,Logiciel,kw:plante→Logiciel(+1) ; tag:System Crash→Logiciel(+1) ; tag:Database Issue→Logiciel(+2),Logiciel:4
+kag-0204,Logiciel,kw:plante→Logiciel(+1) ; kw:plantage→Logiciel(+1) ; tag:System Crash→Logiciel(+1),Logiciel:3
+kag-0218,Logiciel,ent:slack→Logiciel(+2) ; kw:connectivité→Réseau(+1) ; kw:déconnexion→Réseau(+1) ; kw:version→Logiciel(+1) ; tag:Software Bug→Logiciel(+1),Logiciel:4 Réseau:2
+kag-0226,Matériel,ent:surface→Matériel(+2) ; ent:écran→Matériel(+2) ; kw:matériel→Matériel(+1) ; kw:logiciel→Logiciel(+1) ; kw:installation→Logiciel(+1) ; kw:mise à jour→Logiciel(+1) ; tag:Software Bug→Logiciel(+1) ; tag:Hardware Failure→Matériel(+3) ; tag:Account Assistance→Accès(+1),Matériel:8 Logiciel:4 Accès:1
+kag-0229,Matériel,ent:macbook→Matériel(+2) ; ent:écran→Matériel(+2) ; tag:Software Bug→Logiciel(+1) ; tag:Hardware Failure→Matériel(+3),Matériel:7 Logiciel:1
+kag-0230,Réseau,ent:aws→Réseau(+2) ; kw:sso→Accès(+1),Réseau:2 Accès:1
+kag-0239,Matériel,ent:macbook→Matériel(+2) ; kw:logiciel→Logiciel(+1) ; kw:application→Logiciel(+1) ; tag:Hardware Failure→Matériel(+3) ; tag:Software Bug→Logiciel(+1),Matériel:5 Logiciel:3
+kag-0242,Réseau,ent:cisco→Réseau(+2) ; ent:routeur→Réseau(+2) ; kw:connectivité→Réseau(+1) ; kw:internet→Réseau(+1) ; tag:Network Issue→Réseau(+2.5),Réseau:8.5

@@ -12,3 +12,5 @@ iaRouter.use(requireAuth, requireRole('ADMINISTRATEUR'));
 iaRouter.post('/reentrainer', asyncHandler(iaController.reentrainer));
 iaRouter.get('/flywheel', asyncHandler(iaController.flywheel));
 iaRouter.post('/deployer', asyncHandler(iaController.deployer));
+// Statut du modèle actif (classes connues) — pour l'admin catégories (Phase A). Résilient IA down.
+iaRouter.get('/modele', asyncHandler(iaController.modele));

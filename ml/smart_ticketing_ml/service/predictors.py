@@ -77,19 +77,29 @@ def recharger_classifieur() -> None:
 
 
 def infos_actif() -> dict:
-    """Métadonnées du classifieur ACTIF (pour /sante + le compteur flywheel) : chemin, date
-    d'entraînement, macro-F1 réel — lus du manifeste `classifier_*.manifest.json` s'il existe."""
+    """Métadonnées du classifieur ACTIF (pour /sante + le compteur flywheel + /modele) : chemin,
+    date d'entraînement, macro-F1 réel, et **classes connues** — lus du manifeste
+    `classifier_*.manifest.json` s'il existe. LOAD-FREE (aucun chargement de modèle) : `/sante`
+    reste léger. `classes` vaut None si le manifeste ne les porte pas (modèle flywheel antérieur
+    à la Phase A) → l'appelant (/modele) retombe alors sur `classes_` du modèle chargé."""
     try:
         chemin = _chemin_modele()
     except RuntimeError:
         return {"present": False}
-    infos = {"present": True, "chemin": chemin.name, "date_entrainement": None, "macro_f1_reel": None}
+    infos = {
+        "present": True,
+        "chemin": chemin.name,
+        "date_entrainement": None,
+        "macro_f1_reel": None,
+        "classes": None,
+    }
     manifeste = chemin.parent / f"{chemin.stem}.manifest.json"
     if manifeste.exists():
         try:
             d = json.loads(manifeste.read_text(encoding="utf-8"))
             infos["date_entrainement"] = d.get("date")
             infos["macro_f1_reel"] = d.get("macro_f1_reel") or (d.get("gap_production") or {}).get("f1_reel")
+            infos["classes"] = d.get("classes")
         except (ValueError, OSError):
             pass
     return infos

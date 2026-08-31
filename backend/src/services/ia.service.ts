@@ -430,4 +430,42 @@ export const iaService = {
   proxyDeployer: (stamp: string) =>
     proxyIA('POST', '/deployer', { stamp }, env.IA_REENTRAINEMENT_TIMEOUT_MS),
   proxySante: () => proxyIA('GET', '/sante'),
+
+  // Classes connues du modèle IA ACTIF — socle du STATUT des catégories (Phase A : « active »
+  // = catégorie ∈ ces classes). BEST-EFFORT et NON bloquant : IA désactivée/injoignable/erreur
+  // → { modeleDisponible: false } (jamais d'exception), pour que la page catégories reste
+  // utilisable IA down (le statut « active » passe simplement « indéterminé » côté service métier).
+  async classesModeleActif(): Promise<{
+    modeleDisponible: boolean;
+    classes: string[] | null;
+    dateEntrainement: string | null;
+    macroF1Reel: number | null;
+  }> {
+    const indisponible = {
+      modeleDisponible: false,
+      classes: null,
+      dateEntrainement: null,
+      macroF1Reel: null,
+    };
+    if (!env.IA_ACTIVE) return indisponible;
+    try {
+      const { status, body } = await proxyIA('GET', '/modele');
+      if (status !== 200) return indisponible;
+      const b = body as {
+        present?: boolean;
+        classes?: string[] | null;
+        date_entrainement?: string | null;
+        macro_f1_reel?: number | null;
+      };
+      if (!b.present) return indisponible;
+      return {
+        modeleDisponible: true,
+        classes: Array.isArray(b.classes) ? b.classes : null,
+        dateEntrainement: b.date_entrainement ?? null,
+        macroF1Reel: b.macro_f1_reel ?? null,
+      };
+    } catch {
+      return indisponible;
+    }
+  },
 };

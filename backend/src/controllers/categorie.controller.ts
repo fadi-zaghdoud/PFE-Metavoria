@@ -6,4 +6,10 @@ export const categorieController = {
     const categories = await categorieService.lister();
     res.status(200).json({ categories });
   },
+
+  // Vue ADMIN : catégories + compteur de labels validés + statut calculé (Phase A).
+  async listerAdministration(_req: Request, res: Response) {
+    const resultat = await categorieService.listerAdministration();
+    res.status(200).json(resultat);
+  },
 };

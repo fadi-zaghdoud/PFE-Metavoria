@@ -37,6 +37,11 @@ const envSchema = z.object({
     .string()
     .optional()
     .transform((v) => v !== 'false'),
+  // Cycle de vie des catégories (Phase A) : nombre de labels validés (tickets réels
+  // RESOLU/CLOTURE) à partir duquel une catégorie encore inconnue du modèle passe
+  // « apprenable » (signal admin « prête à réentraîner »). Réglable ici en attendant la
+  // config admin (§6.5, Phase C). Sous ce seuil : « en apprentissage ».
+  SEUIL_EXEMPLES_APPRENABLE: z.coerce.number().int().min(1).default(10),
 
   // SMTP — optionnels au démarrage (l'app doit pouvoir booter sans e-mail configuré) ;
   // le service d'e-mail échoue explicitement à l'envoi si ces valeurs sont absentes.

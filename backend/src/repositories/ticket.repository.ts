@@ -229,6 +229,28 @@ export const ticketRepository = {
     }));
   },
 
+  // Cycle de vie des catégories (Phase A) — nombre de LABELS VALIDÉS par catégorie. Mêmes
+  // critères EXACTS que `labelsValides` (tickets RÉELS synthetique=false, RESOLU/CLOTURE, catégorie
+  // non nulle) → un ticket est compté ici SSI il est capturé au réentraînement. Alimente le STATUT
+  // « apprenable » (n_labels ≥ SEUIL_EXEMPLES_APPRENABLE). Renvoie une Map categorieId → nombre
+  // (seules les catégories ayant ≥ 1 label apparaissent ; le service comble les absentes à 0).
+  async compterLabelsValidesParCategorie(): Promise<Map<number, number>> {
+    const groupes = await prisma.ticket.groupBy({
+      by: ['categorieId'],
+      where: {
+        synthetique: false,
+        statut: { in: ['RESOLU', 'CLOTURE'] },
+        categorieId: { not: null },
+      },
+      _count: { _all: true },
+    });
+    return new Map(
+      groupes
+        .filter((g): g is typeof g & { categorieId: number } => g.categorieId !== null)
+        .map((g) => [g.categorieId, g._count._all]),
+    );
+  },
+
   // Flywheel — nb de tickets RÉELS devenus RESOLU (= nouveaux labels validés) depuis `date`
   // (typiquement la date d'entraînement du modèle actif). Compté via l'événement de transition,
   // dédupliqué par ticket. Aucun champ `dateResolution` n'existe → on lit l'événement.

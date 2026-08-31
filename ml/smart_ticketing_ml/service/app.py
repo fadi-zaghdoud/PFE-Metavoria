@@ -73,6 +73,21 @@ def sante() -> dict:
     }
 
 
+@app.get("/modele")
+def modele() -> dict:
+    """Classes connues du classifieur ACTIF — pour le STATUT des catégories côté admin
+    (Phase A : « active » = catégorie ∈ ces classes). Lues du manifeste (load-free) ; si le
+    manifeste ne les porte pas (modèle flywheel antérieur), on RETOMBE sur `classes_` du modèle
+    (chargement du .joblib, léger — appel admin peu fréquent, hors chemin de `/sante`)."""
+    infos = predictors.infos_actif()
+    if infos.get("present") and not infos.get("classes"):
+        try:
+            infos["classes"] = predictors.charger_classifieur().classes_
+        except Exception:  # .joblib absent/corrompu → on laisse classes=None (dégradé propre)
+            infos["classes"] = None
+    return infos
+
+
 @app.post("/embed", response_model=ReponseEmbed)
 def embed(req: RequeteEmbed) -> ReponseEmbed:
     """Encode les textes en vecteurs 1024d L2-normalisés (similarité cosinus)."""

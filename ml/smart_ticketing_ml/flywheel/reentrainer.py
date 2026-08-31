@@ -167,6 +167,9 @@ def reentrainer(
         },
         "etancheite": {**etancheite, "n_ajouts_reels_gardes": len(reels), "porte": "exact=0, Jaccard>=0.5=0"},
         "modele_embedding": config.MODELE_EMBEDDING,
+        # Classes APPRISES par le candidat (dérivées des labels, jamais codées en dur) : recopiées
+        # au manifeste au déploiement → le service les expose (/modele) pour le statut des catégories.
+        "classes": [str(c) for c in candidat.classes_],
         "actif": {"chemin": Path(chemin_actif).name, **r_actif},
         "candidat": {"chemin": cand_path.name, **r_cand},
         "delta_macro_f1_reel": round(delta_reel, 4),
@@ -204,6 +207,9 @@ def deployer(stamp: str) -> dict:
         "date": rapport["genere_le"],
         "source": "flywheel_candidat",
         "stamp": stamp,
+        # Classes du modèle déployé (exposées par /modele pour le statut des catégories, Phase A).
+        # Legacy : un manifeste sans ce champ → /modele retombe sur classes_ du modèle chargé.
+        "classes": rapport.get("classes"),
         "macro_f1_reel": rapport["candidat"]["reel"]["macro_f1"],
         "macro_f1_synth": rapport["candidat"]["gold"]["macro_f1"],
         "delta_macro_f1_reel": rapport["delta_macro_f1_reel"],

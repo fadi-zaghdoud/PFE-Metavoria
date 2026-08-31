@@ -58,4 +58,11 @@ export const iaController = {
     const { status, body } = await siJoignable(iaService.proxyDeployer(stamp));
     res.status(status).json(body);
   },
+
+  // Classes connues du modèle IA actif (Phase A — statut des catégories). Résilient PAR CONCEPTION :
+  // pas de `verifierActif` ni de `siJoignable` (qui lèveraient 503) — `classesModeleActif` dégrade
+  // en { modeleDisponible: false } si l'IA est coupée/injoignable. Toujours 200, jamais de crash.
+  async modele(_req: Request, res: Response): Promise<void> {
+    res.json(await iaService.classesModeleActif());
+  },
 };

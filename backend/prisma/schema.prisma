@@ -103,6 +103,10 @@ model Categorie {
   id          Int     @id @default(autoincrement())
   nom         String  @unique
   description String?
+  // Horodatage de création (Phase A — cycle de vie des catégories) : sert à afficher
+  // « en apprentissage depuis … » côté admin. Le STATUT (en apprentissage / apprenable /
+  // active) reste CALCULÉ (classes du modèle IA vs base + compteur de labels), jamais stocké.
+  dateCreation DateTime @default(now()) @map("date_creation")
 
   tickets Ticket[]
 

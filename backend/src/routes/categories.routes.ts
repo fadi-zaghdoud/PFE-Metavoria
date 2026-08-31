@@ -16,3 +16,8 @@ categoriesRouter.get(
   requireRole('ADMINISTRATEUR'),
   asyncHandler(categorieController.listerAdministration),
 );
+
+// CRUD admin (Phase A) — création / renommage / suppression, avec garde-fous côté service.
+categoriesRouter.post('/', requireRole('ADMINISTRATEUR'), asyncHandler(categorieController.creer));
+categoriesRouter.patch('/:id', requireRole('ADMINISTRATEUR'), asyncHandler(categorieController.mettreAJour));
+categoriesRouter.delete('/:id', requireRole('ADMINISTRATEUR'), asyncHandler(categorieController.supprimer));

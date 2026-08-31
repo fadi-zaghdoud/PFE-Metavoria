@@ -20,6 +20,20 @@ export interface Categorie {
   description: string | null;
 }
 
+// Cycle de vie d'une catégorie (Phase A) — statut CALCULÉ côté serveur (classes du modèle IA
+// actif + compteur de labels validés), jamais stocké :
+//   ACTIVE           : le modèle sait déjà classer dedans
+//   APPRENABLE       : hors modèle, mais assez d'exemples validés → prête à réentraîner
+//   EN_APPRENTISSAGE : hors modèle, pas encore assez d'exemples
+//   INDETERMINE      : service IA injoignable → statut inconnu (fail-safe)
+export type StatutCategorie = 'ACTIVE' | 'APPRENABLE' | 'EN_APPRENTISSAGE' | 'INDETERMINE';
+
+export interface CategorieAdmin extends Categorie {
+  dateCreation: string;
+  nLabelsValides: number;
+  statut: StatutCategorie;
+}
+
 export interface Commentaire {
   id: number;
   contenu: string;

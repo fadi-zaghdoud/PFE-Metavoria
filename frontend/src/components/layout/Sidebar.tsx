@@ -3,6 +3,7 @@ import {
   BarChart3,
   BookOpen,
   Brain,
+  FolderTree,
   LayoutDashboard,
   LogOut,
   Ticket,
@@ -116,6 +117,10 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
             <div className="space-y-1">
               <SidebarLink
                 item={{ to: '/administration/utilisateurs', label: 'Utilisateurs', icon: Users }}
+                onNavigate={onNavigate}
+              />
+              <SidebarLink
+                item={{ to: '/administration/categories', label: 'Catégories', icon: FolderTree }}
                 onNavigate={onNavigate}
               />
               <SidebarLink

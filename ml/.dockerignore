@@ -1,0 +1,42 @@
+# =============================================================================
+#  Contexte de build du service IA — ce que Docker N'ENVOIE PAS au démon.
+#  Cible : contexte < 2 Mo (mesure de contrôle sans ce fichier : 28,86 Mo).
+#
+#  ⚠️ Ce fichier ne double PAS `.gitignore` : les règles divergent.
+#     - `artifacts/` est ignoré par Git ET exclu ici, mais pour une autre raison
+#       (il est MONTÉ au runtime, cf. plus bas) ;
+#     - `gold/` et `real/` sont versionnés et doivent RESTER dans le contexte :
+#       le flywheel et le réentraînement les lisent par chemin relatif au CWD
+#       (`gold/gold.jsonl`, `real/lot_v2/`) — les exclure casserait /reentrainer.
+# =============================================================================
+
+# ── Environnements et caches Python ─────────────────────────────────────────
+# Préfixe `**/` obligatoire : sans lui, la règle ne s'applique qu'à la racine du
+# contexte et laisserait passer smart_ticketing_ml/*/__pycache__.
+**/.venv/
+**/__pycache__/
+**/*.py[cod]
+**/*.egg-info/
+**/.pytest_cache/
+
+# ── Artefacts ML (26 Mo — le gros du contexte) ──────────────────────────────
+# Classifieur figé, lots du flywheel, caches d'embeddings : MONTÉS au runtime
+# (bind-mount ./ml/artifacts), jamais copiés. Deux raisons : `/reentrainer` doit
+# pouvoir y ÉCRIRE, et un modèle cuit dans l'image serait figé à la date du build
+# alors que le flywheel le remplace en cours de vie.
+artifacts/
+
+# ── Sorties d'analyse, sans rôle au runtime ─────────────────────────────────
+# Rapports d'évaluation versionnés (j3→j9) : le code les ÉCRIT (mkdir parents),
+# ne les relit jamais. Notebooks : exploration des jalons J3-J7.
+eval/
+notebooks/
+
+# ── Secrets ─────────────────────────────────────────────────────────────────
+# La configuration passe par l'environnement du compose, jamais par un fichier
+# copié dans l'image.
+.env
+
+# ── Docker lui-même ─────────────────────────────────────────────────────────
+Dockerfile
+.dockerignore

@@ -12,6 +12,7 @@ Lancement (dév) :
 from __future__ import annotations
 
 import base64
+from contextlib import asynccontextmanager
 import threading
 import time
 
@@ -23,7 +24,47 @@ from ..flywheel import reentrainer as flywheel_reentrainer
 from ..retrieval import hybrid, suggestion
 from ..summarize import resumer
 
+# ── Préchauffage au démarrage (dockerisation, §7) ────────────────────────────
+# Sans lui, le premier /classify après un démarrage paie le chargement de bge-m3
+# (~2,3 Go) et dépasse le budget de 4 s du backend : le tout premier ticket créé
+# perdrait son enrichissement IA. On charge donc le chemin de CLASSIFICATION en
+# tâche de fond — l'écoute HTTP et /sante restent disponibles immédiatement.
+#
+# Le RERANKER est préchauffé LUI AUSSI. Le raisonnement initial — « /suggest a un
+# budget de 60 s, inutile de le préchauffer » — a été INVALIDÉ par la mesure en
+# conteneur : le premier /suggest, qui chargeait le reranker DANS la requête, a
+# pris 71,1 s (contre 25,6 s et 21,2 s aux appels suivants), donc au-delà du budget
+# IA_SUGGESTION_TIMEOUT_MS — le backend l'aurait abandonné. Coût : ~2,3 Go de RAM
+# de plus au démarrage, assumé.
+#
+# Piloté par IA_WARMUP (défaut false — cf. service/config.py).
+def _prechauffer() -> None:
+    """Charge bge-m3, le classifieur figé, puis le reranker. Aucune erreur n'est fatale : en cas
+    d'échec (artefact absent, cache HF vide), on retombe sur le chargement paresseux."""
+    # Ordre volontaire : le chemin de CLASSIFICATION d'abord (budget serré de 4 s à
+    # la création d'un ticket), le reranker ensuite (consommateur asynchrone).
+    for etape, charger in (("embeddings", embedder.charger_modele),
+                           ("classifieur", predictors.charger_classifieur),
+                           ("reranker", reranker.charger_modele)):
+        debut = time.perf_counter()
+        try:
+            charger()
+            print(f"[warmup] {etape} chargé en {time.perf_counter() - debut:.1f} s", flush=True)
+        except Exception as exc:
+            print(f"[warmup] {etape} indisponible ({exc}) — chargement paresseux conservé", flush=True)
+
+
+@asynccontextmanager
+async def _cycle_de_vie(_app: FastAPI):
+    """Lifespan : démarre le préchauffage en THREAD (ne bloque pas l'écoute HTTP).
+    `TestClient(app)` sans `with` n'exécute pas ce hook — la suite reste offline."""
+    if config.WARMUP:
+        threading.Thread(target=_prechauffer, daemon=True).start()
+    yield
+
+
 app = FastAPI(
+    lifespan=_cycle_de_vie,
     title="Service IA — Smart Ticketing (Metavoria)",
     version="0.1.0",
     description="Embeddings bge-m3 auto-hébergés (Epic 4, J4).",

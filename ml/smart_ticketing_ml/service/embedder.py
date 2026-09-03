@@ -36,7 +36,8 @@ def charger_modele():
                 "pip install -e ml[service]"
             ) from exc
 
-        modele = SentenceTransformer(config.MODELE_EMBEDDING, device=config.DEVICE)
+        # `source_modele` : dossier du cache local si présent (chargement hors-ligne).
+        modele = SentenceTransformer(config.source_modele(config.MODELE_EMBEDDING), device=config.DEVICE)
         dim = modele.get_sentence_embedding_dimension()
         if dim != config.DIMENSION:
             raise RuntimeError(

@@ -41,7 +41,7 @@ def charger_modele():
             ) from exc
 
         _modele = CrossEncoder(
-            config.MODELE_RERANKER,
+            config.source_modele(config.MODELE_RERANKER),   # cache local -> hors-ligne
             device=config.RERANK_DEVICE,
             max_length=config.RERANK_MAX_LENGTH,
         )

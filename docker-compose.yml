@@ -34,10 +34,35 @@ services:
     image: ollama/ollama:latest
     container_name: smart-ticketing-ollama
     restart: unless-stopped
-    ports:
-      - "${OLLAMA_PORT:-11434}:11434"
+    # Service OPTIONNEL : ne démarre qu'avec `docker compose --profile ollama up`.
+    # Par défaut, le service IA s'adresse à l'Ollama de la MACHINE HÔTE
+    # (ML_OLLAMA_HOST) : les modèles y sont déjà tirés, donc zéro téléchargement.
+    # Ce service reste la voie de DÉPLOIEMENT PUR (serveur sans Ollama installé) ;
+    # il faut alors y tirer les modèles une fois :
+    #   docker compose --profile ollama exec ollama ollama pull qwen2.5:14b
+    profiles: ["ollama"]
+    # PAS de `ports:` — volontairement. Publier 11434 alors qu'un Ollama natif
+    # écoute déjà dessus ne produit AUCUNE erreur Docker : la liaison est
+    # silencieusement masquée par le processus natif. On obtenait alors un
+    # `curl localhost:11434` rassurant (les modèles de l'hôte) pendant que
+    # `ml -> http://ollama:11434` tombait en « model not found » (404) sur un
+    # conteneur vide. Seul `ml` a besoin d'Ollama, et il l'atteint par le réseau
+    # interne : la publication n'apportait rien et créait l'ambiguïté.
     volumes:
       - ollama-data:/root/.ollama
+    # Sans healthcheck, `depends_on: ollama` ne garantit RIEN : le conteneur est
+    # « démarré » avant que le serveur n'accepte des requêtes, et les premiers
+    # /suggest ou /summarize échouent juste après un `up` — précisément le genre
+    # d'incident qui survient en démonstration. `ollama list` interroge le serveur
+    # local : il ne rend 0 que lorsque celui-ci répond vraiment.
+    # NB : cela ne dit rien des MODÈLES, qui doivent être tirés une fois (voir
+    # OLLAMA_MODEL dans .env.example) — un serveur sain sans modèle répondra 404.
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
 
   # ── API backend (Express + Prisma) ──────────────────────────────────────────
   backend:
@@ -47,6 +72,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      # PAS de dépendance à `ml`, volontairement : l'IA est un enrichissement NON
+      # BLOQUANT (env.ts) et `ml` attend lui-même le préchargement des 4,3 Go de
+      # modèles. Faire attendre le backend immobiliserait toute la pile au premier
+      # démarrage, pour un service dont l'absence est déjà gérée en dégradé.
     environment:
       NODE_ENV: production
       PORT: 4000
@@ -62,10 +91,91 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-Smart Ticketing <no-reply@metavoria.tn>}
+
+      # ── Module IA (Epic 4) ────────────────────────────────────────────────
+      # SANS SERVICE_IA_URL, le défaut de env.ts est http://127.0.0.1:8000 : le
+      # backend dockerisé s'appellerait LUI-MÊME et toute la greffe IA serait
+      # morte, silencieusement (l'IA est non bloquante — aucune erreur visible).
+      SERVICE_IA_URL: http://ml:8000
+      IA_ACTIVE: ${IA_ACTIVE:-true}
+      IA_TIMEOUT_MS: ${IA_TIMEOUT_MS:-4000}
+      IA_SUGGESTION_TIMEOUT_MS: ${IA_SUGGESTION_TIMEOUT_MS:-60000}
+      IA_EXTRACT_TIMEOUT_MS: ${IA_EXTRACT_TIMEOUT_MS:-60000}
+      IA_REENTRAINEMENT_TIMEOUT_MS: ${IA_REENTRAINEMENT_TIMEOUT_MS:-30000}
+      SEUIL_EXEMPLES_APPRENABLE: ${SEUIL_EXEMPLES_APPRENABLE:-10}
+
+      # ── Sessions à jetons courts (durcissement sécurité) ──────────────────
+      ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-15m}
+      REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-30}
+
+      # ── Pièces jointes (J8bis lot A) ──────────────────────────────────────
+      # Absentes, l'application démarre mais l'upload est DÉSACTIVÉ — donc aucune
+      # pièce jointe à faire passer à l'OCR (/extract), et le lot B reste inerte.
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
     ports:
       - "${BACKEND_PORT:-4000}:4000"
     # Applique les migrations au démarrage puis lance l'API
     command: sh -c "npx prisma migrate deploy && node dist/server.js"
+
+  # ── Service IA (Epic 4) — microservice FastAPI Python ──────────────────────
+  # Frontière §3.1 : Node envoie du TEXTE, reçoit du JSON. Le service ne touche
+  # JAMAIS la base en écriture (Node est seul à écrire) ; il la LIT pour le RAG.
+  ml:
+    build: ./ml
+    image: smart-ticketing-ia:latest
+    container_name: smart-ticketing-ia
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      # Les modèles doivent être en cache AVANT le démarrage : sans ça, le premier
+      # /classify déclencherait un téléchargement de 4,3 Go au milieu d'une démo.
+      ml-prefetch:
+        condition: service_completed_successfully
+      # PAS de `depends_on: ollama` : ce service est derrière un profil et ne
+      # démarre pas par défaut (cf. plus haut). Une dépendance vers un service
+      # inactif ferait échouer `docker compose up`.
+    environment:
+      # Lecture des catégories + KB du RAG. `db.py` retire le `?schema=` propre à
+      # Prisma, inconnu de libpq — l'URL peut donc être identique à celle du backend.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-smart_ticketing}
+      OLLAMA_HOST: ${ML_OLLAMA_HOST:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:14b}
+      OLLAMA_MODEL_FALLBACK: ${OLLAMA_MODEL_FALLBACK:-qwen2.5:7b}
+      # `cuda` en production si l'embed à la volée devient trop lent (Phase 7 :
+      # changer d'hôte/de device ne change AUCUNE ligne de code applicatif).
+      EMBED_DEVICE: ${EMBED_DEVICE:-cpu}
+      RERANK_DEVICE: ${RERANK_DEVICE:-cpu}
+      OCR_LANGUE: ${OCR_LANGUE:-fra}
+      # Charge bge-m3 + le classifieur dès le démarrage : sans ça, le tout premier
+      # ticket créé après un `up` dépasserait le budget de 4 s du backend et
+      # perdrait son enrichissement IA.
+      IA_WARMUP: "true"
+    volumes:
+      # Bind-mount (et non volume nommé) : le classifieur figé J5 est servi
+      # directement depuis le dépôt, et les candidats écrits par /reentrainer sont
+      # inspectables côté hôte — transparence exigée par le mémoire.
+      - ./ml/artifacts:/app/artifacts
+      - hf-cache:/cache/huggingface
+    ports:
+      - "${ML_PORT:-8000}:8000"
+
+  # ── Préchargement des modèles (one-shot) ───────────────────────────────────
+  # Peuple `hf-cache` puis SORT. Seul moment de la vie de la pile où un accès
+  # réseau est attendu ; ensuite le service charge ses modèles hors-ligne
+  # (cf. service/config.py:source_modele). Idempotent : quelques secondes si le
+  # cache est déjà peuplé. Ne se contente pas de télécharger — il CHARGE les deux
+  # modèles, donc un cache corrompu échoue ici et non en pleine démonstration.
+  ml-prefetch:
+    build: ./ml
+    image: smart-ticketing-ia:latest
+    container_name: smart-ticketing-ia-prefetch
+    restart: "no"
+    command: ["python", "-m", "smart_ticketing_ml.service.prefetch"]
+    volumes:
+      - hf-cache:/cache/huggingface
 
   # ── Frontend (React buildé, servi par nginx qui proxifie /api) ─────────────
   frontend:
@@ -80,3 +190,6 @@ services:
 volumes:
   postgres-data:
   ollama-data:
+  # Modèles Hugging Face (bge-m3 + reranker, ~4,3 Go) : hors de l'image pour
+  # la garder légère, et conservés d'un rebuild à l'autre.
+  hf-cache:

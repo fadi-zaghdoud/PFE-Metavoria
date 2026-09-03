@@ -79,6 +79,70 @@ dont `embedding_modele` diffère du modèle courant (un changement de modèle re
 tout). Chaque run écrit un manifeste (`artifacts/embeddings/backfill_<horodatage>.json`
 — provenance, comptes, débit, latence unitaire).
 
+## Exécution en conteneur (déploiement, §7)
+
+Le service est dockerisé (`ml/Dockerfile`) et câblé au compose de la racine. Depuis
+la racine du dépôt :
+
+```bash
+docker compose up -d --build ml     # + postgres et le préchargement des modèles
+curl http://localhost:8000/sante
+```
+
+Les tâches hors-ligne s'exécutent dans la même image :
+
+```bash
+docker compose run --rm ml python -m smart_ticketing_ml.service.backfill
+docker compose run --rm ml pytest -m "not slow" -p no:cacheprovider
+```
+
+### Ce que l'image contient, et pourquoi
+
+- **`requirements.lock` (55 paquets épinglés)** plutôt que les bornes `>=` du
+  `pyproject.toml`. Raison dure : le classifieur figé J5 est sérialisé avec
+  **scikit-learn 1.4.0** ; une résolution libre installerait 1.7.x et le dépicklage
+  échouerait — `/classify` répondrait 503. Le lock reproduit aussi l'environnement des
+  mesures J5/J6/J7. **Monter scikit-learn impose de RÉENTRAÎNER le modèle, pas seulement
+  de rebâtir l'image.** Un garde-fou dans le `Dockerfile` fait échouer le build si
+  `sklearn != 1.4.0`, si `torch` n'est pas la build `+cpu`, ou si le pack Tesseract
+  `fra` manque.
+- **torch en build CPU** (`--index-url .../whl/cpu`) : évite ~3 Go de wheels `nvidia-*`
+  inutiles, le service tournant en CPU (`EMBED_DEVICE`/`RERANK_DEVICE`).
+- **Tesseract + pack `fra`** : binaire système requis par l'OCR (J8bis).
+- **Utilisateur non-root** ; `/app` reste la propriété de root — le service ne peut pas
+  réécrire son propre code. Seul `artifacts/` lui appartient, parce que `/reentrainer`
+  y écrit ses candidats.
+
+### Montages
+
+| Chemin conteneur | Source | Rôle |
+|---|---|---|
+| `/app/artifacts` | bind-mount `./ml/artifacts` | classifieur figé J5, lots du flywheel, candidats de réentraînement — **inspectables côté hôte** |
+| `/cache/huggingface` | volume `hf-cache` | `bge-m3` + `bge-reranker-v2-m3` (~4,3 Go), peuplés une fois par `ml-prefetch` |
+
+`artifacts/` est un **bind-mount** et non un volume : le modèle servi vient directement
+du dépôt, et un candidat produit par `/reentrainer` apparaît immédiatement dans
+`ml/artifacts/models/candidates/` — la transparence attendue au mémoire.
+
+### Fonctionnement hors-ligne
+
+Une fois `hf-cache` peuplé, le service charge ses modèles **sans aucun accès réseau**
+(vérifié : suite complète `56 passed` avec `--network none`). Cela suppose
+`config.source_modele`, qui passe au chargeur le **dossier du cache** plutôt que
+l'identifiant du Hub : `transformers` 4.40.2 (`utils/hub.py`, `has_file`) émet sinon un
+`requests.head` brut vers huggingface.co — appel qui ignore `HF_HUB_OFFLINE`, dont
+l'échec DNS n'est pas rattrapé, et qui rendait le chargement impossible sans réseau
+alors que tous les poids étaient en cache. L'identifiant `BAAI/bge-m3` reste la
+**provenance** enregistrée en base (`tickets.embedding_modele`).
+
+### Préchauffage
+
+`IA_WARMUP=true` (posé par le compose) charge bge-m3, le classifieur **et** le reranker
+au démarrage, en tâche de fond — `/sante` et l'écoute HTTP restent disponibles
+immédiatement. Sans lui, le premier `/classify` dépasserait le budget de 4 s du backend,
+et le premier `/suggest` a été mesuré à **71,1 s** (contre 21-26 s ensuite), au-delà du
+budget de 60 s.
+
 ## Limites (à documenter au rapport)
 
 - **Pas d'historique réel** chez Metavoria (confirmé par l'encadrant) : tout

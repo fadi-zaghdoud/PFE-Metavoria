@@ -1510,6 +1510,14 @@ demande explicite.
   vides → **422** ; `/extract` requis/invalide/type inconnu → **422**, trop volumineux → **413**).
 - **Résultat** : **suite rapide 51 passed / 2 deselected (5,7 s)** ; **complète 53 passed (25,6 s)** —
   les 2 `slow` (OCR Tesseract réel + `/classify` chargeant bge-m3) inclus.
+- **Mise à jour (03/09/2026)** : ces chiffres restent ceux du **27/08/2026**. La Phase A
+  (gestion des catégories) a depuis ajouté `test_modele_endpoint.py` : la suite compte
+  aujourd'hui **54 passed / 2 deselected** (rapide) et **56 passed** (complète). Chiffres
+  vérifiés **à l'identique sur l'hôte et dans le conteneur** lors de la dockerisation.
+- **Dépendance implicite révélée par le conteneur** : deux tests de `test_modele_endpoint.py`
+  assertent `infos["present"] is True` — ils lisent donc le **vrai manifeste** sous
+  `artifacts/models/`. Sans ce dossier monté, ils **échouent** (ils ne skippent pas). La suite
+  « offline » ne l'est donc pas tout à fait. `[à traiter en amélioration Phase 6]`
 - **Hors périmètre (assumé)** : le harnais d'**évaluation** (`eval/`, métriques sur datasets) existe
   déjà ; la **génération LLM réelle** (Ollama) et le **pont Node** (tsc + preuves écran) ne sont pas
   re-testés unitairement ici. Tests fonctionnels backend/frontend : `[À COMPLÉTER PAR FEDI]`
@@ -1538,9 +1546,81 @@ demande explicite.
   reste une perspective de production** (si le serveur a un GPU), documentée comme évolution
   possible.
 
-- **Ce qui existe déjà** `[reconstitué depuis Git]` : **conteneurisation Docker**
-  opérationnelle (`docker-compose.yml` : postgres+pgvector, backend, frontend nginx ;
-  service **ollama** ajouté pour le module IA). Migrations appliquées au démarrage
-  (`prisma migrate deploy`).
-- **Documentation technique / guide d'installation / doc API (Swagger)** : `[À COMPLÉTER PAR FEDI]`
+- **Ce qui existait avant ce jalon** `[reconstitué depuis Git]` : `docker-compose.yml`
+  couvrant postgres+pgvector, backend, frontend nginx et un service **ollama** ; migrations
+  appliquées au démarrage (`prisma migrate deploy`). **Le module IA n'était pas dockerisé**
+  (ni `ml/Dockerfile`, ni service `ml`).
+
+### Dockerisation du service IA (LIVRÉ 03/09/2026)
+
+- **Objectif** : rendre le module IA déployable au même titre que le reste de la pile,
+  sans dégrader la reproductibilité des mesures ni la promesse §10 (« aucune donnée ne
+  sort de la machine »). Conduit **par étapes, chacune fermée par une porte de preuve**
+  (une commande, une sortie attendue) avant de passer à la suivante.
+- **Image** (`ml/Dockerfile`, 115 l.) : `python:3.12-slim` + **Tesseract avec le pack `fra`**
+  (OCR J8bis), **torch en build CPU** (`--index-url .../whl/cpu` — évite ~3 Go de wheels
+  `nvidia-*` inutiles), utilisateur **non-root**, healthcheck sur `/sante`, `WORKDIR /app`
+  (impératif : `predictors` et `reentrainer` résolvent `artifacts/…` et `gold/…` en relatif).
+  **1,92 Go** après purge de `torch/include` + `torch/test` (121 Mo, inutiles en inférence ;
+  les `.pyc` sont conservés, `PYTHONDONTWRITEBYTECODE=1` les empêcherait d'être régénérés).
+  Un **garde-fou de build** fait échouer l'image si `sklearn != 1.4.0`, si `torch` n'est pas
+  `+cpu`, ou si le pack `fra` manque.
+- **Décision — `requirements.lock` (55 paquets) plutôt que les bornes `>=`.** Motif **dur**,
+  découvert en vérifiant : le classifieur figé J5 est **picklé en scikit-learn 1.4.0**, or
+  `pyproject.toml` déclare `>=1.4` — une résolution libre installerait 1.7.x et le dépicklage
+  échouerait, `/classify` répondant 503. Le lock a dû aller **au-delà** des 7 paquets ML :
+  une résolution libre remontait `starlette` 0.36 → **1.6** (majeure) et `huggingface-hub`
+  0.23 → **0.36**, deux sauts qui changent le comportement de FastAPI et le chargement de
+  bge-m3. Résolu **en miroir de l'environnement de développement validé** (17/17 paquets
+  identiques, wheels Linux, `pip check` sans conflit). **Conséquence à retenir : monter
+  scikit-learn imposera un RÉENTRAÎNEMENT, pas un rebuild.**
+- **Preuve de reproductibilité** : le macro-F1 réel du modèle actif rejoué **dans le
+  conteneur** donne **0,4380**, contre 0,438 au manifeste J5. Le lock ne protège pas une
+  intention, il protège un nombre.
+- **Décision — chargement des modèles hors-ligne** (`config.source_modele`). Constat : réseau
+  coupé, bge-m3 ne chargeait **pas**, alors que tous ses poids étaient en cache. Cause lue
+  dans le code de la bibliothèque : `transformers` 4.40.2 (`utils/hub.py`, `has_file`) émet un
+  `requests.head` **brut** vers huggingface.co pour tester la présence de `model.safetensors` —
+  appel qui **ignore** `HF_HUB_OFFLINE`/`TRANSFORMERS_OFFLINE` (il ne passe pas par
+  `hf_hub_download`) et dont l'échec DNS n'est **pas** rattrapé (le `head()` est hors du `try`,
+  contrairement à ce que promet sa docstring). Compléter le cache était impossible :
+  **`BAAI/bge-m3` ne publie aucun safetensors** (404 sur le Hub) — le sondage est
+  structurellement sans réponse. Correctif : `has_file` court-circuite le réseau quand on lui
+  passe un **répertoire**, on résout donc le dossier du cache local et on le passe au chargeur.
+  **L'identifiant `BAAI/bge-m3` reste la provenance enregistrée en base**
+  (`tickets.embedding_modele`) : le backfill et sa détection « modèle changé » sont préservés.
+  *Vérifié* : `--network none`, DNS impossible, `/embed` `/classify` `/rerank` en 200 et suite
+  complète **56 passed**. Le §10 est désormais vrai **sans exception, démarrage compris**.
+- **Décision — préchauffage au démarrage** (`IA_WARMUP`). Le chargement paresseux faisait payer
+  au **premier** appel le coût du modèle. Mesuré : premier `/suggest` **71,1 s** (le reranker se
+  chargeait dans la requête) contre **25,6 s** et **21,2 s** ensuite — au-delà du budget de 60 s
+  du backend, qui l'aurait abandonné. Le préchauffage couvre donc bge-m3, le classifieur **et**
+  le reranker. *Note d'honnêteté : le raisonnement initial (« /suggest a 60 s, inutile de
+  préchauffer le reranker ») a été **invalidé par la mesure**.*
+- **Compose** : services **`ml`** et **`ml-prefetch`** (one-shot qui **charge** les deux modèles
+  — un cache corrompu échoue au démarrage de la pile, pas en pleine démonstration), volume
+  `hf-cache`, bind-mount `./ml/artifacts` (le candidat de `/reentrainer` apparaît côté hôte).
+  **12 variables manquaient au service `backend`** (14/26 fournies) : sans `SERVICE_IA_URL`, le
+  backend dockerisé retombait sur `http://127.0.0.1:8000` — **il s'appelait lui-même**, et toute
+  la greffe IA était morte *silencieusement* (l'IA étant non bloquante, aucune erreur visible).
+- **Piège Ollama** `[établi en séance]` : un Ollama **natif** sur l'hôte **masque silencieusement**
+  la publication du port du conteneur — Docker ne signale aucun conflit. On obtenait alors un
+  `curl localhost:11434` rassurant (les modèles de l'hôte) pendant que `ml → http://ollama:11434`
+  tombait en **404 model not found** sur un conteneur vide. Un healthcheck ne peut pas l'attraper :
+  `ollama list` prouve qu'un serveur répond, **pas qu'il a des modèles**. Décisions : publication
+  du port **retirée**, service `ollama` placé derrière un **profil** (voie de déploiement pur, avec
+  son healthcheck), et **`ML_OLLAMA_HOST` pointé par défaut sur l'Ollama de l'hôte**.
+- **Bout-en-bout vérifié en conteneur** : ticket créé → `/classify` + `/priority` 200 →
+  `SuggestionIA` (`Réseau` 0,727 / `HAUTE`) — l'IA **suggère**, le technicien accepte
+  (`categorie_id` reste nul, conforme au §8) ; upload → Cloudinary 201 → `/extract` 200 → texte
+  OCR restitué **exactement** (accents compris) → **reclassification `apres_ocr`** ; `/suggest`
+  ancré sur des sources citées dont une **réelle** (drapeau K3) ; `down`/`up` en **16 s** sans
+  retéléchargement des 4,3 Go.
+- **Effet de bord utile** : le build de production a révélé une **erreur TypeScript** dormante
+  du frontend (`TicketDetailPage.tsx`, `<Field>` sans `htmlFor` — label non associé à son
+  contrôle, TS2741). Invisible au serveur de développement, elle faisait échouer
+  `docker compose up --build`. Corrigée.
+- **Documentation technique / guide d'installation** : `README.md` (démarrage, deux
+  configurations Ollama, ports occupés, arrêt) et `ml/README.md` (contenu de l'image, montages,
+  hors-ligne, préchauffage). **Doc API (Swagger)** : `[À COMPLÉTER PAR FEDI]`
 - **Reste** : environnement de démonstration final, préparation soutenance. `[À COMPLÉTER PAR FEDI]`

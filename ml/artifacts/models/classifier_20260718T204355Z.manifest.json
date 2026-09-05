@@ -1,0 +1,47 @@
+{
+  "jalon": "J5",
+  "date": "2026-07-18T20:43:55Z",
+  "seed": 42,
+  "embedding_modele": "BAAI/bge-m3",
+  "device": "cpu",
+  "n_train": 852,
+  "n_train_fit": 724,
+  "n_dev": 128,
+  "dev_size": 0.15,
+  "n_gold": 102,
+  "n_externe": 46,
+  "modele_production": "EmbeddingLogReg (LogReg non calibrée)",
+  "artefact": "classifier_20260718T204355Z.joblib",
+  "classes": [
+    "Accès",
+    "Autre",
+    "Logiciel",
+    "Matériel",
+    "Réseau"
+  ],
+  "gap_production": {
+    "modele": "LogReg (embeddings bge-m3)",
+    "f1_synth": 0.9438340142381063,
+    "f1_reel": 0.4380329611908559,
+    "ecart": 0.5058010530472504,
+    "acc_synth": 0.9509803921568627,
+    "acc_reel": 0.5
+  },
+  "ece_production": {
+    "variante": "Non calibré",
+    "ece_synth": 0.257,
+    "ece_reel": 0.054
+  },
+  "abstention": {
+    "cible_precision": 0.8,
+    "seuil": 0.3,
+    "cov_dev": 1.0,
+    "prec_dev": 0.9609375,
+    "cov_gold": 1.0,
+    "prec_gold": 0.9509803921568627,
+    "cov_ext": 0.8695652173913043,
+    "prec_ext": 0.525
+  },
+  "note_calibration": "NON calibrée en prod : calibrer sur dev synthétique dégrade l'ECE réel.",
+  "note_abstention": "Seuil paramétrable NON figé : réglage sur dev synthétique inopérant (J9 = dev réel)."
+}

@@ -5,8 +5,21 @@ __pycache__/
 
 # Artefacts générés — le corpus versionné n'est PAS committé ici (volumineux,
 # régénérable) ; seul le gold set relu à la main le sera (J2), sous un chemin dédié.
-artifacts/
+artifacts/*
 !artifacts/.gitkeep
+
+# EXCEPTION — le classifieur figé J5 et son manifeste SONT versionnés (43,7 Ko).
+# Sans eux, un dépôt fraîchement cloné donne un `artifacts/` vide : /classify
+# répond 503 et /modele ne connaît aucune classe, alors que toute la pile démarre
+# « normalement ». Un livrable doit être fonctionnel au clonage.
+# Règles en cascade : Git ne peut pas ré-inclure un fichier si un répertoire parent
+# est exclu — il faut donc désexclure `models/` avant d'y désexclure des fichiers.
+!artifacts/models/
+artifacts/models/*
+!artifacts/models/classifier_*.joblib
+!artifacts/models/classifier_*.manifest.json
+# Les CANDIDATS du flywheel restent exclus : produits par /reentrainer, non déployés,
+# régénérables. Idem embeddings, corpus, caches et rapports datés.
 
 # Secrets
 .env

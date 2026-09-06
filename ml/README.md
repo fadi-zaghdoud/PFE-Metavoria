@@ -19,20 +19,26 @@ générateur, l'entraînement (J5) et le flywheel (J9) s'appuient sur cette list
 
 ## Prérequis
 
+Les commandes ci-dessous ne concernent que le travail **hors conteneur** (jalons,
+harnais d'évaluation, notebooks). Pour simplement faire tourner le service,
+`docker compose up -d` suffit — voir « Exécution en conteneur » plus bas.
+
 ```bash
-# 1. Base + Ollama (depuis la racine du repo)
-docker compose up -d postgres ollama
-cd backend && npm run db:seed   # seede les 5 catégories du CDC
+# 1. Infrastructure (depuis la racine du repo). `docker compose up -d` provisionne
+#    automatiquement les modèles LLM (ollama-prefetch) et sème les 5 catégories du
+#    CDC au démarrage du backend — il n'y a plus d'étape manuelle.
+docker compose up -d postgres ollama backend
 
-# 2. Modèle LLM (une fois, ~9 Go)
-docker exec smart-ticketing-ollama ollama pull qwen2.5:14b
-docker exec smart-ticketing-ollama ollama pull qwen2.5:7b   # fallback
-
-# 3. Environnement Python
+# 2. Environnement Python local
 cd ml && cp .env.example .env
 python -m venv .venv && . .venv/Scripts/activate   # (Windows) ; Linux : source .venv/bin/activate
 pip install -e .
 ```
+
+> En local hors Docker, pointe `OLLAMA_HOST` sur le serveur que tu utilises :
+> `http://localhost:11434` pour un Ollama natif, ou le port publié si tu en
+> exposes un. Le conteneur `ollama` de la pile n'expose **délibérément aucun
+> port** (voir le README racine).
 
 ## J1 — Génération du corpus synthétique
 

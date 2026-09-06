@@ -10,10 +10,12 @@ Projet de Fin d'Études (PFE) — Metavoria.
 |---|---|
 | Frontend | React 19 + TypeScript + TailwindCSS 4 + Vite, React Router, Zustand |
 | Backend | Node.js + Express 5 + TypeScript, architecture en couches (routes → controllers → services → repositories) |
-| Base de données | PostgreSQL 17 + extension **pgvector** (recherche vectorielle, module IA à venir) |
+| Base de données | PostgreSQL 17 + extension **pgvector** (recherche vectorielle : embeddings 1024d, index HNSW) |
 | ORM | Prisma 7 (driver adapter `@prisma/adapter-pg`) |
 | Auth | JWT + bcrypt, RBAC (Employé / Technicien / Administrateur) |
-| Conteneurisation | Docker + Docker Compose |
+| Module IA | Python + FastAPI ; `bge-m3` (embeddings, auto-hébergé), `bge-reranker-v2-m3`, scikit-learn (classification), Tesseract (OCR `fra`) |
+| LLM local | Ollama + `qwen2.5:7b` (défaut) / `qwen2.5:14b` — aucun appel d'API externe |
+| Conteneurisation | Docker + Docker Compose (pile autonome : 7 services, dont 2 provisionneurs one-shot) |
 
 ## Structure du repo
 
@@ -38,84 +40,185 @@ Projet de Fin d'Études (PFE) — Metavoria.
 │       ├── store/         # État global (Zustand)
 │       ├── features/auth/ # Appels API liés à l'authentification
 │       └── lib/           # Client HTTP générique
-└── docker-compose.yml
+├── ml/                  # Module IA (Python) — service FastAPI + harnais
+│   ├── smart_ticketing_ml/
+│   │   ├── service/       # API FastAPI, embeddings, reranker, OCR, provisionnement
+│   │   ├── retrieval/     # Recherche hybride (pgvector + full-text), RAG
+│   │   ├── training/      # Classifieur figé (embeddings + LogReg)
+│   │   ├── flywheel/      # Réentraînement et garde de déploiement
+│   │   ├── eval/          # Harnais d'évaluation et métriques
+│   │   └── priority/      # Scorecard de priorité (glass-box)
+│   ├── artifacts/         # Classifieur versionné ; le reste est régénérable
+│   ├── gold/              # Jeu de test scellé
+│   └── requirements.lock  # Versions figées (voir ml/README.md)
+├── docker-compose.yml       # Pile complète
+└── docker-compose.gpu.yml   # Surcouche GPU optionnelle
 ```
 
 ## Prérequis
 
-- Node.js ≥ 20
-- Docker Desktop (avec Docker Compose)
-- **Ollama** installé sur la machine (le service IA s'y adresse par défaut ; voir
-  « LLM local » plus bas pour la variante 100 % conteneurisée)
-- ~8 Go d'espace disque pour les modèles (4,3 Go d'embeddings + le LLM)
+- **Docker Desktop ou Docker Engine**, avec Docker Compose. C'est le **seul**
+  prérequis de la pile : ni Node, ni Python, ni Ollama à installer sur le serveur.
+- **~35 Go d'espace disque** : 17 Go de modèles (13 Go de LLM + 4,3 Go
+  d'embeddings), ~11 Go d'images, le reste pour la base et la marge.
+- Une connexion réseau **au premier démarrage uniquement** (voir plus bas).
+- Node.js ≥ 20 seulement pour le développement hors Docker.
 
-## Démarrage rapide avec Docker (recommandé)
+## Déploiement — procédure complète
+
+### 1. Configuration
 
 ```bash
+git clone <dépôt> && cd PFE-Metavoria
 cp .env.example .env
 ```
 
-Renseigne ensuite dans `.env` : `JWT_SECRET` (≥ 32 caractères aléatoires) et, si tu veux
-les pièces jointes, les trois clés `CLOUDINARY_*`. Puis :
+Trois blocs à renseigner dans `.env` :
+
+| Variable | Obligatoire | Rôle |
+|---|---|---|
+| `JWT_SECRET` | **oui** | ≥ 32 caractères aléatoires. `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"` |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | fortement conseillé | créent le premier administrateur (voir garde-fous ci-dessous) |
+| `CLOUDINARY_*` | si pièces jointes | sans elles l'application démarre, mais l'upload est désactivé — donc pas d'OCR |
+| `SMTP_*` | si e-mails | réinitialisation de mot de passe |
+
+**Les trois garde-fous de l'amorçage administrateur**, à connaître avant de
+remplir ces variables :
+
+1. **Aucun identifiant par défaut** n'est livré avec le produit. Variables vides
+   = aucun compte créé.
+2. **Amorçage, pas réinitialisation** : dès qu'un administrateur existe en base,
+   ces variables n'ont plus **aucun** effet. Elles ne permettent donc pas de
+   reprendre la main sur une instance en service.
+3. **12 caractères minimum**, sinon le démarrage échoue explicitement.
+
+### 2. Démarrage
 
 ```bash
 docker compose up -d --build
 ```
+
+C'est tout. La pile est **autonome** : elle télécharge et vérifie elle-même ses
+modèles, applique ses migrations et sème sa base.
+
+### 3. Ce qui se passe au premier démarrage
+
+| Étape | Durée indicative |
+|---|---|
+| Construction des images (backend, frontend, service IA) | ~5 min |
+| `ollama-prefetch` — télécharge `qwen2.5:7b` puis `qwen2.5:14b` (13 Go), **puis vérifie** | ~65 min |
+| `ml-prefetch` — télécharge `bge-m3` + `bge-reranker-v2-m3` (4,3 Go), **puis vérifie** | ~80 min (en parallèle) |
+| `backend` — migrations Prisma, puis seed (5 catégories + administrateur) | ~10 s |
+| `ml` — préchauffage des trois modèles | ~15 s |
+
+**Comptez ~80 minutes au total**, dominées par les 17 Go de modèles et donc
+dépendantes de la bande passante. **Les démarrages suivants prennent ~30 s** :
+tout est en volume et plus rien n'est téléchargé.
+
+Les deux services de provisionnement ne se contentent pas de télécharger, ils
+**vérifient** — chargement réel des modèles, génération de contrôle. Un cache
+corrompu échoue donc au démarrage de la pile, pas au premier appel d'une
+démonstration. Ils sortent ensuite et le service IA ne démarre qu'après eux.
+
+### 4. Vérifier que le déploiement est sain
+
+```bash
+# 1. Les cinq services, dont trois avec healthcheck
+docker compose ps
+
+# 2. Provisionnement : les deux one-shots doivent être sortis en code 0
+docker compose logs ollama-prefetch ml-prefetch | tail -20
+
+# 3. Service IA : les trois modèles doivent être chargés (préchauffage)
+curl -s http://localhost:8000/sante
+#    -> "modele_charge": true pour embedding, reranker ET classifieur
+#    -> "tesseract_disponible": true, "langue": "fra"
+
+# 4. Base semée : les 5 catégories du CDC
+docker compose exec postgres psql -U postgres -d smart_ticketing -c "select nom from categories;"
+
+# 5. Classification de bout en bout
+curl -s -X POST http://localhost:8000/classify -H 'Content-Type: application/json'   -d '{"titre":"Connexion VPN impossible","description":"Le certificat du client VPN est refuse."}'
+#    -> {"categorie":"Réseau", ...}
+
+# 6. Application
+curl -s -o /dev/null -w '%{http_code}
+' http://localhost:5173/        # 200
+curl -s -o /dev/null -w '%{http_code}
+' http://localhost:5173/api/tickets  # 401 sans jeton
+```
+
+Adresses par défaut :
 
 - Frontend : http://localhost:5173
 - API backend : http://localhost:4000/api
 - Service IA (FastAPI) : http://localhost:8000/sante
 - PostgreSQL : localhost:5432
 
-**Au premier démarrage**, le service one-shot `ml-prefetch` télécharge les modèles
-Hugging Face (`bge-m3` + `bge-reranker-v2-m3`, **~4,3 Go**) dans le volume `hf-cache`,
-puis sort. Les démarrages suivants le retrouvent en cache : la pile remonte en ~15 s.
-C'est le **seul** moment où un accès réseau est attendu — ensuite le service IA charge
-ses modèles hors-ligne.
+### 5. LLM local — configuration par défaut et variante
 
-Les migrations Prisma sont appliquées automatiquement au démarrage du conteneur `backend`.
+Le service IA utilise un LLM local pour la génération RAG (`/suggest`) et les
+résumés du fil (`/summarize`).
 
-### LLM local (Ollama)
+**Par défaut : Ollama conteneurisé.** Rien à installer, rien à configurer — le
+service `ollama` démarre avec la pile et `ollama-prefetch` y provisionne les
+modèles. C'est la configuration de **livraison** : elle fonctionne sur un serveur
+nu, y compris sous Linux.
 
-Le service IA utilise un LLM local pour la génération RAG (`/suggest`) et les résumés.
-Deux configurations, au choix :
+Le modèle par défaut est **`qwen2.5:7b`**, retenu sur mesures (voir le journal
+technique, Phase 7) : il tient le budget de latence **partout**, GPU ou non, et
+sa qualité s'est révélée au niveau du 14b sur les deux tâches du produit — qui
+sont de la synthèse cadrée, le RAG faisant le travail de recherche. Le `14b`
+reste provisionné comme option.
 
-**A. Ollama sur la machine hôte** (défaut) — réutilise les modèles déjà installés :
+> Le service `ollama` est volontairement **sans port publié**. Publier `11434`
+> alors qu'un Ollama natif écouterait déjà dessus ne produit **aucune erreur
+> Docker** : la liaison est silencieusement masquée par le processus natif, et le
+> service IA se retrouve à interroger un conteneur vide (`404 model not found`)
+> pendant qu'un `curl localhost:11434` paraît parfaitement normal. Seul le
+> service IA a besoin d'Ollama, et il l'atteint par le réseau interne.
 
-```bash
-ollama pull qwen2.5:14b
-ollama pull qwen2.5:7b     # repli
-```
-
-**B. Ollama conteneurisé** (déploiement sur un serveur sans Ollama installé) :
-
-```bash
-# dans .env :  ML_OLLAMA_HOST=http://ollama:11434
-docker compose --profile ollama up -d ollama
-docker compose --profile ollama exec ollama ollama pull qwen2.5:14b
-docker compose --profile ollama exec ollama ollama pull qwen2.5:7b
-```
-
-> Le service `ollama` est volontairement **sans port publié**. Publier `11434` alors
-> qu'un Ollama natif écoute déjà dessus ne produit aucune erreur Docker : la liaison
-> est silencieusement masquée, et le service IA se retrouve à interroger un conteneur
-> vide (`404 model not found`) pendant qu'un `curl localhost:11434` paraît normal.
-> Seul le service IA a besoin d'Ollama, et il l'atteint par le réseau interne.
-
-### Arrêt
+**Variante de développement — Ollama de la machine.** Si Ollama est déjà installé
+avec ses modèles, on évite de retélécharger 13 Go :
 
 ```bash
-docker compose down       # arrête la pile (données et modèles conservés)
-docker compose down -v    # + supprime la base ET le cache des modèles (4,3 Go à retélécharger)
+# dans .env
+ML_OLLAMA_HOST=http://host.docker.internal:11434
 ```
 
-### Ports déjà occupés
+⚠️ **À ne pas utiliser en livraison** : `host.docker.internal` ne résout pas sur
+un serveur Linux sans `extra_hosts: host-gateway`. La pile échouerait précisément
+là où elle est censée être déployée.
 
-Si un backend ou un frontend tourne déjà en natif, décale les ports publiés :
+### 6. Accélération GPU (optionnelle)
+
+Sur une machine dotée d'un GPU NVIDIA et du NVIDIA Container Toolkit :
 
 ```bash
-BACKEND_PORT=4001 FRONTEND_PORT=5174 docker compose up -d
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 ```
+
+Fichier **séparé** à dessein : un bloc `deploy.resources.devices` ne se dégrade
+pas sur une machine sans GPU — il **empêche le conteneur de démarrer**. Le compose
+de base reste donc portable, le GPU est un accélérateur, pas un prérequis.
+
+### 7. Arrêt et remise à zéro
+
+```bash
+docker compose down       # arrête la pile ; base et modèles CONSERVÉS
+docker compose down -v    # + supprime la base ET les 17 Go de modèles
+```
+
+### 8. Ports déjà occupés
+
+Si un service tourne déjà en natif sur les ports par défaut :
+
+```bash
+POSTGRES_PORT=5433 BACKEND_PORT=4001 FRONTEND_PORT=5174 ML_PORT=8001   docker compose up -d
+```
+
+> Une seule instance de la pile peut tourner à la fois sur une machine : les noms
+> de conteneurs sont fixés dans le compose (`container_name`). `[dette connue]`
 
 ## Développement local (hors Docker)
 
@@ -192,19 +295,34 @@ Sécurité : mots de passe bcrypt (cost 12) avec politique de complexité (8+ ca
 
 ## État d'avancement
 
-Couvert à ce stade :
+**Livré :**
 
-- ✅ Authentification JWT complète (inscription, connexion, RBAC, rate limiting)
-- ✅ Réinitialisation de mot de passe par code OTP + gestion du profil
-- ✅ Gestion des utilisateurs par l'administrateur (rôles, activation/désactivation)
+- ✅ Authentification JWT (inscription, connexion, RBAC, jetons courts + refresh rotatif, rate limiting)
+- ✅ Réinitialisation de mot de passe par code OTP, gestion du profil, invitation et activation de compte
+- ✅ Administration des utilisateurs (rôles, activation/désactivation) et des **catégories**
+- ✅ Cycle de vie complet des tickets : création, affectation, prise en charge, résolution,
+  satisfaction, clôture, recatégorisation, commentaires, historique d'événements, notifications
+- ✅ **Pièces jointes** (PDF/PNG/JPG, ≤ 10 Mo) avec **OCR local** (Tesseract, pack `fra`)
+- ✅ **Module IA complet** : classification automatique de catégorie, priorisation par scorecard
+  glass-box, suggestion de solution par **RAG** (recherche hybride pgvector + full-text, reranker,
+  génération citée avec abstention), résumé de fil — le tout **100 % local**, sans appel d'API externe
+- ✅ **Flywheel** : capture des labels validés, réentraînement supervisé et garde de déploiement
+  qui refuse un modèle non meilleur sur le jeu réel
 - ✅ Design system frontend (sidebar, palette ⌘K, toasts, composants réutilisables)
-- ✅ Schéma de base de données pour toutes les entités du MCD
-- ✅ Conteneurisation Docker complète et validée — **y compris le service IA Python**
-  (image dédiée, modèles en volume, fonctionnement hors-ligne, préchauffage au démarrage)
+- ✅ **Conteneurisation Docker autonome et prouvée sur serveur nu** : 7 services, provisionnement
+  vérifié des modèles, fonctionnement hors-ligne après le premier démarrage
 
-À venir (itérations suivantes, voir le cahier des charges) :
+**À venir** (voir le cahier des charges) :
 
-- Gestion complète du cycle de vie des tickets (création, affectation, statuts, commentaires)
-- Module IA : classification automatique, priorisation, suggestions RAG
-- Tableau de bord analytique et rapports
-- Notifications, intégrations Slack/Teams
+- Tableau de bord analytique approfondi et rapports exportables
+- Intégrations externes (Slack / Teams)
+- Documentation d'API (Swagger)
+
+## Documentation
+
+- [`ml/README.md`](ml/README.md) — module IA : contenu de l'image, montages, fonctionnement
+  hors-ligne, préchauffage, jalons J1→J9
+- [`docs/journal-technique.md`](docs/journal-technique.md) — journal des décisions techniques,
+  mesures et arbitrages, phase par phase
+- [`docs/epic-4-module-ia-conception.md`](docs/epic-4-module-ia-conception.md) — document de
+  conception du module IA

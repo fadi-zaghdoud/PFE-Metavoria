@@ -1620,7 +1620,101 @@ demande explicite.
   du frontend (`TicketDetailPage.tsx`, `<Field>` sans `htmlFor` — label non associé à son
   contrôle, TS2741). Invisible au serveur de développement, elle faisait échouer
   `docker compose up --build`. Corrigée.
-- **Documentation technique / guide d'installation** : `README.md` (démarrage, deux
-  configurations Ollama, ports occupés, arrêt) et `ml/README.md` (contenu de l'image, montages,
-  hors-ligne, préchauffage). **Doc API (Swagger)** : `[À COMPLÉTER PAR FEDI]`
-- **Reste** : environnement de démonstration final, préparation soutenance. `[À COMPLÉTER PAR FEDI]`
+- **Documentation technique / guide d'installation** : `README.md` (prérequis, procédure de
+  déploiement complète, vérification, arrêt) et `ml/README.md` (contenu de l'image, montages,
+  hors-ligne, préchauffage).
+
+### Autonomie de la pile — Ollama conteneurisé (LIVRÉ 06/09/2026)
+
+- **Exigence** `[établi en séance]` : la partie DevOps du PFE impose une pile **livrable**,
+  fonctionnant sur un serveur nu **sans installation préalable**. La configuration précédente
+  s'adressait à un Ollama de la **machine hôte** — pratique en développement, mais
+  `host.docker.internal` **ne résout pas** sur un serveur Linux sans `extra_hosts: host-gateway` :
+  ce défaut aurait échoué précisément là où la pile est censée être déployée.
+- **Provisionnement des modèles LLM** : service one-shot `ollama-prefetch`, symétrique de
+  `ml-prefetch`. Un conteneur client jetable appelle `/api/pull` sur le serveur, qui télécharge
+  dans **son** volume (`OLLAMA_HOST` honoré — vérifié sur un modèle de 397 Mo AVANT d'amorcer le
+  volume, pour que la porte prouve quelque chose plutôt que de constater un no-op). Progression
+  journalisée tous les 10 %.
+- **Décision — la garantie ne vient pas du healthcheck.** `ollama list` prouve qu'un serveur
+  répond, **pas qu'il détient les modèles** : un serveur sain mais vide rend **404 « model not
+  found »**. La vraie garantie est la **sortie en code 0** du provisionnement, dont `ml` dépend par
+  `service_completed_successfully`. Le seeder vérifie donc en deux étages : `/api/show` par modèle,
+  puis une **génération réelle** sur le principal. Les trois chemins ont été éprouvés : cache chaud
+  (exit 0), modèle inexistant au registre (exit 1), vérification seule contre un serveur vide
+  (exit 1). Bâti sur l'image du service IA — l'image `ollama/ollama` ne contient **ni python ni
+  curl**, la vérification par l'API y était donc impossible.
+- **Piège du port, démasqué en séance** : un Ollama **natif** sur l'hôte **masque silencieusement**
+  la publication du port du conteneur — Docker ne signale **aucun conflit**. On obtenait un
+  `curl localhost:11434` rassurant (les modèles de l'hôte) pendant que `ml` vers
+  `http://ollama:11434` tombait en 404 sur un conteneur vide. Publication **retirée** : seul `ml` a
+  besoin d'Ollama, par le réseau interne.
+
+### Choix du modèle de génération — `qwen2.5:7b` (LIVRÉ 06/09/2026)
+
+- **Méthode** : mesures de `/suggest` et `/summarize` en conteneur, budget de référence
+  `IA_SUGGESTION_TIMEOUT_MS` = 60 s.
+- **Deux biais de mesure identifiés et corrigés** avant toute conclusion. (1) **Contention
+  mémoire** : les premières mesures avaient **deux modèles résidents** (14b 9 Go + 7b 4,7 Go) sur
+  une machine de 15,5 Gio, ce qui triplait les latences. (2) **Effet du premier appel** :
+  systématique sur les deux modèles, la première génération après un chargement coûte ~3× les
+  suivantes, alors même que `/api/ps` déclare le modèle résident — un `num_predict:1` charge les
+  poids mais ne réchauffe pas le chemin d'inférence.
+- **Matrice corrigée** (CPU, un seul modèle résident, mesures répétées) :
+
+  | | `qwen2.5:7b` | `qwen2.5:14b` |
+  |---|---|---|
+  | 1er appel après chargement | 32,3 s | **70,2 s** (hors budget) |
+  | régime établi | **9,5 s** | 32,4 s |
+  | coût par mot généré | 525 ms | 810 ms |
+
+- **Décision : `7b` par défaut.** Motif retenu — **la garantie, pas la moyenne** : le 7b ne dépasse
+  **jamais** le budget, y compris au premier appel, là où le 14b le dépasse à chaque chargement.
+- **Comparaison de QUALITÉ sur les mêmes entrées** (n=1 par tâche, indicatif) : sur la suggestion
+  RAG, le 7b s'est révélé **plus concret** (« réinitialiser le mot de passe du profil VPN via la
+  console d'administration Active Directory », ancré sur 2 sources) que le 14b, resté vague et
+  conseillant de « contacter le service IT » — conseil circulaire pour un ticket IT — sans jamais
+  mentionner le certificat. Sur le résumé, égalité, le 7b retenant même la date précise omise par
+  le 14b. **Explication plausible** : les deux tâches du produit sont de la **synthèse cadrée**, le
+  RAG faisant le travail de recherche — régime où l'écart entre tailles de modèles se resserre.
+  `[à confirmer par le juge J6 sur échantillon — non fait, jalon d'évaluation]`
+- **`OLLAMA_KEEP_ALIVE=-1`** : le chargement n'est payé qu'une fois, au démarrage.
+- **`docker-compose.gpu.yml`** en surcouche séparée : un bloc `deploy.resources.devices` **ne se
+  dégrade pas** sur une machine sans GPU, il empêche le conteneur de démarrer. Le compose de base
+  doit rester portable. `[chiffres GPU de la séance entachés par la contention mémoire — à
+  re-mesurer proprement s'ils vont au rapport]`
+
+### Test « serveur vierge » et trou de livraison comblé (LIVRÉ 06/09/2026)
+
+- **Protocole** : projet Compose distinct (`-p livraison-test`), **volumes neufs**, ports décalés —
+  téléchargement **réel** de 17 Go sans rien emprunter à la machine. Durées mesurées : `7b`
+  1 361 s, `14b` 2 549 s, `bge-m3` 4 223 s, reranker 611 s. **Premier démarrage ≈ 80 min**
+  (dominé par les modèles, dépend de la bande passante) ; **démarrages suivants ≈ 30 s**.
+- **Ce que le test a trouvé** — et c'est sa vraie valeur : la pile démarrait avec **sept services
+  `healthy` et ZÉRO catégorie en base**. Donc aucun ticket catégorisable, une administration vide,
+  et `fetch_categories()` en échec côté IA. **Aucune alerte nulle part** — exactement la panne
+  silencieuse que cette phase traque.
+- **Cause racine : l'EMPLACEMENT du fichier**, pas la commande de démarrage. `tsconfig.json` ne
+  compile que `src/**/*.ts` ; sous `prisma/`, le seed n'existait qu'en TypeScript et exigeait
+  `tsx`, une **devDependency absente de l'image de production** (vérifié : seul `prisma` figure
+  dans `node_modules/.bin`, et `dist/` ne contenait aucun seed). `npx prisma db seed` aurait donc
+  échoué sur le serveur.
+- **Correctif** : `prisma/seed.ts` devient `src/seed.ts` (il entre ainsi dans le build existant et
+  produit `dist/seed.js`, exécutable par `node` seul) ; la commande du backend enchaîne
+  **migrations → seed → serveur**. Le `&&` est délibéré : un seed en échec **empêche le serveur de
+  démarrer** plutôt que de servir une base incomplète.
+- **Amorçage de l'administrateur** par `ADMIN_EMAIL`/`ADMIN_PASSWORD`, avec trois garde-fous :
+  **aucun identifiant par défaut** livré avec le produit ; **amorçage et non réinitialisation** —
+  dès qu'un administrateur existe, ces variables sont sans effet, elles ne peuvent donc pas servir
+  à reprendre la main sur une instance en service (vérifié : un `ADMIN_EMAIL` différent au
+  redémarrage ne crée rien) ; **12 caractères minimum**.
+- **Vérifié sur la pile neuve** : 5 catégories, administrateur créé **et connecté** (200 + jeton,
+  donc hachage exploitable), `fetch_categories` opérationnel, `/classify` servi par le classifieur
+  **désormais versionné** (43 Ko committés — sans lui, `artifacts/` étant gitignoré, un dépôt
+  fraîchement cloné donnait un 503), et un premier ticket enrichi de bout en bout
+  (`CLASSIFICATION « Matériel » 0,479` et `PRIORISATION`).
+- **Dette assumée et documentée** : `container_name` fixé en dur empêche deux instances de la pile
+  de coexister sur une machine ; le préchauffage du seeder ne couvre pas le contexte long, le tout
+  premier `/suggest` reste à 26,2 s contre 9,5 s ensuite — dans le budget, donc non traité.
+- **Reste** : environnement de démonstration final, doc API (Swagger), préparation soutenance.
+  `[À COMPLÉTER PAR FEDI]`

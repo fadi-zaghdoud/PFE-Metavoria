@@ -1,0 +1,22 @@
+# =============================================================================
+#  Surcouche GPU — à activer UNIQUEMENT sur une machine dotée d'un GPU NVIDIA
+#  et du NVIDIA Container Toolkit :
+#
+#      docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+#
+#  Pourquoi un fichier séparé plutôt qu'un réglage dans le compose principal :
+#  un bloc `deploy.resources.devices` NE DÉGRADE PAS sur une machine sans GPU —
+#  le conteneur refuse de démarrer. Le compose de base doit rester portable
+#  (il est la voie de LIVRAISON, qui doit fonctionner sur un serveur nu) ; le
+#  GPU est un accélérateur optionnel, pas un prérequis.
+# =============================================================================
+
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

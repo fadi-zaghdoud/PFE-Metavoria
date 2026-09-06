@@ -34,13 +34,12 @@ services:
     image: ollama/ollama:latest
     container_name: smart-ticketing-ollama
     restart: unless-stopped
-    # Service OPTIONNEL : ne démarre qu'avec `docker compose --profile ollama up`.
-    # Par défaut, le service IA s'adresse à l'Ollama de la MACHINE HÔTE
-    # (ML_OLLAMA_HOST) : les modèles y sont déjà tirés, donc zéro téléchargement.
-    # Ce service reste la voie de DÉPLOIEMENT PUR (serveur sans Ollama installé) ;
-    # il faut alors y tirer les modèles une fois :
-    #   docker compose --profile ollama exec ollama ollama pull qwen2.5:14b
-    profiles: ["ollama"]
+    # LLM local de la pile — démarré PAR DÉFAUT. La stack doit être autonome et
+    # livrable : `docker compose up` doit suffire sur un serveur nu, sans aucune
+    # installation préalable. S'adresser à un Ollama de la machine hôte
+    # (host.docker.internal) n'est PAS une option de livraison — ce nom ne résout
+    # pas sur un serveur Linux sans `extra_hosts: host-gateway`, et la pile
+    # échouerait donc silencieusement là où elle est censée être déployée.
     # PAS de `ports:` — volontairement. Publier 11434 alors qu'un Ollama natif
     # écoute déjà dessus ne produit AUCUNE erreur Docker : la liaison est
     # silencieusement masquée par le processus natif. On obtenait alors un
@@ -48,6 +47,13 @@ services:
     # `ml -> http://ollama:11434` tombait en « model not found » (404) sur un
     # conteneur vide. Seul `ml` a besoin d'Ollama, et il l'atteint par le réseau
     # interne : la publication n'apportait rien et créait l'ambiguïté.
+    environment:
+      # Garde le modèle résident entre deux requêtes. Sans ça, Ollama le décharge
+      # au bout de 5 min et la requête suivante repaie le chargement — mesuré :
+      # 83,0 s à froid contre 62,8 s à chaud pour un même /suggest. Le
+      # provisionnement charge déjà le modèle au démarrage de la pile ; ce réglage
+      # fait que ce chargement ne se produit qu'UNE fois.
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:--1}
     volumes:
       - ollama-data:/root/.ollama
     # Sans healthcheck, `depends_on: ollama` ne garantit RIEN : le conteneur est
@@ -55,14 +61,38 @@ services:
     # /suggest ou /summarize échouent juste après un `up` — précisément le genre
     # d'incident qui survient en démonstration. `ollama list` interroge le serveur
     # local : il ne rend 0 que lorsque celui-ci répond vraiment.
-    # NB : cela ne dit rien des MODÈLES, qui doivent être tirés une fois (voir
-    # OLLAMA_MODEL dans .env.example) — un serveur sain sans modèle répondra 404.
+    # NB : cela ne dit rien des MODÈLES — un serveur sain mais vide répond 404
+    # « model not found ». C'est le rôle du service `ollama-prefetch` ci-dessous,
+    # dont la sortie en code 0 est la VRAIE garantie de disponibilité des modèles.
     healthcheck:
       test: ["CMD", "ollama", "list"]
       interval: 10s
       timeout: 5s
       retries: 12
       start_period: 30s
+
+  # ── Provisionnement des modèles LLM (one-shot) ─────────────────────────────
+  # Tire qwen2.5:14b + 7b dans le volume `ollama-data` puis SORT. Ne se contente
+  # pas de télécharger : il VÉRIFIE (présence via /api/show, puis une génération
+  # d'UN jeton sur le modèle principal). Un blob corrompu ou un modèle manquant
+  # fait donc échouer le DÉMARRAGE de la pile, pas la démonstration.
+  # Idempotent : ~2 s sur un volume déjà peuplé. Premier démarrage : ~13 Go, la
+  # progression est journalisée tous les 10 %.
+  # Bâti sur l'image du service IA (et non sur `ollama/ollama`, qui ne contient
+  # ni python ni curl et ne permet donc aucune vérification par l'API).
+  ollama-prefetch:
+    build: ./ml
+    image: smart-ticketing-ia:latest
+    container_name: smart-ticketing-ollama-prefetch
+    restart: "no"
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_MODELES: ${OLLAMA_MODELES:-qwen2.5:7b qwen2.5:14b}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
+    command: ["python", "-m", "smart_ticketing_ml.service.ollama_prefetch"]
 
   # ── API backend (Express + Prisma) ──────────────────────────────────────────
   backend:
@@ -111,13 +141,22 @@ services:
       # ── Pièces jointes (J8bis lot A) ──────────────────────────────────────
       # Absentes, l'application démarre mais l'upload est DÉSACTIVÉ — donc aucune
       # pièce jointe à faire passer à l'OCR (/extract), et le lot B reste inerte.
+      # Amorçage de l'administrateur initial (sans effet si un admin existe déjà).
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+
       CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
       CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
     ports:
       - "${BACKEND_PORT:-4000}:4000"
-    # Applique les migrations au démarrage puis lance l'API
-    command: sh -c "npx prisma migrate deploy && node dist/server.js"
+    # Migrations, PUIS seed, PUIS l'API. Le seed est idempotent (upsert sur les
+    # catégories, amorçage de l'admin seulement si aucun n'existe) : le rejouer à
+    # chaque démarrage est sans effet de bord. Sans lui, un déploiement neuf
+    # démarre avec ZÉRO catégorie — application inutilisable alors que tous les
+    # services sont « healthy ». Le `&&` est délibéré : un seed en échec empêche
+    # le serveur de démarrer plutôt que de servir une base incomplète.
+    command: sh -c "npx prisma migrate deploy && node dist/seed.js && node dist/server.js"
 
   # ── Service IA (Epic 4) — microservice FastAPI Python ──────────────────────
   # Frontière §3.1 : Node envoie du TEXTE, reçoit du JSON. Le service ne touche
@@ -134,15 +173,21 @@ services:
       # /classify déclencherait un téléchargement de 4,3 Go au milieu d'une démo.
       ml-prefetch:
         condition: service_completed_successfully
-      # PAS de `depends_on: ollama` : ce service est derrière un profil et ne
-      # démarre pas par défaut (cf. plus haut). Une dépendance vers un service
-      # inactif ferait échouer `docker compose up`.
+      # Le serveur LLM doit répondre...
+      ollama:
+        condition: service_healthy
+      # ...ET détenir réellement les modèles. Le healthcheck d'Ollama ne prouve que
+      # le premier point ; c'est la sortie en code 0 du provisionnement qui prouve
+      # le second. Sans cette dépendance, /suggest et /summarize échoueraient en
+      # « model not found » juste après un `up`, sur une pile pourtant « saine ».
+      ollama-prefetch:
+        condition: service_completed_successfully
     environment:
       # Lecture des catégories + KB du RAG. `db.py` retire le `?schema=` propre à
       # Prisma, inconnu de libpq — l'URL peut donc être identique à celle du backend.
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-smart_ticketing}
-      OLLAMA_HOST: ${ML_OLLAMA_HOST:-http://host.docker.internal:11434}
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:14b}
+      OLLAMA_HOST: ${ML_OLLAMA_HOST:-http://ollama:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
       OLLAMA_MODEL_FALLBACK: ${OLLAMA_MODEL_FALLBACK:-qwen2.5:7b}
       # `cuda` en production si l'embed à la volée devient trop lent (Phase 7 :
       # changer d'hôte/de device ne change AUCUNE ligne de code applicatif).

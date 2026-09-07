@@ -57,6 +57,12 @@ const envSchema = z.object({
   SMTP_PASSWORD: z.string().optional(),
   SMTP_FROM: z.string().default('Smart Ticketing <no-reply@metavoria.tn>'),
 
+  // Amorçage de l'administrateur initial (déploiement). Optionnels : sans eux, le
+  // seed ne crée AUCUN compte — pas d'identifiants par défaut livrés avec le produit.
+  // N'ont d'effet que si la base ne contient encore aucun administrateur.
+  ADMIN_EMAIL: z.string().optional(),
+  ADMIN_PASSWORD: z.string().optional(),
+
   // Cloudinary — stockage des pièces jointes (J8bis). Optionnels au démarrage : sans eux,
   // l'app boote mais l'upload est désactivé (l'endpoint répond une erreur explicite).
   CLOUDINARY_CLOUD_NAME: z.string().optional(),

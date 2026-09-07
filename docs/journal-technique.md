@@ -1510,6 +1510,14 @@ demande explicite.
   vides → **422** ; `/extract` requis/invalide/type inconnu → **422**, trop volumineux → **413**).
 - **Résultat** : **suite rapide 51 passed / 2 deselected (5,7 s)** ; **complète 53 passed (25,6 s)** —
   les 2 `slow` (OCR Tesseract réel + `/classify` chargeant bge-m3) inclus.
+- **Mise à jour (03/09/2026)** : ces chiffres restent ceux du **27/08/2026**. La Phase A
+  (gestion des catégories) a depuis ajouté `test_modele_endpoint.py` : la suite compte
+  aujourd'hui **54 passed / 2 deselected** (rapide) et **56 passed** (complète). Chiffres
+  vérifiés **à l'identique sur l'hôte et dans le conteneur** lors de la dockerisation.
+- **Dépendance implicite révélée par le conteneur** : deux tests de `test_modele_endpoint.py`
+  assertent `infos["present"] is True` — ils lisent donc le **vrai manifeste** sous
+  `artifacts/models/`. Sans ce dossier monté, ils **échouent** (ils ne skippent pas). La suite
+  « offline » ne l'est donc pas tout à fait. `[à traiter en amélioration Phase 6]`
 - **Hors périmètre (assumé)** : le harnais d'**évaluation** (`eval/`, métriques sur datasets) existe
   déjà ; la **génération LLM réelle** (Ollama) et le **pont Node** (tsc + preuves écran) ne sont pas
   re-testés unitairement ici. Tests fonctionnels backend/frontend : `[À COMPLÉTER PAR FEDI]`
@@ -1538,9 +1546,175 @@ demande explicite.
   reste une perspective de production** (si le serveur a un GPU), documentée comme évolution
   possible.
 
-- **Ce qui existe déjà** `[reconstitué depuis Git]` : **conteneurisation Docker**
-  opérationnelle (`docker-compose.yml` : postgres+pgvector, backend, frontend nginx ;
-  service **ollama** ajouté pour le module IA). Migrations appliquées au démarrage
-  (`prisma migrate deploy`).
-- **Documentation technique / guide d'installation / doc API (Swagger)** : `[À COMPLÉTER PAR FEDI]`
-- **Reste** : environnement de démonstration final, préparation soutenance. `[À COMPLÉTER PAR FEDI]`
+- **Ce qui existait avant ce jalon** `[reconstitué depuis Git]` : `docker-compose.yml`
+  couvrant postgres+pgvector, backend, frontend nginx et un service **ollama** ; migrations
+  appliquées au démarrage (`prisma migrate deploy`). **Le module IA n'était pas dockerisé**
+  (ni `ml/Dockerfile`, ni service `ml`).
+
+### Dockerisation du service IA (LIVRÉ 03/09/2026)
+
+- **Objectif** : rendre le module IA déployable au même titre que le reste de la pile,
+  sans dégrader la reproductibilité des mesures ni la promesse §10 (« aucune donnée ne
+  sort de la machine »). Conduit **par étapes, chacune fermée par une porte de preuve**
+  (une commande, une sortie attendue) avant de passer à la suivante.
+- **Image** (`ml/Dockerfile`, 115 l.) : `python:3.12-slim` + **Tesseract avec le pack `fra`**
+  (OCR J8bis), **torch en build CPU** (`--index-url .../whl/cpu` — évite ~3 Go de wheels
+  `nvidia-*` inutiles), utilisateur **non-root**, healthcheck sur `/sante`, `WORKDIR /app`
+  (impératif : `predictors` et `reentrainer` résolvent `artifacts/…` et `gold/…` en relatif).
+  **1,92 Go** après purge de `torch/include` + `torch/test` (121 Mo, inutiles en inférence ;
+  les `.pyc` sont conservés, `PYTHONDONTWRITEBYTECODE=1` les empêcherait d'être régénérés).
+  Un **garde-fou de build** fait échouer l'image si `sklearn != 1.4.0`, si `torch` n'est pas
+  `+cpu`, ou si le pack `fra` manque.
+- **Décision — `requirements.lock` (55 paquets) plutôt que les bornes `>=`.** Motif **dur**,
+  découvert en vérifiant : le classifieur figé J5 est **picklé en scikit-learn 1.4.0**, or
+  `pyproject.toml` déclare `>=1.4` — une résolution libre installerait 1.7.x et le dépicklage
+  échouerait, `/classify` répondant 503. Le lock a dû aller **au-delà** des 7 paquets ML :
+  une résolution libre remontait `starlette` 0.36 → **1.6** (majeure) et `huggingface-hub`
+  0.23 → **0.36**, deux sauts qui changent le comportement de FastAPI et le chargement de
+  bge-m3. Résolu **en miroir de l'environnement de développement validé** (17/17 paquets
+  identiques, wheels Linux, `pip check` sans conflit). **Conséquence à retenir : monter
+  scikit-learn imposera un RÉENTRAÎNEMENT, pas un rebuild.**
+- **Preuve de reproductibilité** : le macro-F1 réel du modèle actif rejoué **dans le
+  conteneur** donne **0,4380**, contre 0,438 au manifeste J5. Le lock ne protège pas une
+  intention, il protège un nombre.
+- **Décision — chargement des modèles hors-ligne** (`config.source_modele`). Constat : réseau
+  coupé, bge-m3 ne chargeait **pas**, alors que tous ses poids étaient en cache. Cause lue
+  dans le code de la bibliothèque : `transformers` 4.40.2 (`utils/hub.py`, `has_file`) émet un
+  `requests.head` **brut** vers huggingface.co pour tester la présence de `model.safetensors` —
+  appel qui **ignore** `HF_HUB_OFFLINE`/`TRANSFORMERS_OFFLINE` (il ne passe pas par
+  `hf_hub_download`) et dont l'échec DNS n'est **pas** rattrapé (le `head()` est hors du `try`,
+  contrairement à ce que promet sa docstring). Compléter le cache était impossible :
+  **`BAAI/bge-m3` ne publie aucun safetensors** (404 sur le Hub) — le sondage est
+  structurellement sans réponse. Correctif : `has_file` court-circuite le réseau quand on lui
+  passe un **répertoire**, on résout donc le dossier du cache local et on le passe au chargeur.
+  **L'identifiant `BAAI/bge-m3` reste la provenance enregistrée en base**
+  (`tickets.embedding_modele`) : le backfill et sa détection « modèle changé » sont préservés.
+  *Vérifié* : `--network none`, DNS impossible, `/embed` `/classify` `/rerank` en 200 et suite
+  complète **56 passed**. Le §10 est désormais vrai **sans exception, démarrage compris**.
+- **Décision — préchauffage au démarrage** (`IA_WARMUP`). Le chargement paresseux faisait payer
+  au **premier** appel le coût du modèle. Mesuré : premier `/suggest` **71,1 s** (le reranker se
+  chargeait dans la requête) contre **25,6 s** et **21,2 s** ensuite — au-delà du budget de 60 s
+  du backend, qui l'aurait abandonné. Le préchauffage couvre donc bge-m3, le classifieur **et**
+  le reranker. *Note d'honnêteté : le raisonnement initial (« /suggest a 60 s, inutile de
+  préchauffer le reranker ») a été **invalidé par la mesure**.*
+- **Compose** : services **`ml`** et **`ml-prefetch`** (one-shot qui **charge** les deux modèles
+  — un cache corrompu échoue au démarrage de la pile, pas en pleine démonstration), volume
+  `hf-cache`, bind-mount `./ml/artifacts` (le candidat de `/reentrainer` apparaît côté hôte).
+  **12 variables manquaient au service `backend`** (14/26 fournies) : sans `SERVICE_IA_URL`, le
+  backend dockerisé retombait sur `http://127.0.0.1:8000` — **il s'appelait lui-même**, et toute
+  la greffe IA était morte *silencieusement* (l'IA étant non bloquante, aucune erreur visible).
+- **Piège Ollama** `[établi en séance]` : un Ollama **natif** sur l'hôte **masque silencieusement**
+  la publication du port du conteneur — Docker ne signale aucun conflit. On obtenait alors un
+  `curl localhost:11434` rassurant (les modèles de l'hôte) pendant que `ml → http://ollama:11434`
+  tombait en **404 model not found** sur un conteneur vide. Un healthcheck ne peut pas l'attraper :
+  `ollama list` prouve qu'un serveur répond, **pas qu'il a des modèles**. Décisions : publication
+  du port **retirée**, service `ollama` placé derrière un **profil** (voie de déploiement pur, avec
+  son healthcheck), et **`ML_OLLAMA_HOST` pointé par défaut sur l'Ollama de l'hôte**.
+- **Bout-en-bout vérifié en conteneur** : ticket créé → `/classify` + `/priority` 200 →
+  `SuggestionIA` (`Réseau` 0,727 / `HAUTE`) — l'IA **suggère**, le technicien accepte
+  (`categorie_id` reste nul, conforme au §8) ; upload → Cloudinary 201 → `/extract` 200 → texte
+  OCR restitué **exactement** (accents compris) → **reclassification `apres_ocr`** ; `/suggest`
+  ancré sur des sources citées dont une **réelle** (drapeau K3) ; `down`/`up` en **16 s** sans
+  retéléchargement des 4,3 Go.
+- **Effet de bord utile** : le build de production a révélé une **erreur TypeScript** dormante
+  du frontend (`TicketDetailPage.tsx`, `<Field>` sans `htmlFor` — label non associé à son
+  contrôle, TS2741). Invisible au serveur de développement, elle faisait échouer
+  `docker compose up --build`. Corrigée.
+- **Documentation technique / guide d'installation** : `README.md` (prérequis, procédure de
+  déploiement complète, vérification, arrêt) et `ml/README.md` (contenu de l'image, montages,
+  hors-ligne, préchauffage).
+
+### Autonomie de la pile — Ollama conteneurisé (LIVRÉ 06/09/2026)
+
+- **Exigence** `[établi en séance]` : la partie DevOps du PFE impose une pile **livrable**,
+  fonctionnant sur un serveur nu **sans installation préalable**. La configuration précédente
+  s'adressait à un Ollama de la **machine hôte** — pratique en développement, mais
+  `host.docker.internal` **ne résout pas** sur un serveur Linux sans `extra_hosts: host-gateway` :
+  ce défaut aurait échoué précisément là où la pile est censée être déployée.
+- **Provisionnement des modèles LLM** : service one-shot `ollama-prefetch`, symétrique de
+  `ml-prefetch`. Un conteneur client jetable appelle `/api/pull` sur le serveur, qui télécharge
+  dans **son** volume (`OLLAMA_HOST` honoré — vérifié sur un modèle de 397 Mo AVANT d'amorcer le
+  volume, pour que la porte prouve quelque chose plutôt que de constater un no-op). Progression
+  journalisée tous les 10 %.
+- **Décision — la garantie ne vient pas du healthcheck.** `ollama list` prouve qu'un serveur
+  répond, **pas qu'il détient les modèles** : un serveur sain mais vide rend **404 « model not
+  found »**. La vraie garantie est la **sortie en code 0** du provisionnement, dont `ml` dépend par
+  `service_completed_successfully`. Le seeder vérifie donc en deux étages : `/api/show` par modèle,
+  puis une **génération réelle** sur le principal. Les trois chemins ont été éprouvés : cache chaud
+  (exit 0), modèle inexistant au registre (exit 1), vérification seule contre un serveur vide
+  (exit 1). Bâti sur l'image du service IA — l'image `ollama/ollama` ne contient **ni python ni
+  curl**, la vérification par l'API y était donc impossible.
+- **Piège du port, démasqué en séance** : un Ollama **natif** sur l'hôte **masque silencieusement**
+  la publication du port du conteneur — Docker ne signale **aucun conflit**. On obtenait un
+  `curl localhost:11434` rassurant (les modèles de l'hôte) pendant que `ml` vers
+  `http://ollama:11434` tombait en 404 sur un conteneur vide. Publication **retirée** : seul `ml` a
+  besoin d'Ollama, par le réseau interne.
+
+### Choix du modèle de génération — `qwen2.5:7b` (LIVRÉ 06/09/2026)
+
+- **Méthode** : mesures de `/suggest` et `/summarize` en conteneur, budget de référence
+  `IA_SUGGESTION_TIMEOUT_MS` = 60 s.
+- **Deux biais de mesure identifiés et corrigés** avant toute conclusion. (1) **Contention
+  mémoire** : les premières mesures avaient **deux modèles résidents** (14b 9 Go + 7b 4,7 Go) sur
+  une machine de 15,5 Gio, ce qui triplait les latences. (2) **Effet du premier appel** :
+  systématique sur les deux modèles, la première génération après un chargement coûte ~3× les
+  suivantes, alors même que `/api/ps` déclare le modèle résident — un `num_predict:1` charge les
+  poids mais ne réchauffe pas le chemin d'inférence.
+- **Matrice corrigée** (CPU, un seul modèle résident, mesures répétées) :
+
+  | | `qwen2.5:7b` | `qwen2.5:14b` |
+  |---|---|---|
+  | 1er appel après chargement | 32,3 s | **70,2 s** (hors budget) |
+  | régime établi | **9,5 s** | 32,4 s |
+  | coût par mot généré | 525 ms | 810 ms |
+
+- **Décision : `7b` par défaut.** Motif retenu — **la garantie, pas la moyenne** : le 7b ne dépasse
+  **jamais** le budget, y compris au premier appel, là où le 14b le dépasse à chaque chargement.
+- **Comparaison de QUALITÉ sur les mêmes entrées** (n=1 par tâche, indicatif) : sur la suggestion
+  RAG, le 7b s'est révélé **plus concret** (« réinitialiser le mot de passe du profil VPN via la
+  console d'administration Active Directory », ancré sur 2 sources) que le 14b, resté vague et
+  conseillant de « contacter le service IT » — conseil circulaire pour un ticket IT — sans jamais
+  mentionner le certificat. Sur le résumé, égalité, le 7b retenant même la date précise omise par
+  le 14b. **Explication plausible** : les deux tâches du produit sont de la **synthèse cadrée**, le
+  RAG faisant le travail de recherche — régime où l'écart entre tailles de modèles se resserre.
+  `[à confirmer par le juge J6 sur échantillon — non fait, jalon d'évaluation]`
+- **`OLLAMA_KEEP_ALIVE=-1`** : le chargement n'est payé qu'une fois, au démarrage.
+- **`docker-compose.gpu.yml`** en surcouche séparée : un bloc `deploy.resources.devices` **ne se
+  dégrade pas** sur une machine sans GPU, il empêche le conteneur de démarrer. Le compose de base
+  doit rester portable. `[chiffres GPU de la séance entachés par la contention mémoire — à
+  re-mesurer proprement s'ils vont au rapport]`
+
+### Test « serveur vierge » et trou de livraison comblé (LIVRÉ 06/09/2026)
+
+- **Protocole** : projet Compose distinct (`-p livraison-test`), **volumes neufs**, ports décalés —
+  téléchargement **réel** de 17 Go sans rien emprunter à la machine. Durées mesurées : `7b`
+  1 361 s, `14b` 2 549 s, `bge-m3` 4 223 s, reranker 611 s. **Premier démarrage ≈ 80 min**
+  (dominé par les modèles, dépend de la bande passante) ; **démarrages suivants ≈ 30 s**.
+- **Ce que le test a trouvé** — et c'est sa vraie valeur : la pile démarrait avec **sept services
+  `healthy` et ZÉRO catégorie en base**. Donc aucun ticket catégorisable, une administration vide,
+  et `fetch_categories()` en échec côté IA. **Aucune alerte nulle part** — exactement la panne
+  silencieuse que cette phase traque.
+- **Cause racine : l'EMPLACEMENT du fichier**, pas la commande de démarrage. `tsconfig.json` ne
+  compile que `src/**/*.ts` ; sous `prisma/`, le seed n'existait qu'en TypeScript et exigeait
+  `tsx`, une **devDependency absente de l'image de production** (vérifié : seul `prisma` figure
+  dans `node_modules/.bin`, et `dist/` ne contenait aucun seed). `npx prisma db seed` aurait donc
+  échoué sur le serveur.
+- **Correctif** : `prisma/seed.ts` devient `src/seed.ts` (il entre ainsi dans le build existant et
+  produit `dist/seed.js`, exécutable par `node` seul) ; la commande du backend enchaîne
+  **migrations → seed → serveur**. Le `&&` est délibéré : un seed en échec **empêche le serveur de
+  démarrer** plutôt que de servir une base incomplète.
+- **Amorçage de l'administrateur** par `ADMIN_EMAIL`/`ADMIN_PASSWORD`, avec trois garde-fous :
+  **aucun identifiant par défaut** livré avec le produit ; **amorçage et non réinitialisation** —
+  dès qu'un administrateur existe, ces variables sont sans effet, elles ne peuvent donc pas servir
+  à reprendre la main sur une instance en service (vérifié : un `ADMIN_EMAIL` différent au
+  redémarrage ne crée rien) ; **12 caractères minimum**.
+- **Vérifié sur la pile neuve** : 5 catégories, administrateur créé **et connecté** (200 + jeton,
+  donc hachage exploitable), `fetch_categories` opérationnel, `/classify` servi par le classifieur
+  **désormais versionné** (43 Ko committés — sans lui, `artifacts/` étant gitignoré, un dépôt
+  fraîchement cloné donnait un 503), et un premier ticket enrichi de bout en bout
+  (`CLASSIFICATION « Matériel » 0,479` et `PRIORISATION`).
+- **Dette assumée et documentée** : `container_name` fixé en dur empêche deux instances de la pile
+  de coexister sur une machine ; le préchauffage du seeder ne couvre pas le contexte long, le tout
+  premier `/suggest` reste à 26,2 s contre 9,5 s ensuite — dans le budget, donc non traité.
+- **Reste** : environnement de démonstration final, doc API (Swagger), préparation soutenance.
+  `[À COMPLÉTER PAR FEDI]`

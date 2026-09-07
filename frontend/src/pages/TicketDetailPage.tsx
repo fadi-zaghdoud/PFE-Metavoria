@@ -1275,8 +1275,13 @@ export function TicketDetailPage() {
           </>
         }
       >
-        <Field label="Solution appliquée" hint="Comment le problème a-t-il été résolu ?">
+        <Field
+          label="Solution appliquée"
+          htmlFor="solution-appliquee"
+          hint="Comment le problème a-t-il été résolu ?"
+        >
           <Textarea
+            id="solution-appliquee"
             rows={5}
             value={solutionTexte}
             onChange={(e) => setSolutionTexte(e.target.value)}

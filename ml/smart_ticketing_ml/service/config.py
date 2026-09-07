@@ -83,3 +83,50 @@ OCR_MIN_MOTS = int(os.environ.get("OCR_MIN_MOTS", "3"))
 PDF_MIN_CHARS_TEXTE = int(os.environ.get("PDF_MIN_CHARS_TEXTE", "20"))
 # Garde-fou de taille (Node valide déjà ≤10 Mo à l'upload ; défense en profondeur).
 EXTRACT_TAILLE_MAX_MO = int(os.environ.get("EXTRACT_TAILLE_MAX_MO", "10"))
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Dockerisation (§7) — préchauffage au démarrage du service.
+# ─────────────────────────────────────────────────────────────────────────────
+# Les modèles sont chargés PARESSEUSEMENT (embedder/reranker/predictors). En
+# conteneur, le premier `/classify` paierait donc ~30 s de chargement de bge-m3,
+# très au-delà du budget de 4 s du backend (IA_TIMEOUT_MS) : le tout premier
+# ticket créé après un `docker compose up` perdrait son enrichissement IA.
+# `IA_WARMUP=true` (posé par le compose) charge le chemin de classification en
+# tâche de fond dès le démarrage.
+# Défaut FALSE, délibérément : la suite de tests instancie `TestClient(app)` SANS
+# `with` — donc sans lifespan — mais un défaut à `true` rendrait tout futur
+# `with TestClient(app)` dépendant d'un modèle de 2,3 Go, et la suite « offline »
+# ne le serait plus.
+WARMUP = os.environ.get("IA_WARMUP", "false").strip().lower() in ("1", "true", "oui")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Dockerisation (§7) — chargement des modèles SANS appel réseau.
+# ─────────────────────────────────────────────────────────────────────────────
+def source_modele(repo: str) -> str:
+    """Chemin LOCAL du modèle s'il est en cache, sinon l'identifiant du Hub.
+
+    POURQUOI. `transformers.utils.hub.has_file` (4.40.2) émet un `requests.head()`
+    BRUT vers huggingface.co pour tester la présence de `model.safetensors`. Cet
+    appel ignore `HF_HUB_OFFLINE` et `TRANSFORMERS_OFFLINE` (il ne passe pas par
+    `hf_hub_download`), et son échec DNS n'est pas rattrapé — le `head()` est HORS
+    du `try`, contrairement à ce que promet sa propre docstring. Sans réseau, le
+    chargement de bge-m3 casse donc, alors que TOUS ses poids sont en cache.
+    Compléter le cache n'y changerait rien : `BAAI/bge-m3` ne publie AUCUN
+    safetensors (404 sur le Hub) — le sondage est structurellement sans réponse.
+
+    COMMENT. `has_file` court-circuite le réseau quand on lui passe un RÉPERTOIRE :
+        if os.path.isdir(path_or_repo): return os.path.isfile(...)
+    On résout donc le dossier du cache local et on le passe au chargeur.
+
+    L'identifiant (`BAAI/bge-m3`) reste la PROVENANCE enregistrée en base
+    (`tickets.embedding_modele`) : il n'est pas remplacé, seulement contourné au
+    moment du chargement. Modèle absent du cache (premier démarrage sans
+    préchargement) : on rend l'identifiant et le Hub prend le relais normalement.
+    """
+    try:
+        from huggingface_hub import snapshot_download
+
+        return snapshot_download(repo, local_files_only=True)
+    except Exception:  # pas en cache -> comportement d'origine (téléchargement)
+        return repo

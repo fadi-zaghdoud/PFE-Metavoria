@@ -265,9 +265,9 @@ Le serveur de dev Vite proxifie automatiquement les appels `/api` vers `http://l
 
 ## Modèle de données
 
-Entités principales (voir `backend/prisma/schema.prisma`) : `Utilisateur`, `Ticket`, `Categorie`, `Commentaire`, `PieceJointe`, `Notification`, `SuggestionIA` (schéma prévu, logique IA à implémenter en phase 5 du projet).
+Entités principales (voir `backend/prisma/schema.prisma`) : `Utilisateur`, `Ticket`, `Categorie`, `Commentaire`, `PieceJointe`, `Notification`, `SuggestionIA`, `EvenementTicket`, `RefreshToken`, ainsi que `Parametre`, `TechnicienCategorie` et `Absence` (affectation automatique, §6.2).
 
-La colonne `Ticket.embedding` (type `vector(1536)`, extension pgvector) est déjà en place pour la recherche de similarité par RAG, mais n'est pas encore alimentée — cela fait partie du module IA à venir.
+La colonne `Ticket.embedding` (type `vector(1024)`, extension pgvector — dimension du modèle bge-m3) est alimentée par le module IA et indexée en HNSW cosinus. La colonne générée `Ticket.recherche_texte` (`tsvector`, index GIN) porte l'arm lexical de la recherche hybride. Ces deux index sont créés en **SQL brut** dans les migrations : Prisma ne sait pas les exprimer, donc **toute migration générée doit être relue avant application** (voir le journal technique, Chantier 1).
 
 ## Authentification & rôles
 
@@ -293,6 +293,99 @@ Réinitialisation de mot de passe par **code OTP à 6 chiffres** (3 étapes) :
 
 Sécurité : mots de passe bcrypt (cost 12) avec politique de complexité (8+ caractères, majuscule, minuscule, chiffre), codes OTP stockés hashés (SHA-256), **rate limiting** par IP sur toutes les routes sensibles, protection anti-timing sur la connexion, validation Zod systématique côté backend. Le contrôle d'accès par rôle (RBAC) se fait via le middleware `requireRole(...roles)` (`backend/src/middlewares/auth.middleware.ts`).
 
+## Affectation des tickets
+
+Les tickets peuvent être attribués aux techniciens **manuellement** ou **automatiquement**,
+selon la charge de travail et la spécialité (CDC §6.2). L'affectation manuelle reste
+disponible **dans les deux modes** : un administrateur peut toujours corriger.
+
+### Régler le mode — Administration → Paramètres
+
+Deux modes, réservés à l'administrateur :
+
+| Mode | Comportement |
+| --- | --- |
+| **Manuel** *(défaut)* | Les nouveaux tickets restent non assignés. L'administrateur affecte lui-même. |
+| **Automatique** | Chaque nouveau ticket est assigné selon la charge et la spécialité, en excluant les techniciens absents. |
+
+Le réglage est **persistant** : il survit au redémarrage de la pile. Un administrateur peut
+donc passer en automatique avant une absence prolongée et revenir en manuel à son retour.
+
+> **Basculer en automatique n'affecte que les tickets créés ensuite.** Les tickets déjà en
+> attente d'affectation restent non assignés — l'écran l'indique et propose le lien vers la
+> file à traiter à la main.
+
+### Définir les spécialités — Administration → Utilisateurs
+
+La colonne **Spécialités** de chaque technicien ouvre une liste de cases à cocher : les
+catégories qu'il traite en priorité. Un technicien peut en couvrir plusieurs.
+
+Sans aucune spécialité, un technicien reste candidat aux **affectations de repli** — il
+n'est simplement prioritaire sur aucune catégorie.
+
+### Saisir une absence — Administration → Absences
+
+Le tableau liste les absences (technicien, période, durée, motif, statut, qui l'a saisie) et
+se filtre sur **En cours / À venir / Passées / Toutes**.
+
+- Les **dates sont incluses** des deux côtés : une absence du 10 au 20 couvre le 20 en entier.
+- Motifs : **Congé, Maladie, Formation, Autre**, plus un commentaire libre facultatif.
+- Une absence **passée** peut être saisie après coup (cas fréquent : « il était malade lundi,
+  on l'apprend mardi »).
+- **Deux absences ne peuvent pas se chevaucher** pour un même technicien : la saisie est
+  refusée et le message indique les dates de l'absence en conflit. Des périodes contiguës
+  (10–15 puis 16–20) restent acceptées.
+
+Une absence **n'affecte que l'affectation automatique**. C'est un mécanisme distinct de la
+désactivation d'un compte, qui coupe la connexion et vise un départ :
+
+- le technicien absent **garde son accès complet** à l'application ;
+- ses **tickets déjà assignés ne bougent pas** ;
+- il **redevient disponible tout seul** à la date de fin, sans intervention.
+
+L'absence en cours est rappelée par une pastille **Absent** dans la liste des utilisateurs,
+par une mention « absent jusqu'au … » dans le sélecteur de technicien d'un ticket, et par
+une puce sur le graphique de charge du tableau de bord. Le **motif** n'est visible que sur
+la page Absences : le graphique de charge est consultable par tous les techniciens, et un
+arrêt maladie est une donnée de santé.
+
+### Comment le technicien est choisi
+
+En mode automatique, à la création d'un ticket :
+
+1. **Catégorie retenue** — celle choisie par le demandeur si elle existe ; sinon celle
+   suggérée par l'IA, à condition que sa confiance atteigne le seuil ; sinon aucune.
+2. **Candidats** — les techniciens **actifs** et **non absents ce jour**.
+3. **Spécialité** — si la catégorie est connue et couverte, seuls ces spécialistes sont
+   retenus. La spécialité est une contrainte de compétence : un spécialiste chargé passe
+   avant un généraliste disponible.
+4. **Départage** — le moins chargé (tickets ouverts) ; à égalité, celui servi le moins
+   récemment ; à égalité encore, le plus petit identifiant.
+
+Le ticket passe alors **En attente**, le technicien est notifié, et l'historique du ticket
+porte un événement « a assigné automatiquement le ticket à … » attribué à **Système**.
+
+**Si aucune affectation n'est possible** — aucun technicien actif, tous absents, ou une
+erreur technique — **le ticket est simplement créé sans être assigné**. La création d'un
+ticket n'échoue jamais à cause de l'affectation automatique.
+
+**Repli sur la charge seule** quand la catégorie n'est pas exploitable : module IA
+indisponible, confiance insuffisante, ou aucun spécialiste disponible pour cette catégorie.
+
+### Points d'entrée API
+
+- `GET /api/parametres` · `PATCH /api/parametres` — lecture et réglage du mode (Administrateur)
+- `GET /api/absences` · `POST /api/absences` · `PATCH /api/absences/:id` ·
+  `DELETE /api/absences/:id` — gestion des absences (Administrateur)
+- `PUT /api/utilisateurs/:id/specialites` — définit les catégories couvertes par un
+  technicien (Administrateur ; la liste envoyée **remplace** l'existante)
+
+### Limite connue
+
+Le **seuil de confiance** (0,5) utilisé pour retenir une catégorie suggérée est fixé dans le
+code et **n'est pas encore réglable** depuis l'interface. La table de paramètres est prête à
+l'accueillir (CDC §6.5).
+
 ## État d'avancement
 
 **Livré :**
@@ -302,6 +395,9 @@ Sécurité : mots de passe bcrypt (cost 12) avec politique de complexité (8+ ca
 - ✅ Administration des utilisateurs (rôles, activation/désactivation) et des **catégories**
 - ✅ Cycle de vie complet des tickets : création, affectation, prise en charge, résolution,
   satisfaction, clôture, recatégorisation, commentaires, historique d'événements, notifications
+- ✅ **Affectation automatique** (§6.2) : interrupteur manuel/automatique persistant,
+  spécialités technicien ↔ catégorie, **gestion des absences** (congé, maladie, formation)
+  excluant les techniciens indisponibles, choix par charge et spécialité
 - ✅ **Pièces jointes** (PDF/PNG/JPG, ≤ 10 Mo) avec **OCR local** (Tesseract, pack `fra`)
 - ✅ **Module IA complet** : classification automatique de catégorie, priorisation par scorecard
   glass-box, suggestion de solution par **RAG** (recherche hybride pgvector + full-text, reranker,

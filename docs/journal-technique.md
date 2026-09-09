@@ -1718,3 +1718,244 @@ demande explicite.
   premier `/suggest` reste à 26,2 s contre 9,5 s ensuite — dans le budget, donc non traité.
 - **Reste** : environnement de démonstration final, doc API (Swagger), préparation soutenance.
   `[À COMPLÉTER PAR FEDI]`
+
+---
+
+# Chantier 1 — Affectation automatique et absences (§6.2)
+
+> Exigence du CDC §6.2 identifiée **manquante** à l'inventaire : « Affectation automatique
+> ou manuelle du ticket à un technicien selon la charge de travail et la catégorie ».
+> Livré en 8 étapes, chacune fermée par une porte de preuve avant de passer à la suivante.
+> Branche `docker`, commits `837d74b` → `3332478`.
+
+## Inventaire de départ — ce qui existait vraiment
+
+- **Date** : 07/09/2026. `[établi en séance]`
+- **Affectation** : 100 % manuelle, administrateur seul (`affecter()`, `PATCH
+  /api/tickets/:id/affectation`, un `<select>` sur le détail de ticket). **Aucun appel
+  automatique nulle part** : un ticket naissait `NOUVEAU` non assigné et y restait.
+- **Charge des techniciens** : déjà calculée et affichée (« Charge par technicien »), mais
+  **enfouie** dans `statistiques()` — un `Promise.all` de 8 requêtes dont on ne pouvait pas
+  extraire la charge seule —, renvoyant des **noms et non des ids**, filtrée par le
+  périmètre du tableau de bord, et **omettant les techniciens à 0** (un `groupBy` ne rend
+  pas de ligne vide) : précisément ceux qu'une affectation doit préférer.
+- **Notion de spécialité** : **inexistante**. `Utilisateur` n'avait que `service` et
+  `poste`, deux champs de **texte libre**, non éditables après l'invitation, et jamais
+  reliés aux catégories.
+
+## Deux découvertes faites en préparant la migration (Étape 1)
+
+### Les index de recherche du module IA avaient disparu de la base
+
+- **Date** : 09/09/2026. `[établi en séance]`
+- **Constat** : les migrations J4 (HNSW sur l'embedding) et J6 (GIN sur le tsvector) sont
+  marquées **appliquées** — `finished_at` renseigné, aucun rollback — et leurs colonnes
+  existent, mais **les deux index étaient absents**. Un `EXPLAIN` sur une requête
+  plein-texte donnait `Seq Scan` : la recherche dense du RAG et l'arm lexical J6 tournaient
+  **sans leurs index**.
+- **Cause** : non prouvable a posteriori. La seule mécanique connue capable de cela est
+  exactement celle que la migration J6 documentait déjà — un outil qui aligne la base sur
+  `schema.prisma` supprime les objets SQL bruts qu'il ne voit pas.
+- **Impact** : nul et invisible à 869 tickets, bloquant à l'échelle visée (§7 : réponse IA
+  < 5 s, montée en charge sans refonte). C'est pour cela que personne ne l'avait vu.
+- **Traitement** : recréés en `IF NOT EXISTS` dans la migration du chantier, donc
+  rejouables. **Vérifié après application que le planificateur les utilise réellement**
+  (`Bitmap Index Scan` sur le GIN, `Index Scan` sur le HNSW) — il ne suffisait pas qu'ils
+  soient présents.
+
+### Le piège Prisma est permanent sur ce projet
+
+- **Constat** : `prisma migrate diff` produit systématiquement
+  `ALTER TABLE "tickets" ALTER COLUMN "recherche_texte" DROP DEFAULT`, en croyant voir un
+  DEFAULT sur une colonne `GENERATED ALWAYS STORED`.
+- **Vérifié empiriquement** sur la base, en transaction annulée : PostgreSQL répond
+  `ERROR: column ... is a generated column / HINT: Use ... DROP EXPRESSION instead`.
+  Appliquée telle quelle, **la migration entière aurait avorté**.
+- **Règle** : toute migration générée sur ce projet ressortira cette ligne et devra être
+  relue à la main. Consigné en tête du fichier de migration, pas seulement ici.
+
+## Les décisions, et leurs raisons
+
+### La spécialité est un FILTRE DUR, pas un bonus
+
+- **Décision** : le pool se réduit d'abord aux spécialistes disponibles de la catégorie ;
+  la charge n'arbitre qu'**à l'intérieur** de ce pool. Conséquence assumée et **figée par
+  un test** : un spécialiste à 12 tickets l'emporte sur un généraliste à 0.
+- **Pourquoi** : le §6.2 demande d'affecter « selon la charge **et** la catégorie ». La
+  catégorie est lue comme une **contrainte de compétence**, la charge comme l'arbitre entre
+  compétents. Router un ticket réseau vers un généraliste disponible mais non formé serait
+  un faux gain. Un score mêlant les deux exigerait d'inventer une pondération que **rien
+  dans les données ne justifie** — même refus que pour la pondération par priorité.
+
+### Le mode par défaut est MANUEL, et tous les replis y ramènent
+
+- **Décision** : ligne absente en base, valeur illisible, base injoignable → **MANUEL**.
+- **Pourquoi** : l'absence de configuration doit reproduire le **comportement actuel** de
+  l'application, jamais provoquer une bascule silencieuse. Le sens du repli est **testé**,
+  pas seulement le repli : huit entrées illisibles sont balayées pour vérifier qu'aucune ne
+  peut produire `AUTO`. Un repli du mauvais côté activerait l'affectation automatique sur
+  une simple valeur corrompue.
+
+### La confidentialité du motif tient par construction, à trois barrières
+
+- **Décision** : le motif d'absence n'existe **ni** dans le type de retour de
+  `chargeCourante()`, **ni** dans la liste des utilisateurs, **ni** dans la réponse des
+  statistiques. Il n'apparaît que sur la page Absences, réservée à l'administrateur.
+- **Pourquoi** : le graphique « Charge par technicien » est gardé par `estSupport` — donc
+  **visible par tous les techniciens**, pas seulement par l'administrateur. Afficher le
+  motif y exposerait les arrêts `MALADIE` à toute l'équipe, une donnée de santé. La fuite
+  est rendue **impossible sans modifier d'abord le dépôt**, plutôt qu'évitée par
+  discipline. Vérifié en sérialisant la réponse complète vue par un compte technicien.
+
+### Deux fuseaux horaires, pour deux questions différentes
+
+- **Décision** : « quel jour sommes-nous ? » se calcule en **fuseau métier**
+  (`Africa/Tunis`) ; « quel jour représente cette valeur de la base ? » se lit en **UTC**.
+- **Pourquoi** : vérifié contre PostgreSQL **avant** d'écrire le code — Prisma matérialise
+  une colonne `DATE` à **minuit UTC** (`DATE '2026-08-20'` revient en
+  `2026-08-20T00:00:00.000Z`). La relire dans le fuseau métier fonctionnerait *par chance*
+  à Tunis (décalage positif) et renverrait **la veille** sur un décalage négatif
+  (`America/New_York` → `2026-08-19`). Le coût métier de l'erreur inverse est chiffré par
+  un test : à 23h30 UTC il est déjà le lendemain à Tunis, donc sans le fuseau métier **un
+  technicien rentrant de congé resterait exclu de l'affectation une heure chaque nuit**.
+- **Corollaire** : les dates d'absence sont en `@db.Date` et non en timestamp — une absence
+  est un **intervalle de calendrier**, pas un intervalle d'instants. « Fin le 20 » à 00h00
+  ne couvrirait pas le 20 du tout. Bornes **incluses** des deux côtés.
+
+### `dernierTicketAssigne` est une approximation, et le restera
+
+- **Décision** : le départage à charge égale utilise la **date de création du dernier
+  ticket assigné**, et non la date d'affectation.
+- **Pourquoi** : les événements `AFFECTATION` stockent le **nom** du technicien
+  (`nomComplet(technicien)`) et **non son id**. Le nom n'est pas une clé de jointure fiable
+  (homonymes, changement de nom) : la requête exacte **ne peut pas exister** en l'état.
+  Consigné dans le code pour éviter qu'on le « corrige » plus tard vers une jointure
+  impossible. **À traiter au Chantier 2**, dont la page d'audit rencontrera le même mur.
+
+### Le départage est un ordre TOTAL, sinon il est intestable
+
+- **Décision** : charge croissante → dernier ticket assigné le plus ancien (`null`, jamais
+  servi, devant) → **id croissant**.
+- **Pourquoi** : sans le troisième rang, deux techniciens strictement identiques donneraient
+  un résultat dépendant de l'ordre de la base — non reproductible, donc non testable. Sans
+  le deuxième, le troisième favoriserait éternellement le même technicien. L'indépendance à
+  l'ordre de la liste est vérifiée sur trois permutations.
+
+### « Tous les spécialistes absents » ne coûte aucune branche
+
+- **Décision** : l'absence est filtrée **avant** la spécialité.
+- **Pourquoi** : le pool de spécialistes disponibles devient simplement vide et l'on retombe
+  sur le repli déjà écrit. Seul le **motif** distingue la situation
+  (`REPLI_SPECIALISTES_ABSENTS` / `REPLI_AUCUN_SPECIALISTE` / `REPLI_CHARGE`), calculé après
+  coup et **sans effet sur la décision** : il sert le diagnostic de l'administrateur.
+
+### Le cœur d'affectation est partagé, la garde ne l'est pas
+
+- **Décision** : `appliquerAffectation()` extrait de `affecter()` — événement, mise à jour,
+  journal, notification. `affecter()` garde sa garde administrateur et passe de 41 à 12
+  lignes ; le chemin automatique appelle le même cœur.
+- **Pourquoi** : `affecter()` exigeait un administrateur, ce qui le rendait **inutilisable
+  depuis la création** où l'acteur est le demandeur, un employé. L'affectation automatique
+  hérite ainsi gratuitement de la trace et de la notification. Effet de bord heureux : la
+  condition « ne pas se notifier soi-même » (`technicien.id !== auteurId`) est **toujours
+  vraie** quand l'auteur est `null`, donc un technicien auto-affecté est toujours notifié —
+  le bon comportement, sans code supplémentaire.
+
+### `auteur_id` nullable en `ON DELETE RESTRICT`, et non `SET NULL`
+
+- **Décision** : `NULL` signifie « Système » et **rien d'autre**.
+- **Pourquoi** : Prisma générait un `ON DELETE SET NULL` pour la relation devenue
+  optionnelle. Sans la garde `Restrict`, supprimer un compte **relabelliserait ses actions
+  passées en actions système** — une trace d'audit qui ment. Effet de bord : le diff a cessé
+  de vouloir détruire et recréer la clé étrangère, soit une opération risquée en moins.
+
+### `AFFECTATION_AUTO` est un type distinct
+
+- **Pourquoi** : un auteur `null` seul ne suffirait pas — tout événement système n'est pas
+  une affectation automatique. Un type dédié rend la fonctionnalité **dénombrable et
+  filtrable**, ce dont le Chantier 2 aura besoin.
+
+### Le contrat non négociable, tenu à deux niveaux
+
+- **Décision** : la création d'un ticket ne doit **jamais** échouer à cause de l'affectation
+  automatique. `affecterAutomatiquement()` absorbe le choix et l'écriture ; `creer()`
+  enveloppe **en plus la lecture du mode**.
+- **Pourquoi** : sans ce second filet, une base de paramètres injoignable ferait échouer une
+  création de ticket. Le ticket est déjà committé et la réponse est déjà due au demandeur :
+  une affectation qui n'aboutit pas est un travail pour l'administrateur, pas une erreur
+  pour l'utilisateur. Vérifié : avec zéro technicien actif, la création réussit, le ticket
+  reste `NOUVEAU`, et la raison est journalisée.
+
+### Les absences sont un mécanisme distinct de `actif`
+
+- **Pourquoi** : désactiver un compte **coupe la connexion** — c'est fait pour un départ,
+  pas pour un congé. Un technicien absent garde son accès complet, ses tickets déjà
+  assignés ne bougent pas, et il **redevient disponible tout seul** à la date de fin : c'est
+  l'argument décisif d'une table datée sur un simple booléen, qu'il faudrait penser à
+  remettre à zéro. Le statut et la durée sont **calculés**, jamais stockés — un statut
+  stocké deviendrait faux tout seul au passage de minuit.
+- **Chevauchements interdits** (409) : deux absences qui se recouvrent n'apportent aucune
+  information — « absent » est un état booléen sur un jour donné — mais rendraient ambigus
+  le motif du jour commun, la date de fin affichée, et l'effet d'une suppression.
+  L'interdiction garantit **au plus une absence en cours par technicien**, ce dont dépendent
+  la règle d'affectation et le marqueur de charge. Les périodes **contiguës** restent
+  autorisées.
+- **Absences passées acceptées** : c'est le cas le plus courant (« il était malade lundi, on
+  l'apprend mardi ») et elles n'ont aucun effet sur l'affectation, qui ne regarde que le
+  jour courant. L'interdire serait une contrainte sans bénéfice.
+
+### Le motif est une énumération, pas du texte libre
+
+- **Pourquoi** : le projet a **déjà fait l'erreur inverse** avec `service`, impossible à
+  joindre de façon fiable aux catégories — c'est précisément pourquoi les spécialités
+  passent par une table de liaison. Du texte libre produirait « congé », « Congés »,
+  « vacances », « CP » : quatre motifs distincts, non filtrables. Le `commentaire`
+  optionnel récupère l'expressivité perdue.
+
+## Ce qui a été prouvé, et comment
+
+- **80 tests purs** (`node:test`, zéro I/O) : registre de paramètres 18, disponibilité 23,
+  règle d'affectation 34, statut de catégorie 5. Chaque étape est **verte avant tout
+  branchement**.
+- **Non-régression du chemin manuel** vérifiée contre l'API HTTP réelle, chaque assertion
+  doublée d'une lecture en base, plus un test vérifiant que **zéro** événement
+  `AFFECTATION_AUTO` est produit par le chemin manuel.
+- **Six scénarios d'affectation** contre la base et le service IA réels, dont deux construits
+  **pour détecter, pas pour passer** : le cas « catégorie choisie par le demandeur » oppose
+  une catégorie déclarée `Matériel` à une suggestion IA `Réseau` **à 0,813 de confiance** —
+  et le ticket part au spécialiste Matériel ; le cas « IA coupée » déclare exprès un
+  spécialiste Réseau, dont la sélection aurait prouvé une fuite de catégorie.
+- **Bout en bout sur la pile reconstruite**, avec redémarrage : mode, absences et spécialités
+  survivent. Toutes les vérifications sont **non destructives**, base rendue à l'identique
+  (869 tickets) — y compris celle qui a dû déplacer temporairement un ticket vers
+  l'administrateur pour exercer une branche que les données ne couvraient pas.
+- **Note d'outillage** : `npm run build` (`tsc -b`) est plus strict que `tsc --noEmit` et a
+  rattrapé une variante d'`Alert` inexistante. C'est lui la porte côté frontend.
+
+## Dettes assumées et documentées
+
+- **§6.5 — seuils IA non réglables** : le seuil de confiance (0,5) est une **constante en
+  dur, dupliquée** entre le frontend (`SEUIL_CONFIANCE_AFFICHAGE`) et le backend
+  (`SEUIL_CONFIANCE_AFFECTATION`). La table `parametres` est **prête à les accueillir** —
+  un nouveau réglage y coûte une ligne, pas une migration — mais **rien n'est livré**.
+  ⚠️ Ne pas l'affirmer en soutenance.
+- **Stock existant non traité à la bascule** : passer en AUTO n'affecte que les tickets
+  **créés ensuite**. Les tickets déjà en attente restent non assignés. Le trou est **nommé à
+  l'écran** (« N tickets non assignés — ce changement ne les affecte pas ») ; son traitement
+  est reporté au **Chantier 2**.
+- **Périmètre de la charge** : le graphique respecte les filtres du tableau de bord, donc
+  « charge par technicien » filtrée sur août signifie *tickets ouverts créés en août* — un
+  mélange entre un **état courant** et une **période**. Pré-existant, **délibérément non
+  modifié** : le rendre non filtré aurait changé le comportement du tableau de bord au-delà
+  du périmètre validé.
+- **`DeprecationWarning` de `pg`** sur le chemin création/notification. Vérifié qu'il ne
+  provient **ni** d'un `Promise.all` simple **ni** de `chargeCourante()` : pré-existant,
+  invisible jusqu'ici parce que les journaux partaient dans le conteneur. Non traité.
+- **`container_name` en dur** : déjà consigné en Phase 7, toujours valable — deux instances
+  de la pile ne peuvent pas coexister sur une machine.
+- **Auto-déclaration des absences par le technicien** : écartée en v1. Toute l'administration
+  est `requireRole('ADMINISTRATEUR')` sans exception, et un technicien pourrait s'exclure
+  unilatéralement de l'affectation sans validation. Évolution naturelle : auto-déclaration
+  **soumise à validation**.
+- **Pondération de la charge par priorité** : écartée, faute de poids justifiables par les
+  données. Perspective documentée, non fabriquée.

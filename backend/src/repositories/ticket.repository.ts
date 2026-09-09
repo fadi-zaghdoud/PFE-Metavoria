@@ -62,7 +62,9 @@ export type CommentaireAvecAuteur = Prisma.CommentaireGetPayload<{
 
 export interface CreerEvenementData {
   ticketId: number;
-  auteurId: number;
+  // null = « Systeme » : une affectation decidee a la creation en mode AUTO n'a pas
+  // d'auteur humain (l'acteur de la creation est le demandeur, un employe).
+  auteurId: number | null;
   // CHANGEMENT_STATUT | CHANGEMENT_PRIORITE | CHANGEMENT_CATEGORIE | AFFECTATION |
   // DESAFFECTATION | PRISE_EN_CHARGE | EVALUATION
   type: string;

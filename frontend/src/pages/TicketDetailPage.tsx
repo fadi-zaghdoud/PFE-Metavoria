@@ -103,6 +103,8 @@ function decrireEvenement(e: EvenementTicket): string {
       return 'a pris le ticket en charge';
     case 'AFFECTATION':
       return `a assigné le ticket à ${e.nouvelleValeur}`;
+    case 'AFFECTATION_AUTO':
+      return `a assigné automatiquement le ticket à ${e.nouvelleValeur}`;
     case 'DESAFFECTATION':
       return "a retiré l'affectation";
     case 'EVALUATION':
@@ -117,6 +119,7 @@ const ICONE_EVENEMENT: Record<TypeEvenement, LucideIcon> = {
   CHANGEMENT_PRIORITE: Flag,
   CHANGEMENT_CATEGORIE: Tag,
   AFFECTATION: UserPlus,
+  AFFECTATION_AUTO: Sparkles,
   DESAFFECTATION: UserMinus,
   PRISE_EN_CHARGE: Wrench,
   EVALUATION: Star,
@@ -125,13 +128,16 @@ const ICONE_EVENEMENT: Record<TypeEvenement, LucideIcon> = {
 // Ligne d'historique (centrée, discrète) affichée dans le fil, entre les messages.
 function EvenementLigne({ evenement }: { evenement: EvenementTicket }) {
   const Icon = ICONE_EVENEMENT[evenement.type];
+  // Auteur absent = decision du systeme (affectation automatique) : aucun humain n'en est
+  // l'auteur, et attribuer l'action au demandeur serait faux.
+  const auteur = evenement.auteur
+    ? `${evenement.auteur.prenom} ${evenement.auteur.nom}`
+    : 'Système';
   return (
     <div className="flex items-center justify-center gap-2 text-center text-xs text-slate-400">
       <Icon className="size-3.5 shrink-0" aria-hidden />
       <span>
-        <span className="font-medium text-slate-500">
-          {evenement.auteur.prenom} {evenement.auteur.nom}
-        </span>{' '}
+        <span className="font-medium text-slate-500">{auteur}</span>{' '}
         {decrireEvenement(evenement)} · {tempsRelatif(evenement.dateCreation)}
       </span>
     </div>

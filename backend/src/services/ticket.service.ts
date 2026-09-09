@@ -17,6 +17,11 @@ import { MAX_PIECES_PAR_TICKET } from '../middlewares/upload.middleware';
 import { AppError, ForbiddenError, NotFoundError, ValidationError } from '../utils/AppError';
 import { logAudit } from '../utils/logger';
 import { dateDuJour } from './absence.disponibilite';
+import {
+  choisirTechnicien,
+  type MotifAffectation,
+  type ResultatChoix,
+} from './affectation.regle';
 import { Prisma } from '../generated/prisma/client';
 import type { Priorite, Role, StatutTicket } from '../generated/prisma/enums';
 
@@ -153,6 +158,76 @@ async function resoudreTechnicien(technicienId: number | null): Promise<Utilisat
     throw new ValidationError("Le ticket ne peut être affecté qu'à un membre du support");
   }
   return technicien;
+}
+
+// Type de l'evenement d'affectation. AFFECTATION_AUTO est DISTINCT d'AFFECTATION : il
+// rend la fonctionnalite demontrable et filtrable (« combien de tickets ont ete
+// auto-affectes ? »), ce qu'un auteur `null` seul ne permettrait pas — un evenement
+// systeme reste un evenement systeme, mais tous ne sont pas des affectations automatiques.
+type TypeEvenementAffectation = 'AFFECTATION' | 'DESAFFECTATION' | 'AFFECTATION_AUTO';
+
+// Resultat de l'affectation automatique : la decision de la regle pure, elargie de deux
+// cas qui n'appartiennent pas a la regle mais au service.
+export type ResultatAffectationAuto =
+  | ResultatChoix
+  | { affecte: false; raison: 'TICKET_DEJA_ASSIGNE' | 'ECHEC_TECHNIQUE' };
+
+// CŒUR PARTAGE de l'affectation — manuelle comme automatique.
+// Extrait tel quel de `affecter()` : evenement, mise a jour, journal d'audit, notification.
+// Aucune regle d'autorisation ici ; chaque appelant applique la sienne en amont
+// (l'administrateur pour le chemin manuel, le mode AUTO pour le chemin automatique).
+//
+// `auteurId === null` signifie « Systeme » : a la creation en mode AUTO, l'acteur est le
+// DEMANDEUR (un employe) et lui attribuer l'affectation serait faux.
+//
+// `motif` : uniquement journalise. Il explique pourquoi ce technicien a ete retenu
+// (specialite, ou l'un des trois replis) sans jamais influencer l'ecriture.
+async function appliquerAffectation(
+  ticket: TicketDetail,
+  technicien: UtilisateurEntite | null,
+  auteurId: number | null,
+  motif?: MotifAffectation,
+): Promise<TicketDetail> {
+  const desaffectation = technicien === null;
+  const type: TypeEvenementAffectation = desaffectation
+    ? 'DESAFFECTATION'
+    : motif
+      ? 'AFFECTATION_AUTO'
+      : 'AFFECTATION';
+
+  await ticketRepository.creerEvenement({
+    ticketId: ticket.id,
+    auteurId,
+    type,
+    ancienneValeur: ticket.technicien ? nomComplet(ticket.technicien) : null,
+    nouvelleValeur: technicien ? nomComplet(technicien) : null,
+  });
+
+  const misAJour = await ticketRepository.update(ticket.id, {
+    technicienId: technicien?.id ?? null,
+    statut: desaffectation ? 'NOUVEAU' : 'EN_ATTENTE',
+  });
+  logAudit('TICKET_AFFECTATION', {
+    ticketId: ticket.id,
+    technicienId: technicien?.id ?? null,
+    parUtilisateur: auteurId,
+    automatique: motif !== undefined,
+    ...(motif ? { motif } : {}),
+  });
+
+  // Notifier le technicien nouvellement affecte (jamais lors d'une desaffectation).
+  // Une affectation decidee par le systeme notifie toujours : `auteurId` vaut null,
+  // donc la comparaison ne peut pas s'auto-exclure.
+  if (technicien && technicien.id !== auteurId) {
+    await notificationService.notifier({
+      destinataire: { id: technicien.id, email: technicien.email, prenom: technicien.prenom },
+      type: 'AFFECTATION',
+      sujet: `Ticket #${ticket.id} vous est affecté`,
+      message: `Le ticket « ${misAJour.titre} » vous a été affecté.`,
+      ticketId: ticket.id,
+    });
+  }
+  return misAJour;
 }
 
 export const ticketService = {
@@ -355,33 +430,64 @@ export const ticketService = {
     if (technicienId === ticket.technicienId) return ticket;
 
     const technicien = await resoudreTechnicien(technicienId);
-    const desaffectation = technicienId === null;
+    return appliquerAffectation(ticket, technicien, acteur.id);
+  },
 
-    await ticketRepository.creerEvenement({
-      ticketId: id,
-      auteurId: acteur.id,
-      type: desaffectation ? 'DESAFFECTATION' : 'AFFECTATION',
-      ancienneValeur: ticket.technicien ? nomComplet(ticket.technicien) : null,
-      nouvelleValeur: technicien ? nomComplet(technicien) : null,
-    });
-
-    const misAJour = await ticketRepository.update(id, {
-      technicienId,
-      statut: desaffectation ? 'NOUVEAU' : 'EN_ATTENTE',
-    });
-    logAudit('TICKET_AFFECTATION', { ticketId: id, technicienId, parUtilisateur: acteur.id });
-
-    // Notifier le technicien nouvellement affecté (jamais lors d'une désaffectation).
-    if (technicien && technicien.id !== acteur.id) {
-      await notificationService.notifier({
-        destinataire: { id: technicien.id, email: technicien.email, prenom: technicien.prenom },
-        type: 'AFFECTATION',
-        sujet: `Ticket #${id} vous est affecté`,
-        message: `Le ticket « ${misAJour.titre} » vous a été affecté.`,
-        ticketId: id,
-      });
+  // Affectation AUTOMATIQUE (§6.2, mode AUTO) — décidée par le système à la création.
+  // Rejoint exactement le même cœur que l'affectation manuelle : l'événement, le journal
+  // d'audit et la notification du technicien sont donc identiques et gratuits.
+  //
+  // Ne lève JAMAIS : la création d'un ticket ne doit pas échouer parce que l'affectation
+  // automatique n'a pas abouti (R6). Toute anomalie laisse le ticket NOUVEAU, non assigné,
+  // exactement comme en mode MANUEL — l'administrateur reprend la main.
+  //
+  // `categorieId` : catégorie EFFECTIVE, déjà arbitrée par l'appelant (catégorie réelle du
+  // demandeur, sinon suggestion IA au-dessus du seuil, sinon null).
+  // `auteurId` : null quand la décision vient du système.
+  async affecterAutomatiquement(
+    ticket: TicketDetail,
+    categorieId: number | null,
+    auteurId: number | null = null,
+  ): Promise<ResultatAffectationAuto> {
+    // Précaution : ne jamais écraser une affectation existante.
+    if (ticket.technicienId !== null) {
+      return { affecte: false, raison: 'TICKET_DEJA_ASSIGNE' };
     }
-    return misAJour;
+
+    try {
+      const candidats = await affectationRepository.chargeCourante({ jour: dateDuJour(new Date()) });
+      const resultat = choisirTechnicien(
+        candidats
+          .filter((c) => c.eligibleAffectation)
+          .map((c) => ({
+            id: c.technicienId,
+            categories: c.categories,
+            charge: c.charge,
+            dernierTicketAssigne: c.dernierTicketAssigne,
+            absenceEnCours: c.absenceEnCours,
+          })),
+        categorieId,
+      );
+
+      if (!resultat.affecte) {
+        logAudit('TICKET_AFFECTATION_AUTO_SANS_SUITE', {
+          ticketId: ticket.id,
+          raison: resultat.raison,
+        });
+        return resultat;
+      }
+
+      // Relecture de la cible : elle a pu être désactivée entre le calcul et l'écriture.
+      const technicien = await resoudreTechnicien(resultat.technicienId);
+      await appliquerAffectation(ticket, technicien, auteurId, resultat.motif);
+      return resultat;
+    } catch (err) {
+      console.warn(
+        `[AFFECTATION] automatique impossible sur le ticket #${ticket.id} — il reste non assigné :`,
+        err instanceof Error ? err.message : err,
+      );
+      return { affecte: false, raison: 'ECHEC_TECHNIQUE' };
+    }
   },
 
   // Correction de la catégorie après création (T-W6 — socle du flywheel J9).

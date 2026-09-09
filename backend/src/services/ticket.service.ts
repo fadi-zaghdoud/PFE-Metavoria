@@ -7,6 +7,7 @@ import {
   type TicketListe,
 } from '../repositories/ticket.repository';
 import { categorieRepository } from '../repositories/categorie.repository';
+import { affectationRepository } from '../repositories/affectation.repository';
 import { utilisateurRepository } from '../repositories/utilisateur.repository';
 import { notificationService } from './notification.service';
 import { iaService } from './ia.service';
@@ -15,6 +16,7 @@ import { estConfigure, uploaderBuffer } from '../config/cloudinary';
 import { MAX_PIECES_PAR_TICKET } from '../middlewares/upload.middleware';
 import { AppError, ForbiddenError, NotFoundError, ValidationError } from '../utils/AppError';
 import { logAudit } from '../utils/logger';
+import { dateDuJour } from './absence.disponibilite';
 import { Prisma } from '../generated/prisma/client';
 import type { Priorite, Role, StatutTicket } from '../generated/prisma/enums';
 
@@ -649,10 +651,16 @@ export const ticketService = {
       parCategorie,
       satisfaction,
       repartitionNotes,
-      chargeTechniciens,
       clotures,
       prisesEnCharge,
     } = await ticketRepository.statistiques(scope);
+
+    // Charge courante — extraite dans son propre dépôt : la même agrégation sert
+    // l'affectation automatique (§6.2), qui a besoin d'ids et des techniciens à 0.
+    const chargeTechniciens = await affectationRepository.chargeCourante({
+      jour: dateDuJour(new Date()),
+      scope,
+    });
 
     const compter = (s: StatutTicket) => parStatut.find((g) => g.statut === s)?._count._all ?? 0;
 
@@ -674,11 +682,6 @@ export const ticketService = {
     // Noms lisibles pour les répartitions par catégorie et la charge par technicien.
     const categories = await categorieRepository.findMany();
     const nomCategorie = new Map(categories.map((c) => [c.id, c.nom]));
-    const idsTech = chargeTechniciens
-      .map((g) => g.technicienId)
-      .filter((id): id is number => id !== null);
-    const techniciens = idsTech.length ? await utilisateurRepository.findManyByIds(idsTech) : [];
-    const nomTechnicien = new Map(techniciens.map((u) => [u.id, `${u.prenom} ${u.nom}`]));
 
     return {
       totalTickets: parStatut.reduce((n, g) => n + g._count._all, 0),
@@ -706,12 +709,18 @@ export const ticketService = {
           count: g._count._all,
         }))
         .sort((a, b) => b.count - a.count),
+      // Le MOTIF d'absence n'est jamais exposé ici : ce graphique est visible par tous
+      // les techniciens (garde `estSupport` côté interface), et MALADIE est une donnée
+      // de santé. Seule la date de fin remonte, pour que l'administrateur puisse
+      // redistribuer en connaissance de cause.
       chargeParTechnicien: chargeTechniciens
-        .map((g) => ({
-          technicien: g.technicienId != null ? nomTechnicien.get(g.technicienId) ?? 'Inconnu' : '—',
-          count: g._count._all,
+        .map((t) => ({
+          technicienId: t.technicienId,
+          technicien: t.nom,
+          count: t.charge,
+          absenceJusquau: t.absenceEnCours?.dateFin ?? null,
         }))
-        .sort((a, b) => b.count - a.count),
+        .sort((a, b) => b.count - a.count || a.technicien.localeCompare(b.technicien)),
     };
   },
 };

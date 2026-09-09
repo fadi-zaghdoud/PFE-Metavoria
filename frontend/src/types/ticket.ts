@@ -214,7 +214,15 @@ export interface StatistiquesTickets {
   repartitionStatut: { statut: StatutTicket; count: number }[];
   repartitionPriorite: { priorite: PrioriteTicket; count: number }[];
   repartitionCategorie: { categorie: string; count: number }[];
-  chargeParTechnicien: { technicien: string; count: number }[];
+  // `absenceJusquau` : date de fin d'absence en cours ("YYYY-MM-DD"), ou null.
+  // Le MOTIF n'est jamais exposé ici — ce graphique est visible par tous les techniciens,
+  // et MALADIE est une donnée de santé. Seules les dates remontent.
+  chargeParTechnicien: {
+    technicienId: number;
+    technicien: string;
+    count: number;
+    absenceJusquau: string | null;
+  }[];
 }
 
 export interface FiltresStatistiques {

@@ -44,7 +44,10 @@ export async function exporterStatistiquesExcel(stats: StatistiquesTickets, resu
     ...stats.repartitionCategorie.map((r) => [{ value: r.categorie }, nombre(r.count)]),
     [],
     [entete('Technicien'), entete('Tickets ouverts')],
-    ...stats.chargeParTechnicien.map((r) => [{ value: r.technicien }, nombre(r.count)]),
+    ...stats.chargeParTechnicien.map((r) => [
+      { value: r.absenceJusquau ? `${r.technicien} (absent jusqu'au ${r.absenceJusquau})` : r.technicien },
+      nombre(r.count),
+    ]),
     [],
     [entete('Satisfaction'), entete('Nombre')],
     ...[...stats.repartitionSatisfaction]
@@ -117,7 +120,11 @@ export function exporterStatistiquesPdf(stats: StatistiquesTickets, resumeFiltre
   section(
     'Charge par technicien',
     ['Technicien', 'Tickets ouverts'],
-    stats.chargeParTechnicien.map((r) => [r.technicien, String(r.count)]),
+    // Même mention qu'à l'écran : sans elle, l'export contredirait le tableau de bord.
+    stats.chargeParTechnicien.map((r) => [
+      r.absenceJusquau ? `${r.technicien} (absent jusqu'au ${r.absenceJusquau})` : r.technicien,
+      String(r.count),
+    ]),
   );
   if (stats.nombreEvaluations > 0) {
     section(

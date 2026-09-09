@@ -41,6 +41,12 @@ interface DonneeBarre {
   label: string;
   value: number;
   couleur: string;
+  // Clé de rendu. Indispensable pour la charge par technicien : deux homonymes
+  // partageraient le même libellé, et React confondrait leurs lignes (le risque a
+  // augmenté depuis que les techniciens sans ticket ouvert sont eux aussi affichés).
+  cle?: string;
+  // Mention discrète à droite du libellé (ex. « absent jusqu au 20/08 »).
+  annotation?: string;
 }
 
 // Graphique en barres horizontales : balayage animé à l'apparition, dégradé de
@@ -67,11 +73,22 @@ function CarteBarres({
         ) : (
           donnees.map((d, i) => (
             <div
-              key={d.label}
+              key={d.cle ?? d.label}
               className="group -mx-2 flex items-center gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-slate-50"
             >
-              <span className="w-24 shrink-0 truncate text-xs font-medium text-slate-500" title={d.label}>
-                {d.label}
+              <span
+                className="flex w-24 shrink-0 items-center gap-1 text-xs font-medium text-slate-500"
+                title={d.annotation ? `${d.label} — ${d.annotation}` : d.label}
+              >
+                <span className="truncate">{d.label}</span>
+                {d.annotation && (
+                  <span
+                    className="shrink-0 rounded bg-amber-100 px-1 text-[10px] font-semibold text-amber-700"
+                    aria-label={d.annotation}
+                  >
+                    abs.
+                  </span>
+                )}
               </span>
               <div className="relative h-2.5 flex-1 overflow-hidden rounded-full bg-slate-100">
                 <motion.div
@@ -100,6 +117,14 @@ function ChampFiltre({ label, children }: { label: string; children: ReactNode }
     </div>
   );
 }
+
+// « 2026-08-20 » -> « 20/08 ». Découpe de chaîne et non new Date(...) : construire une
+// date à partir du jour seul la placerait à minuit UTC et pourrait afficher la veille
+// dans un fuseau à décalage négatif.
+const jourCourt = (jour: string) => {
+  const [, mois, j] = jour.split('-');
+  return mois && j ? `${j}/${mois}` : jour;
+};
 
 const fmtHeures = (h: number | null) =>
   h == null ? '—' : h < 1 ? `${Math.round(h * 60)} min` : `${h} h`;
@@ -201,9 +226,11 @@ export function TableauDeBord() {
     couleur: 'from-primary-400 to-primary-600',
   }));
   const dataCharge = (stats?.chargeParTechnicien ?? []).map((r) => ({
+    cle: String(r.technicienId),
     label: r.technicien,
     value: r.count,
     couleur: 'from-violet-400 to-violet-500',
+    annotation: r.absenceJusquau ? `absent jusqu'au ${jourCourt(r.absenceJusquau)}` : undefined,
   }));
   const dataSatisfaction = [...(stats?.repartitionSatisfaction ?? [])].reverse().map((r) => ({
     label: `${r.note} étoile${r.note > 1 ? 's' : ''}`,

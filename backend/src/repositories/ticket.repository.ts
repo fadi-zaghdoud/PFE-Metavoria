@@ -276,7 +276,6 @@ export const ticketRepository = {
       parCategorie,
       satisfaction,
       repartitionNotes,
-      chargeTechniciens,
       clotures,
       prisesEnCharge,
     ] = await Promise.all([
@@ -291,12 +290,6 @@ export const ticketRepository = {
       prisma.ticket.groupBy({
         by: ['satisfactionNote'],
         where: { ...scope, satisfactionNote: { not: null } },
-        _count: { _all: true },
-      }),
-      // Charge courante : tickets encore ouverts, par technicien assigné.
-      prisma.ticket.groupBy({
-        by: ['technicienId'],
-        where: { ...scope, technicienId: { not: null }, statut: { in: ['NOUVEAU', 'EN_COURS', 'EN_ATTENTE'] } },
         _count: { _all: true },
       }),
       // Pour le temps moyen de résolution (création -> clôture).
@@ -317,7 +310,6 @@ export const ticketRepository = {
       parCategorie,
       satisfaction,
       repartitionNotes,
-      chargeTechniciens,
       clotures,
       prisesEnCharge,
     };

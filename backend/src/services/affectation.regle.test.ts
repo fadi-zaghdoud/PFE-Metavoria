@@ -7,7 +7,12 @@
 // quel que soit l'ordre de la liste.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { choisirTechnicien, type CandidatAffectation } from './affectation.regle';
+import {
+  SEUIL_CONFIANCE_AFFECTATION,
+  categorieEffective,
+  choisirTechnicien,
+  type CandidatAffectation,
+} from './affectation.regle';
 
 const RESEAU = 1;
 const LOGICIEL = 2;
@@ -329,4 +334,58 @@ test('choisirTechnicien ne lève sur aucune entrée', () => {
   assert.doesNotThrow(() =>
     choisirTechnicien([candidat({ id: 1, charge: Number.MAX_SAFE_INTEGER })], null),
   );
+});
+
+// ── categorieEffective : la frontiere IA -> regle (R1 / R2 / R5) ─────────────
+// C'est le seul endroit ou la sortie de l'IA devient « une categorie ou rien ».
+
+test('R5 — la catégorie choisie par le demandeur PRIME sur la suggestion IA', () => {
+  assert.equal(categorieEffective(RESEAU, { categorieId: LOGICIEL, confiance: 0.99 }), RESEAU);
+});
+
+test('R5 — elle prime même quand la suggestion est sous le seuil', () => {
+  assert.equal(categorieEffective(RESEAU, { categorieId: LOGICIEL, confiance: 0.1 }), RESEAU);
+});
+
+test('R5 — elle prime même sans aucune suggestion (IA muette)', () => {
+  assert.equal(categorieEffective(RESEAU, null), RESEAU);
+});
+
+test('nominal — pas de choix du demandeur, suggestion au-dessus du seuil : la suggestion sert', () => {
+  assert.equal(categorieEffective(null, { categorieId: LOGICIEL, confiance: 0.87 }), LOGICIEL);
+});
+
+test('seuil — frontière INCLUSIVE : une confiance égale au seuil est retenue', () => {
+  assert.equal(
+    categorieEffective(null, { categorieId: LOGICIEL, confiance: SEUIL_CONFIANCE_AFFECTATION }),
+    LOGICIEL,
+  );
+});
+
+test('R2 — juste sous le seuil : catégorie écartée, repli sur la charge', () => {
+  assert.equal(
+    categorieEffective(null, { categorieId: LOGICIEL, confiance: SEUIL_CONFIANCE_AFFECTATION - 0.001 }),
+    null,
+  );
+});
+
+test('R1 — aucune suggestion (IA coupée ou indisponible) : null', () => {
+  assert.equal(categorieEffective(null, null), null);
+});
+
+test('R2 — confiance absente : null (on n affecte pas sur une confiance inconnue)', () => {
+  assert.equal(categorieEffective(null, { categorieId: LOGICIEL, confiance: null }), null);
+});
+
+// Le repli doit toujours aller vers « pas de categorie », jamais vers une categorie
+// devinee : une affectation hors specialite est rattrapable, une affectation vers le
+// mauvais specialiste l'est beaucoup moins.
+test('sens du repli — aucune confiance insuffisante ne peut produire une catégorie', () => {
+  for (const confiance of [0, 0.01, 0.2, 0.49, 0.499]) {
+    assert.equal(
+      categorieEffective(null, { categorieId: LOGICIEL, confiance }),
+      null,
+      `confiance ${confiance}`,
+    );
+  }
 });

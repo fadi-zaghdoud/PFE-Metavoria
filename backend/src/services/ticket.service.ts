@@ -18,10 +18,12 @@ import { AppError, ForbiddenError, NotFoundError, ValidationError } from '../uti
 import { logAudit } from '../utils/logger';
 import { dateDuJour } from './absence.disponibilite';
 import {
+  categorieEffective,
   choisirTechnicien,
   type MotifAffectation,
   type ResultatChoix,
 } from './affectation.regle';
+import { parametreService } from './parametre.service';
 import { Prisma } from '../generated/prisma/client';
 import type { Priorite, Role, StatutTicket } from '../generated/prisma/enums';
 
@@ -268,8 +270,35 @@ export const ticketService = {
 
     // Enrichissement IA (Greffe 1) — NON bloquant : le ticket est déjà committé.
     // `enrichirTicket` absorbe toute erreur (service down, timeout, écriture) → la
-    // création réussit toujours. On relit ensuite pour renvoyer d'éventuelles suggestions.
-    await iaService.enrichirTicket(ticket);
+    // création réussit toujours. Il renvoie la classification retenue, dont l'affectation
+    // automatique a besoin : `Ticket.categorieId` reste NULL à la création (l'IA suggère,
+    // elle n'écrit jamais la catégorie — c'est la boucle humaine).
+    const suggestion = await iaService.enrichirTicket(ticket);
+
+    // Affectation automatique (§6.2) — seulement si l'administrateur a mis l'interrupteur
+    // sur AUTO. Lecture du mode à chaque création, sans cache : l'interrupteur doit être
+    // immédiat. Toute anomalie (mode illisible, IA muette, aucun technicien, échec
+    // d'écriture) laisse le ticket NOUVEAU non assigné — comme en mode MANUEL.
+    //
+    // CONTRAT : la création d'un ticket ne doit JAMAIS échouer à cause de l'affectation
+    // automatique. Le ticket est déjà committé et la réponse est déjà due au demandeur ;
+    // une affectation qui n'aboutit pas est un travail pour l'administrateur, pas une
+    // erreur pour l'utilisateur. D'où ce filet, en plus de celui de
+    // `affecterAutomatiquement` : il couvre aussi la lecture du mode.
+    try {
+      if ((await parametreService.modeAffectation()) === 'AUTO') {
+        await ticketService.affecterAutomatiquement(
+          ticket,
+          categorieEffective(input.categorieId ?? null, suggestion),
+        );
+      }
+    } catch (err) {
+      console.warn(
+        `[AFFECTATION] mode indéterminé pour le ticket #${ticket.id} — il reste non assigné :`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+
     return (await ticketRepository.findById(ticket.id)) ?? ticket;
   },
 

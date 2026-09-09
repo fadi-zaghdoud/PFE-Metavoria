@@ -151,10 +151,22 @@ const journaliser = (etape: string, ticketId: number, err: unknown) =>
 // (`origine='apres_ocr'`, texte = description + texte_extrait des pièces). `classify` encode
 // `titre\ndescription` → passer `description\ntexteOCR` produit l'embedding enrichi
 // `titre\ndescription\ntexte_extrait` SANS toucher au service ni à `tickets.description`.
+// Ce que la classification a retenu, remonte a l'appelant. Sert a l'AFFECTATION
+// AUTOMATIQUE (§6.2), qui doit connaitre la categorie suggeree et sa confiance : a la
+// creation, `Ticket.categorieId` reste NULL (l'IA suggere, elle n'ecrit jamais la
+// categorie — c'est la boucle humaine). La valeur est deja en main ici, la renvoyer
+// evite une relecture de la suggestion en base.
+export interface ResultatClassification {
+  categorieId: number;
+  // Probabilite top-1. `null` n'arrive pas pour la classification, mais le type reste
+  // aligne sur `SuggestionIA.scoreConfiance`, nullable (la scorecard de priorite n'en a pas).
+  confiance: number | null;
+}
+
 async function classerEtPrioriser(
   ticket: { id: number; titre: string; description: string },
   opts: { texteSupplementaire?: string; origine: 'creation' | 'apres_ocr'; pieceJointeIds?: number[] },
-): Promise<void> {
+): Promise<ResultatClassification | null> {
   const { id, titre, description } = ticket;
   const { texteSupplementaire = '', origine, pieceJointeIds } = opts;
   const descriptionEmbed = texteSupplementaire ? `${description}\n${texteSupplementaire}` : description;
@@ -168,7 +180,7 @@ async function classerEtPrioriser(
     // Service down / /classify KO / timeout → aucune suggestion, priorité sautée
     // (décision : soit le couple catégorie+priorité, soit rien). Ticket déjà créé.
     journaliser(`classify (${origine})`, id, err);
-    return;
+    return null;
   }
 
   // ── Étage 1b : embedding — création = base ; après-OCR = ÉCRASE avec l'enrichi ──
@@ -186,8 +198,15 @@ async function classerEtPrioriser(
     console.warn(
       `[IA] catégorie « ${classification.categorie} » absente en base (modèle périmé ?) — suggestion écartée (ticket #${id})`,
     );
-    return;
+    return null;
   }
+
+  // A partir d'ici la categorie est resolue : le resultat est acquis, meme si l'etage
+  // de priorite echoue ensuite. L'affectation automatique n'a besoin que de ce couple.
+  const resultat: ResultatClassification = {
+    categorieId: categorie.id,
+    confiance: classification.confiance,
+  };
 
   // Après-OCR : on REMPLACE la paire après-OCR précédente (toujours 1 « avant » création +
   // 1 « après » cohérente, même après plusieurs uploads).
@@ -230,7 +249,7 @@ async function classerEtPrioriser(
     priorite = await prioriser(titre, descriptionEmbed, categorie.nom);
   } catch (err) {
     journaliser(`priority (${origine})`, id, err); // classification déjà persistée
-    return;
+    return resultat;
   }
   try {
     await prisma.suggestionIA.create({
@@ -246,6 +265,8 @@ async function classerEtPrioriser(
   } catch (err) {
     journaliser('persistance PRIORISATION', id, err);
   }
+
+  return resultat;
 }
 
 // Génération RAG en ARRIÈRE-PLAN (fire-and-forget). Appelle /suggest (15-30 s) puis met la
@@ -346,12 +367,19 @@ async function genererExtraction(
 
 export const iaService = {
   // Point d'entrée non bloquant : ne rejette jamais (filet de sécurité + étages internes).
-  async enrichirTicket(ticket: { id: number; titre: string; description: string }): Promise<void> {
-    if (!env.IA_ACTIVE) return;
+  // Renvoie la classification retenue, ou `null` si l'IA n'a rien produit d'exploitable
+  // (module coupe, service indisponible, modele perime). Ne rejette jamais.
+  async enrichirTicket(ticket: {
+    id: number;
+    titre: string;
+    description: string;
+  }): Promise<ResultatClassification | null> {
+    if (!env.IA_ACTIVE) return null;
     try {
-      await classerEtPrioriser(ticket, { origine: 'creation' });
+      return await classerEtPrioriser(ticket, { origine: 'creation' });
     } catch (err) {
       journaliser('enrichissement (interrompu)', ticket.id, err);
+      return null;
     }
   },
 

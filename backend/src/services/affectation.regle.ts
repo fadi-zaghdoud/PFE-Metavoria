@@ -41,6 +41,48 @@
 // parce qu'ils sont absents » ≠ « parce que personne ne couvre cette catégorie »).
 import type { JourCalendaire } from './absence.disponibilite';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ARBITRAGE DE LA CATÉGORIE — la frontière entre l'IA et la règle
+//
+// `choisirTechnicien` ignore délibérément l'IA : il reçoit une catégorie, ou rien.
+// C'est ICI que la sortie de l'IA devient « une catégorie ou rien », et nulle part
+// ailleurs. Fonction pure, donc les trois replis sont éprouvables sans IA ni base.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Seuil au-dessous duquel une catégorie suggérée n'est PAS jugée exploitable pour
+// affecter. Aligné sur le seuil d'affichage du frontend (`SEUIL_CONFIANCE_AFFICHAGE`
+// dans TicketDetailPage.tsx) : sous ce seuil l'interface grise déjà la catégorie et la
+// marque « à préciser » — affecter dessus contredirait ce que voit l'utilisateur.
+//
+// ⚠️ DOUBLON ASSUMÉ avec la constante frontend, et NON réglable par l'administrateur :
+// le §6.5 prévoit des seuils IA paramétrables, qui ne sont PAS livrés. La table
+// `parametres` est prête à l'accueillir le jour venu — ne pas affirmer que c'est fait.
+//
+// Distinct du seuil d'ABSTENTION du modèle (laissé à `None`, flywheel J9) : ici on ne
+// remplace pas la catégorie, on renonce simplement à s'en servir pour affecter.
+export const SEUIL_CONFIANCE_AFFECTATION = 0.5;
+
+export interface ClassificationSuggeree {
+  categorieId: number;
+  confiance: number | null;
+}
+
+// Catégorie à utiliser pour l'affectation, par ordre de préséance :
+//   1. la catégorie RÉELLE choisie par le demandeur (R5) — on ne devine pas quand on sait ;
+//   2. la catégorie suggérée par l'IA si sa confiance atteint le seuil ;
+//   3. rien (R1 : pas de suggestion / IA indisponible ; R2 : confiance insuffisante),
+//      ce qui fait retomber `choisirTechnicien` sur la charge seule.
+export function categorieEffective(
+  categorieChoisie: number | null,
+  suggestion: ClassificationSuggeree | null,
+): number | null {
+  if (categorieChoisie !== null) return categorieChoisie;
+  if (suggestion === null) return null;
+  if (suggestion.confiance === null) return null;
+  return suggestion.confiance >= SEUIL_CONFIANCE_AFFECTATION ? suggestion.categorieId : null;
+}
+
+
 export interface CandidatAffectation {
   id: number;
   // Catégories couvertes par ce technicien (table `technicien_categories`).

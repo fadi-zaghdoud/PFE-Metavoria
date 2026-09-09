@@ -14,6 +14,13 @@ export interface Utilisateur {
   actif: boolean;
   statutCompte: StatutCompte;
   dateCreation: string;
+  // Categories couvertes par ce technicien (affectation automatique §6.2). Vide pour les
+  // autres roles. Absent des reponses anterieures a l'ajout des specialites.
+  specialites?: number[];
+  // Date de fin de l'absence EN COURS (« YYYY-MM-DD »), ou null. Le MOTIF n'est jamais
+  // expose ici : cette liste sert aussi a choisir un technicien, et MALADIE est une
+  // donnee de sante. Il n'apparait que sur la page Absences, reservee a l'administrateur.
+  absenceJusquau?: string | null;
 }
 
 export interface InscriptionPayload {

@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState, type SubmitEvent } from 'react';
 import { RefreshCw, Search, Send, UserPlus, Users } from 'lucide-react';
 import { utilisateursApi } from '../features/utilisateurs/utilisateursApi';
+import { ticketsApi } from '../features/tickets/ticketsApi';
+import { administrationApi } from '../features/administration/administrationApi';
+import type { Categorie } from '../types/ticket';
 import { useAuthStore } from '../store/authStore';
 import { ApiError } from '../lib/apiClient';
 import { LABELS_ROLE, tempsRelatif } from '../lib/format';
@@ -38,6 +41,13 @@ export function UsersManagementPage() {
   const [enCoursId, setEnCoursId] = useState<number | null>(null);
   // Utilisateur en attente de confirmation de désactivation.
   const [aDesactiver, setADesactiver] = useState<Utilisateur | null>(null);
+
+  // Spécialités (§6.2) : catégories couvertes par un technicien. Le dialog édite un
+  // brouillon local, envoyé en une fois — le serveur REMPLACE la liste complète.
+  const [categories, setCategories] = useState<Categorie[]>([]);
+  const [specialitesDe, setSpecialitesDe] = useState<Utilisateur | null>(null);
+  const [brouillonSpecialites, setBrouillonSpecialites] = useState<number[]>([]);
+  const [envoiSpecialites, setEnvoiSpecialites] = useState(false);
 
   // Formulaire d'invitation (dialog).
   const [invitationOuverte, setInvitationOuverte] = useState(false);
@@ -121,8 +131,12 @@ export function UsersManagementPage() {
     setErreur(null);
     try {
       const filtres: FiltresUtilisateurs = { role: filtreRole || undefined };
-      const { utilisateurs: liste } = await utilisateursApi.lister(filtres, token);
+      const [{ utilisateurs: liste }, { categories: cats }] = await Promise.all([
+        utilisateursApi.lister(filtres, token),
+        ticketsApi.listerCategories(token),
+      ]);
       setUtilisateurs(liste);
+      setCategories(cats);
     } catch (err) {
       setErreur(err instanceof ApiError ? err.message : 'Impossible de charger les utilisateurs');
     } finally {
@@ -136,6 +150,44 @@ export function UsersManagementPage() {
   }, [filtreRole, token]);
 
   // Recherche instantanée côté client (nom, prénom, e-mail, service).
+  const nomCategorie = useMemo(
+    () => new Map(categories.map((c) => [c.id, c.nom])),
+    [categories],
+  );
+
+  function ouvrirSpecialites(u: Utilisateur) {
+    setSpecialitesDe(u);
+    setBrouillonSpecialites(u.specialites ?? []);
+  }
+
+  function basculerSpecialite(categorieId: number) {
+    setBrouillonSpecialites((actuelles) =>
+      actuelles.includes(categorieId)
+        ? actuelles.filter((id) => id !== categorieId)
+        : [...actuelles, categorieId],
+    );
+  }
+
+  async function enregistrerSpecialites() {
+    if (!token || !specialitesDe) return;
+    setEnvoiSpecialites(true);
+    try {
+      await administrationApi.definirSpecialites(specialitesDe.id, brouillonSpecialites, token);
+      toast.success(
+        'Spécialités enregistrées',
+        brouillonSpecialites.length === 0
+          ? 'Ce technicien ne recevra que des affectations de repli.'
+          : `${brouillonSpecialites.length} catégorie(s) couverte(s).`,
+      );
+      setSpecialitesDe(null);
+      await chargerUtilisateurs();
+    } catch (err) {
+      toast.error('Enregistrement impossible', err instanceof ApiError ? err.message : 'Réessayez.');
+    } finally {
+      setEnvoiSpecialites(false);
+    }
+  }
+
   const resultats = useMemo(() => {
     const q = recherche.trim().toLowerCase();
     if (!q) return utilisateurs;
@@ -249,6 +301,7 @@ export function UsersManagementPage() {
               <Th className="hidden md:table-cell">Service</Th>
               <Th>Rôle</Th>
               <Th>Statut</Th>
+              <Th className="hidden xl:table-cell">Spécialités</Th>
               <Th className="hidden lg:table-cell">Créé</Th>
               <Th className="w-28 text-right">Actions</Th>
             </tr>
@@ -257,7 +310,7 @@ export function UsersManagementPage() {
             {chargement &&
               ['sq1', 'sq2', 'sq3', 'sq4', 'sq5'].map((cle) => (
                 <tr key={cle}>
-                  <Td colSpan={6}>
+                  <Td colSpan={7}>
                     <Skeleton className="h-9" />
                   </Td>
                 </tr>
@@ -265,7 +318,7 @@ export function UsersManagementPage() {
 
             {!chargement && resultats.length === 0 && (
               <tr>
-                <Td colSpan={6} className="p-0">
+                <Td colSpan={7} className="p-0">
                   <EmptyState
                     icon={Users}
                     title="Aucun utilisateur trouvé"
@@ -284,9 +337,19 @@ export function UsersManagementPage() {
                       <div className="flex items-center gap-3">
                         <Avatar prenom={u.prenom} nom={u.nom} />
                         <div className="min-w-0">
-                          <p className="truncate font-medium text-slate-900">
-                            {u.prenom} {u.nom}
-                            {estSoiMeme && <span className="ml-1.5 text-xs text-slate-400">(vous)</span>}
+                          <p className="flex items-center gap-1.5 truncate font-medium text-slate-900">
+                            <span className="truncate">
+                              {u.prenom} {u.nom}
+                            </span>
+                            {estSoiMeme && <span className="text-xs font-normal text-slate-400">(vous)</span>}
+                            {/* Rappel en lecture seule : l'administrateur qui regarde les
+                                comptes ne doit pas ignorer qu'un technicien est absent.
+                                Dates uniquement — le motif n'appartient qu'a la page Absences. */}
+                            {u.absenceJusquau && (
+                              <Badge variant="warning" title={`Absent jusqu'au ${u.absenceJusquau}`}>
+                                Absent
+                              </Badge>
+                            )}
                           </p>
                           <p className="truncate text-xs text-slate-400">{u.email}</p>
                         </div>
@@ -312,6 +375,22 @@ export function UsersManagementPage() {
                       <Badge variant={BADGE_STATUT[u.statutCompte].variant} dot>
                         {BADGE_STATUT[u.statutCompte].label}
                       </Badge>
+                    </Td>
+                    <Td className="hidden xl:table-cell">
+                      {u.role === 'TECHNICIEN' ? (
+                        <button
+                          type="button"
+                          onClick={() => ouvrirSpecialites(u)}
+                          className="rounded-lg px-2 py-1 text-left text-xs text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
+                          aria-label={`Modifier les spécialités de ${u.prenom} ${u.nom}`}
+                        >
+                          {u.specialites && u.specialites.length > 0
+                            ? u.specialites.map((id) => nomCategorie.get(id) ?? '?').join(', ')
+                            : 'Aucune — définir'}
+                        </button>
+                      ) : (
+                        <span className="text-xs text-slate-300">—</span>
+                      )}
                     </Td>
                     <Td className="hidden text-xs text-slate-400 lg:table-cell">
                       {tempsRelatif(u.dateCreation)}
@@ -461,6 +540,55 @@ export function UsersManagementPage() {
           </>
         }
       />
+
+      {/* Spécialités d'un technicien (§6.2) : quelles catégories il couvre. La liste
+          envoyée REMPLACE l'existante — l'interface transmet l'état complet des cases,
+          jamais un delta. Un ensemble vide est valide : le technicien reste candidat aux
+          affectations de repli, il n'est simplement prioritaire sur aucune catégorie. */}
+      <Dialog
+        open={specialitesDe !== null}
+        onClose={() => setSpecialitesDe(null)}
+        title="Spécialités"
+        description={
+          specialitesDe
+            ? `${specialitesDe.prenom} ${specialitesDe.nom} — catégories de tickets qu'il traite en priorité.`
+            : undefined
+        }
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setSpecialitesDe(null)} disabled={envoiSpecialites}>
+              Annuler
+            </Button>
+            <Button onClick={enregistrerSpecialites} loading={envoiSpecialites}>
+              Enregistrer
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-2">
+          {categories.map((categorie) => {
+            const coche = brouillonSpecialites.includes(categorie.id);
+            return (
+              <label
+                key={categorie.id}
+                className="flex cursor-pointer items-center gap-3 rounded-lg border border-slate-200 px-3 py-2 transition-colors hover:bg-slate-50"
+              >
+                <input
+                  type="checkbox"
+                  checked={coche}
+                  onChange={() => basculerSpecialite(categorie.id)}
+                  className="size-4 rounded border-slate-300 text-primary-600 focus:ring-primary-400"
+                />
+                <span className="text-sm font-medium text-slate-700">{categorie.nom}</span>
+              </label>
+            );
+          })}
+          <p className="pt-1 text-xs text-slate-400">
+            Sans spécialité, ce technicien ne recevra que des affectations de repli (quand aucun
+            spécialiste n'est disponible).
+          </p>
+        </div>
+      </Dialog>
     </div>
   );
 }

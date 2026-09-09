@@ -4,6 +4,9 @@ import { emailService } from './email.service';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../utils/AppError';
 import { toPublicUser } from '../utils/toPublicUser';
 import { sha256Hex } from '../utils/hash';
+import { logAudit } from '../utils/logger';
+import { categorieRepository } from '../repositories/categorie.repository';
+import { dateDuJour, jourDeDate, jourVersDate } from './absence.disponibilite';
 import type { Role } from '../generated/prisma/enums';
 
 const VALIDITE_INVITATION_HEURES = 72;
@@ -28,9 +31,45 @@ function genererTokenInvitation() {
 
 // Service réservé à l'administration (voir requireRole('ADMINISTRATEUR') sur les routes associées).
 export const utilisateurService = {
+  // Enrichi des specialites et de l'absence en cours : l'administration des comptes en a
+  // besoin (multi-select, pastille « absent »). Le MOTIF n'est pas remonte ici — il
+  // n'appartient qu'a la page Absences ; cette liste sert aussi a choisir un technicien.
   async lister(filtres: FiltresUtilisateurs) {
-    const utilisateurs = await utilisateurRepository.findMany(filtres);
-    return utilisateurs.map(toPublicUser);
+    const jour = jourVersDate(dateDuJour(new Date()));
+    const utilisateurs = await utilisateurRepository.findMany({ ...filtres, jour });
+    return utilisateurs.map((u) => {
+      const { specialites = [], absences = [], ...reste } = u as typeof u & {
+        specialites?: { categorieId: number }[];
+        absences?: { dateFin: Date }[];
+      };
+      return {
+        ...toPublicUser(reste as typeof u),
+        specialites: specialites.map((sp) => sp.categorieId),
+        absenceJusquau: absences[0] ? jourDeDate(absences[0].dateFin) : null,
+      };
+    });
+  },
+
+  // Definit les specialites d'un TECHNICIEN (§6.2) : quelles categories il couvre.
+  // Reserve a l'administrateur. Les categories doivent exister ; les doublons envoyes par
+  // l'interface sont absorbes plutot que refuses (cocher deux fois la meme case n'est pas
+  // une erreur de l'utilisateur).
+  async definirSpecialites(id: number, categorieIds: number[]) {
+    const utilisateur = await utilisateurRepository.findById(id);
+    if (!utilisateur) throw new NotFoundError('Utilisateur introuvable');
+    if (utilisateur.role !== 'TECHNICIEN') {
+      throw new ValidationError('Seul un technicien peut avoir des specialites');
+    }
+
+    const uniques = [...new Set(categorieIds)];
+    if (uniques.length > 0) {
+      const existantes = await categorieRepository.findManyByIds(uniques);
+      if (existantes.length !== uniques.length) throw new ValidationError('Categorie invalide');
+    }
+
+    await utilisateurRepository.remplacerSpecialites(id, uniques);
+    logAudit('UTILISATEUR_SPECIALITES', { utilisateurId: id, categorieIds: uniques });
+    return uniques;
   },
 
   // Crée un compte sans mot de passe (statut « En attente ») et envoie le lien

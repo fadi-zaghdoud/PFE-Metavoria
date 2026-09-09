@@ -5,6 +5,7 @@ import {
   changerStatutActifSchema,
   invitationSchema,
   listeUtilisateursQuerySchema,
+  specialitesSchema,
 } from '../validators/utilisateur.validator';
 import { UnauthorizedError, ValidationError } from '../utils/AppError';
 
@@ -34,6 +35,13 @@ export const utilisateurController = {
     const input = changerRoleSchema.parse(req.body);
     const utilisateur = await utilisateurService.changerRole(acteurId(req), id, input.role);
     res.status(200).json({ utilisateur });
+  },
+
+  // Specialites d'un technicien (§6.2) : la liste COMPLETE des categories couvertes.
+  async definirSpecialites(req: Request, res: Response) {
+    const { categorieIds } = specialitesSchema.parse(req.body);
+    const specialites = await utilisateurService.definirSpecialites(parseIdParam(req.params.id), categorieIds);
+    res.status(200).json({ specialites });
   },
 
   async changerStatutActif(req: Request, res: Response) {

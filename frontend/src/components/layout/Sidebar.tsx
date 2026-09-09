@@ -3,9 +3,11 @@ import {
   BarChart3,
   BookOpen,
   Brain,
+  CalendarOff,
   FolderTree,
   LayoutDashboard,
   LogOut,
+  Settings,
   Ticket,
   UserCircle,
   Users,
@@ -124,7 +126,15 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
                 onNavigate={onNavigate}
               />
               <SidebarLink
+                item={{ to: '/administration/absences', label: 'Absences', icon: CalendarOff }}
+                onNavigate={onNavigate}
+              />
+              <SidebarLink
                 item={{ to: '/administration/ia', label: 'Modèle IA', icon: Brain }}
+                onNavigate={onNavigate}
+              />
+              <SidebarLink
+                item={{ to: '/administration/parametres', label: 'Paramètres', icon: Settings }}
                 onNavigate={onNavigate}
               />
             </div>

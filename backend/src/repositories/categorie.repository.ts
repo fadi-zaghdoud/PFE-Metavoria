@@ -9,6 +9,11 @@ export const categorieRepository = {
     return prisma.categorie.findUnique({ where: { id } });
   },
 
+  // Verification en lot des categories reçues (specialites d'un technicien).
+  findManyByIds(ids: number[]) {
+    return prisma.categorie.findMany({ where: { id: { in: ids } }, select: { id: true } });
+  },
+
   // Résolution nom → catégorie (nom @unique). Sert à mapper le label du classifieur
   // IA sur une catégorie réelle ; renvoie null si le label n'existe plus (modèle périmé).
   findByNom(nom: string) {

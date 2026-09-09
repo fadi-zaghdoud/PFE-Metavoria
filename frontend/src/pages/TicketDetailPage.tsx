@@ -91,6 +91,13 @@ function labelPriorite(v: string | null): string {
   return v && v in LABEL_PRIORITE ? LABEL_PRIORITE[v as PrioriteTicket] : v ?? '—';
 }
 
+// « 2026-08-20 » -> « 20/08 ». Découpe de chaîne et non `new Date` : un jour seul serait
+// interprété à minuit UTC et pourrait s'afficher la veille selon le fuseau du navigateur.
+function jourCourt(jour: string): string {
+  const [, mois, j] = jour.split('-');
+  return mois && j ? `${j}/${mois}` : jour;
+}
+
 function decrireEvenement(e: EvenementTicket): string {
   switch (e.type) {
     case 'CHANGEMENT_STATUT':
@@ -1032,9 +1039,15 @@ export function TicketDetailPage() {
                     aria-label="Technicien assigné"
                   >
                     <option value="">Non assigné</option>
+                    {/* Un technicien absent reste SÉLECTIONNABLE : l'administrateur peut
+                        sciemment lui assigner un ticket pour son retour, et l'affectation
+                        manuelle doit rester possible en toutes circonstances. La mention
+                        évite seulement de choisir à l'aveugle. Dates uniquement — le motif
+                        n'apparaît que sur la page Absences. */}
                     {techniciens.map((t) => (
                       <option key={t.id} value={t.id}>
                         {t.prenom} {t.nom}
+                        {t.absenceJusquau ? ` — absent jusqu'au ${jourCourt(t.absenceJusquau)}` : ''}
                       </option>
                     ))}
                   </Select>

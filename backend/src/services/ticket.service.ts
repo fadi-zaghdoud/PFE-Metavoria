@@ -17,6 +17,7 @@ import { MAX_PIECES_PAR_TICKET } from '../middlewares/upload.middleware';
 import { AppError, ForbiddenError, NotFoundError, ValidationError } from '../utils/AppError';
 import { logAudit } from '../utils/logger';
 import { dateDuJour } from './absence.disponibilite';
+import { executerSansContexte } from '../utils/contexteRequete';
 import {
   categorieEffective,
   choisirTechnicien,
@@ -171,8 +172,7 @@ type TypeEvenementAffectation = 'AFFECTATION' | 'DESAFFECTATION' | 'AFFECTATION_
 // Resultat de l'affectation automatique : la decision de la regle pure, elargie de deux
 // cas qui n'appartiennent pas a la regle mais au service.
 export type ResultatAffectationAuto =
-  | ResultatChoix
-  | { affecte: false; raison: 'TICKET_DEJA_ASSIGNE' | 'ECHEC_TECHNIQUE' };
+  ResultatChoix | { affecte: false; raison: 'TICKET_DEJA_ASSIGNE' | 'ECHEC_TECHNIQUE' };
 
 // CŒUR PARTAGE de l'affectation — manuelle comme automatique.
 // Extrait tel quel de `affecter()` : evenement, mise a jour, journal d'audit, notification.
@@ -364,7 +364,12 @@ export const ticketService = {
       resolution: texteSolution,
       resolutionDate: texteSolution ? new Date() : null,
     });
-    logAudit('TICKET_STATUT', { ticketId: id, de: ticket.statut, vers: 'RESOLU', parUtilisateur: acteur.id });
+    logAudit('TICKET_STATUT', {
+      ticketId: id,
+      de: ticket.statut,
+      vers: 'RESOLU',
+      parUtilisateur: acteur.id,
+    });
 
     // Flywheel : à la résolution, la catégorie du ticket devient un label validé par l'humain.
     await iaService.reconcilierSuggestions(id, misAJour.categorie?.nom ?? null);
@@ -405,7 +410,12 @@ export const ticketService = {
       statut: 'CLOTURE',
       dateCloture: new Date(),
     });
-    logAudit('TICKET_STATUT', { ticketId: id, de: ticket.statut, vers: 'CLOTURE', parUtilisateur: acteur.id });
+    logAudit('TICKET_STATUT', {
+      ticketId: id,
+      de: ticket.statut,
+      vers: 'CLOTURE',
+      parUtilisateur: acteur.id,
+    });
 
     // Flywheel : filet (clôture admin) — la catégorie finale reste un label validé.
     await iaService.reconcilierSuggestions(id, misAJour.categorie?.nom ?? null);
@@ -437,7 +447,12 @@ export const ticketService = {
     });
 
     const misAJour = await ticketRepository.update(id, { priorite });
-    logAudit('TICKET_PRIORITE', { ticketId: id, de: ticket.priorite, vers: priorite, parUtilisateur: acteur.id });
+    logAudit('TICKET_PRIORITE', {
+      ticketId: id,
+      de: ticket.priorite,
+      vers: priorite,
+      parUtilisateur: acteur.id,
+    });
     return misAJour;
   },
 
@@ -483,40 +498,61 @@ export const ticketService = {
       return { affecte: false, raison: 'TICKET_DEJA_ASSIGNE' };
     }
 
-    try {
-      const candidats = await affectationRepository.chargeCourante({ jour: dateDuJour(new Date()) });
-      const resultat = choisirTechnicien(
-        candidats
-          .filter((c) => c.eligibleAffectation)
-          .map((c) => ({
-            id: c.technicienId,
-            categories: c.categories,
-            charge: c.charge,
-            dernierTicketAssigne: c.dernierTicketAssigne,
-            absenceEnCours: c.absenceEnCours,
-          })),
-        categorieId,
-      );
+    // BARRIÈRE DE CONTEXTE. `auteurId === null` signifie « décidé par le système » — cas
+    // de la création en mode AUTO, où l'acteur de la requête est le DEMANDEUR, un employé
+    // qui n'a pas le droit d'affecter et n'a pas fait cette action.
+    //
+    // Sans cette barrière, le journal d'audit lui attribuerait l'affectation : le contexte
+    // de requête SURVIT aux traitements lancés depuis la requête (mesuré à l'étape A2), il
+    // n'est donc pas perdu, il est HÉRITÉ. Constaté en base avant correction :
+    // « TICKET_AFFECTATION | Demandeur Production ». Un journal qui ment est pire qu'un
+    // journal incomplet.
+    //
+    // Quand `auteurId` est renseigné — un administrateur déclenchant l'affectation en lot —
+    // l'action lui appartient réellement et le contexte doit être conservé.
+    const executer =
+      auteurId === null
+        ? executerSansContexte
+        : (fn: () => Promise<ResultatAffectationAuto>) => fn();
 
-      if (!resultat.affecte) {
-        logAudit('TICKET_AFFECTATION_AUTO_SANS_SUITE', {
-          ticketId: ticket.id,
-          raison: resultat.raison,
+    return executer(async () => {
+      try {
+        const candidats = await affectationRepository.chargeCourante({
+          jour: dateDuJour(new Date()),
         });
-        return resultat;
-      }
+        const resultat = choisirTechnicien(
+          candidats
+            .filter((c) => c.eligibleAffectation)
+            .map((c) => ({
+              id: c.technicienId,
+              categories: c.categories,
+              charge: c.charge,
+              dernierTicketAssigne: c.dernierTicketAssigne,
+              absenceEnCours: c.absenceEnCours,
+            })),
+          categorieId,
+        );
 
-      // Relecture de la cible : elle a pu être désactivée entre le calcul et l'écriture.
-      const technicien = await resoudreTechnicien(resultat.technicienId);
-      await appliquerAffectation(ticket, technicien, auteurId, resultat.motif);
-      return resultat;
-    } catch (err) {
-      console.warn(
-        `[AFFECTATION] automatique impossible sur le ticket #${ticket.id} — il reste non assigné :`,
-        err instanceof Error ? err.message : err,
-      );
-      return { affecte: false, raison: 'ECHEC_TECHNIQUE' };
-    }
+        if (!resultat.affecte) {
+          logAudit('TICKET_AFFECTATION_AUTO_SANS_SUITE', {
+            ticketId: ticket.id,
+            raison: resultat.raison,
+          });
+          return resultat;
+        }
+
+        // Relecture de la cible : elle a pu être désactivée entre le calcul et l'écriture.
+        const technicien = await resoudreTechnicien(resultat.technicienId);
+        await appliquerAffectation(ticket, technicien, auteurId, resultat.motif);
+        return resultat;
+      } catch (err) {
+        console.warn(
+          `[AFFECTATION] automatique impossible sur le ticket #${ticket.id} — il reste non assigné :`,
+          err instanceof Error ? err.message : err,
+        );
+        return { affecte: false, raison: 'ECHEC_TECHNIQUE' };
+      }
+    });
   },
 
   // Correction de la catégorie après création (T-W6 — socle du flywheel J9).
@@ -650,10 +686,20 @@ export const ticketService = {
     const resourceType = fichier.mimetype === 'application/pdf' ? 'raw' : 'image';
     let stockage: { url: string; publicId: string };
     try {
-      stockage = await uploaderBuffer(fichier.buffer, `smart-ticketing/tickets/${id}`, resourceType);
+      stockage = await uploaderBuffer(
+        fichier.buffer,
+        `smart-ticketing/tickets/${id}`,
+        resourceType,
+      );
     } catch (err) {
-      console.error('[PieceJointe] upload Cloudinary échoué :', err instanceof Error ? err.message : err);
-      throw new AppError(502, "L'envoi vers le stockage de fichiers a échoué (réessayez plus tard).");
+      console.error(
+        '[PieceJointe] upload Cloudinary échoué :',
+        err instanceof Error ? err.message : err,
+      );
+      throw new AppError(
+        502,
+        "L'envoi vers le stockage de fichiers a échoué (réessayez plus tard).",
+      );
     }
     const piece = await ticketRepository.creerPieceJointe({
       ticketId: id,
@@ -663,12 +709,22 @@ export const ticketService = {
       typeMime: fichier.mimetype,
       taille: fichier.size,
     });
-    logAudit('TICKET_PIECE_JOINTE', { ticketId: id, pieceJointeId: piece.id, parUtilisateur: acteur.id });
+    logAudit('TICKET_PIECE_JOINTE', {
+      ticketId: id,
+      pieceJointeId: piece.id,
+      parUtilisateur: acteur.id,
+    });
 
     // OCR (J8bis Lot B) : extraction en ARRIÈRE-PLAN à partir du buffer DÉJÀ en main (pas de
     // re-téléchargement Cloudinary). Non bloquant → la réponse d'upload part immédiatement ;
     // l'OCR fiable peuple `texte_extrait` et déclenche une re-classification « après OCR ».
-    void iaService.demarrerExtraction(piece.id, ticket, fichier.buffer, fichier.mimetype, fichier.originalname);
+    void iaService.demarrerExtraction(
+      piece.id,
+      ticket,
+      fichier.buffer,
+      fichier.mimetype,
+      fichier.originalname,
+    );
 
     return piece;
   },
@@ -696,7 +752,9 @@ export const ticketService = {
     const ticket = await ticketRepository.findById(id);
     if (!ticket) throw new NotFoundError('Ticket introuvable');
     if (!estAdmin(acteur) && !estTechnicienAssigne(acteur, ticket)) {
-      throw new ForbiddenError('Seul le technicien assigné ou un administrateur peut demander un résumé');
+      throw new ForbiddenError(
+        'Seul le technicien assigné ou un administrateur peut demander un résumé',
+      );
     }
     if (ticket.commentaires.length < 2) {
       throw new ValidationError("Un résumé n'a d'intérêt qu'à partir de 2 messages dans le fil");
@@ -809,7 +867,10 @@ export const ticketService = {
     const premierePriseEnCharge = new Map<number, number>();
     for (const a of prisesEnCharge) {
       if (!premierePriseEnCharge.has(a.ticketId)) {
-        premierePriseEnCharge.set(a.ticketId, a.dateCreation.getTime() - a.ticket.dateCreation.getTime());
+        premierePriseEnCharge.set(
+          a.ticketId,
+          a.dateCreation.getTime() - a.ticket.dateCreation.getTime(),
+        );
       }
     }
     const delaiPriseEnChargeMoyenHeures = moyenneHeures([...premierePriseEnCharge.values()]);
@@ -826,7 +887,9 @@ export const ticketService = {
       tempsResolutionMoyenHeures,
       delaiPriseEnChargeMoyenHeures,
       satisfactionMoyenne:
-        satisfaction._avg.satisfactionNote != null ? arrondi(satisfaction._avg.satisfactionNote) : null,
+        satisfaction._avg.satisfactionNote != null
+          ? arrondi(satisfaction._avg.satisfactionNote)
+          : null,
       nombreEvaluations: satisfaction._count.satisfactionNote,
       repartitionSatisfaction: [1, 2, 3, 4, 5].map((note) => ({
         note,
@@ -840,7 +903,7 @@ export const ticketService = {
       repartitionCategorie: parCategorie
         .map((g) => ({
           categorie:
-            g.categorieId != null ? nomCategorie.get(g.categorieId) ?? 'Inconnue' : 'Non classé',
+            g.categorieId != null ? (nomCategorie.get(g.categorieId) ?? 'Inconnue') : 'Non classé',
           count: g._count._all,
         }))
         .sort((a, b) => b.count - a.count),

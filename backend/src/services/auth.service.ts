@@ -14,6 +14,7 @@ import {
   ValidationError,
 } from '../utils/AppError';
 import { toPublicUser } from '../utils/toPublicUser';
+import { logAudit } from '../utils/logger';
 import type { JwtPayload } from '../middlewares/auth.middleware';
 import type { Role } from '../generated/prisma/enums';
 
@@ -130,6 +131,12 @@ async function validerCodeOtp(utilisateur: UtilisateurEntite, code: string): Pro
   }
 }
 
+// Nom affichable, copie dans le journal d'audit : c'est le nom D'EPOQUE, qui doit rester
+// lisible meme apres la suppression du compte.
+function nomComplet(u: { prenom: string; nom: string }): string {
+  return `${u.prenom} ${u.nom}`;
+}
+
 export const authService = {
   async inscrire(input: InscriptionInput) {
     const existant = await utilisateurRepository.findByEmail(input.email);
@@ -168,21 +175,54 @@ export const authService = {
       utilisateur?.motDePasse ?? HASH_FACTICE,
     );
 
+    // TRAÇABILITÉ DES ÉCHECS (§7) — le signal de sécurité le plus utile : cinq refus
+    // depuis la même adresse en une minute est une tentative de force brute, qu'aucune
+    // journalisation console ne pouvait rendre lisible.
+    //
+    // ⚠️ CONTRAINTE ABSOLUE : les réponses HTTP ne changent PAS. Cette méthode masque
+    // délibérément l'existence d'un e-mail — comparaison bcrypt systématique contre un
+    // hash factice (anti-timing) et message identique pour « compte inconnu » et « mot de
+    // passe faux ». Les trois modes d'échec sont distingués DANS LE JOURNAL, jamais dans
+    // la réponse : l'administrateur voit la différence, l'attaquant ne la voit pas.
+    //
+    // L'acteur est passé explicitement : à la connexion, aucun jeton n'a encore été
+    // vérifié, le contexte ne porte donc aucune identité. `id` est l'identité CONFIRMÉE
+    // (null si le compte n'existe pas), `nom` l'identité PRÉSENTÉE (l'e-mail saisi).
+    const acteurTente = {
+      id: utilisateur?.id ?? null,
+      nom: utilisateur ? nomComplet(utilisateur) : input.email,
+    };
+    const echec = (motif: string) =>
+      logAudit(
+        'CONNEXION_ECHEC',
+        { emailTente: input.email, motif, compteExistant: utilisateur !== null },
+        { resultat: 'ECHEC', acteur: acteurTente, cible: { type: 'UTILISATEUR', id: utilisateur?.id ?? null } },
+      );
+
     if (utilisateur && !utilisateur.motDePasse) {
+      echec('COMPTE_NON_ACTIVE');
       throw new ForbiddenError(MESSAGE_COMPTE_NON_ACTIVE);
     }
 
     if (!utilisateur || !motDePasseValide) {
+      // Deux situations distinctes derrière une réponse volontairement identique.
+      echec(utilisateur ? 'MOT_DE_PASSE_INVALIDE' : 'COMPTE_INEXISTANT');
       throw new UnauthorizedError('Email ou mot de passe incorrect');
     }
 
     if (!utilisateur.actif) {
+      echec('COMPTE_DESACTIVE');
       throw new ForbiddenError('Ce compte a été désactivé — contactez un administrateur');
     }
 
     // Nettoie les sessions obsolètes puis émet une session courte + refresh rotatif.
     await refreshTokenRepository.supprimerObsoletes(utilisateur.id);
     const session = await emettreSession(utilisateur);
+    logAudit(
+      'CONNEXION',
+      { email: utilisateur.email, role: utilisateur.role },
+      { acteur: acteurTente, cible: { type: 'UTILISATEUR', id: utilisateur.id } },
+    );
     return { utilisateur: toPublicUser(utilisateur), ...session };
   },
 
@@ -224,6 +264,12 @@ export const authService = {
       tokenInvitation: null,
       tokenInvitationExpire: null,
     });
+
+    logAudit(
+      'COMPTE_ACTIVE',
+      { utilisateurId: active.id, email: active.email },
+      { acteur: { id: active.id, nom: nomComplet(active) } },
+    );
 
     // Auto-connexion : l'invité arrive directement sur son espace.
     const session = await emettreSession(active);
@@ -333,6 +379,12 @@ export const authService = {
 
     // Un changement de mot de passe révoque toutes les sessions existantes.
     await refreshTokenRepository.revokeAllForUser(utilisateur.id);
+
+    logAudit(
+      'MOT_DE_PASSE_REINITIALISE',
+      { utilisateurId: utilisateur.id, email: utilisateur.email },
+      { acteur: { id: utilisateur.id, nom: nomComplet(utilisateur) } },
+    );
   },
 
   // ── Rotation du refresh token ──────────────────────────────────────────────
@@ -371,6 +423,11 @@ export const authService = {
     const existant = await refreshTokenRepository.findByHash(sha256Hex(refreshBrut));
     if (existant && !existant.revoke) {
       await refreshTokenRepository.revoke(existant.id);
+      logAudit(
+        'DECONNEXION',
+        { utilisateurId: existant.utilisateurId },
+        { cible: { type: 'UTILISATEUR', id: existant.utilisateurId } },
+      );
     }
   },
 };

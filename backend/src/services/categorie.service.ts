@@ -4,6 +4,7 @@ import { iaService } from './ia.service';
 import { env } from '../config/env';
 import { deriverStatut } from './categorie.statut';
 import { AppError, ConflictError, NotFoundError } from '../utils/AppError';
+import { logAudit } from '../utils/logger';
 
 // Violation de contrainte d'unicité Prisma (nom déjà pris) — détectée par le code P2002,
 // sans dépendre de la classe d'erreur générée (duck-typing robuste au générateur).
@@ -70,6 +71,9 @@ export const categorieService = {
       if (estViolationUnicite(e)) throw new ConflictError('Une catégorie porte déjà ce nom.');
       throw e;
     }
+    // Une categorie est une classe du modele IA : la creer, la renommer ou la supprimer
+    // change ce que le classifieur peut predire et ce que les specialites peuvent couvrir.
+    logAudit('CATEGORIE_CREEE', { categorieId: cat.id, nom: cat.nom });
     const modele = await iaService.classesModeleActif();
     return {
       id: cat.id,
@@ -106,7 +110,14 @@ export const categorieService = {
     if (input.description !== undefined) data.description = input.description.trim() ? input.description.trim() : null;
 
     try {
-      return await categorieRepository.update(id, data);
+      const misAJour = await categorieRepository.update(id, data);
+      logAudit('CATEGORIE_MODIFIEE', {
+        categorieId: id,
+        de: cat.nom,
+        vers: misAJour.nom,
+        renomme,
+      });
+      return misAJour;
     } catch (e) {
       if (estViolationUnicite(e)) throw new ConflictError('Une catégorie porte déjà ce nom.');
       throw e;
@@ -131,5 +142,6 @@ export const categorieService = {
       );
     }
     await categorieRepository.deleteById(id);
+    logAudit('CATEGORIE_SUPPRIMEE', { categorieId: id, nom: cat.nom });
   },
 };

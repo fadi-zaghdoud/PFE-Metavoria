@@ -3,6 +3,7 @@ import { env } from '../config/env';
 import { iaService } from '../services/ia.service';
 import { ticketRepository } from '../repositories/ticket.repository';
 import { AppError } from '../utils/AppError';
+import { logAudit } from '../utils/logger';
 
 // Contrôleur ADMIN du flywheel (Greffe 3, B.3). Toutes les routes sont protégées par
 // requireRole('ADMINISTRATEUR') au niveau du router. Node assemble les captures propres
@@ -28,6 +29,11 @@ export const iaController = {
     verifierActif();
     const captures = (await ticketRepository.labelsValides()).filter((l) => l.categorie);
     const { status, body } = await siJoignable(iaService.proxyReentrainer(captures));
+    logAudit(
+      'IA_REENTRAINEMENT_LANCE',
+      { nbCaptures: captures.length, statutServiceIA: status },
+      { cible: { type: 'MODELE_IA' }, resultat: status < 400 ? 'SUCCES' : 'ECHEC' },
+    );
     res.status(status).json({ ...(body as object), nbCaptures: captures.length });
   },
 
@@ -56,6 +62,14 @@ export const iaController = {
     const stamp = String(req.body?.stamp ?? '').trim();
     if (!stamp) throw new AppError(400, 'Paramètre `stamp` requis.');
     const { status, body } = await siJoignable(iaService.proxyDeployer(stamp));
+    // Le deploiement CHANGE LE MODELE QUI SERT LES PREDICTIONS. Un refus 409 — le
+    // candidat n'est pas meilleur que l'actif sur le test gele — est tout aussi
+    // interessant a tracer que le succes : il prouve que la garde a fonctionne.
+    logAudit(
+      'IA_MODELE_DEPLOYE',
+      { stamp, statutServiceIA: status },
+      { cible: { type: 'MODELE_IA' }, resultat: status < 400 ? 'SUCCES' : 'ECHEC' },
+    );
     res.status(status).json(body);
   },
 

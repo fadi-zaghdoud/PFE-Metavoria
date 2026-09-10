@@ -108,6 +108,11 @@ export const utilisateurService = {
       throw err;
     }
 
+    logAudit('UTILISATEUR_INVITE', {
+      utilisateurId: utilisateur.id,
+      email: utilisateur.email,
+      role: utilisateur.role,
+    });
     return toPublicUser(utilisateur);
   },
 
@@ -138,6 +143,10 @@ export const utilisateurService = {
       VALIDITE_INVITATION_HEURES,
     );
 
+    logAudit('UTILISATEUR_INVITATION_RENVOYEE', {
+      utilisateurId: utilisateur.id,
+      email: utilisateur.email,
+    });
     return toPublicUser({ ...utilisateur, tokenInvitation: tokenHash, tokenInvitationExpire: expiration });
   },
 
@@ -160,6 +169,15 @@ export const utilisateurService = {
       }
     }
     const utilisateur = await utilisateurRepository.update(id, { role });
+    // Action la plus sensible de l'administration : elle change ce qu'une personne a le
+    // droit de faire. L'ancien role est conserve — « qui est devenu administrateur, et
+    // quand » doit rester repondable.
+    logAudit('UTILISATEUR_ROLE', {
+      utilisateurId: id,
+      email: utilisateur.email,
+      de: existant.role,
+      vers: role,
+    });
     return toPublicUser(utilisateur);
   },
 
@@ -179,6 +197,10 @@ export const utilisateurService = {
       }
     }
     const utilisateur = await utilisateurRepository.update(id, { actif });
+    logAudit(actif ? 'UTILISATEUR_REACTIVE' : 'UTILISATEUR_DESACTIVE', {
+      utilisateurId: id,
+      email: utilisateur.email,
+    });
     return toPublicUser(utilisateur);
   },
 };

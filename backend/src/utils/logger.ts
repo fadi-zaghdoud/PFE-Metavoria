@@ -30,6 +30,12 @@ export interface OptionsAudit {
   // depuis la même adresse est le signal que la journalisation console ne pouvait pas
   // produire.
   resultat?: 'SUCCES' | 'ECHEC';
+  // Acteur EXPLICITE, quand le contexte ne peut pas le fournir. Cas des actions
+  // d'authentification : à la connexion, réussie ou non, aucun jeton n'a encore été
+  // vérifié — `requireAuth` n'est jamais passé, le contexte ne porte donc pas d'identité.
+  // `id` reste l'identité CONFIRMÉE (le compte existe) et `nom` l'identité PRÉSENTÉE
+  // (l'e-mail saisi) : sur un compte inexistant, il y a un nom revendiqué et aucun id.
+  acteur?: { id?: number | null; nom: string };
 }
 
 // CONVENTION DE CIBLE — table de résolution explicite, et non une inférence opaque.
@@ -70,11 +76,11 @@ export function logAudit(
   void auditRepository
     .creer({
       action,
-      acteurId: acteurId ?? null,
+      acteurId: options.acteur ? (options.acteur.id ?? null) : (acteurId ?? null),
       // NOT NULL en base, et c'est voulu : c'est le NOM qui distingue une action du
       // système d'une action d'un compte depuis supprimé. Sans contexte d'acteur, il n'y
       // a aucun humain derrière l'action — « Système » est la valeur juste, pas un défaut.
-      acteurNom: acteurNom ?? 'Système',
+      acteurNom: options.acteur?.nom ?? acteurNom ?? 'Système',
       cibleType: cible?.type ?? null,
       cibleId: cible?.id ?? null,
       resultat: options.resultat ?? 'SUCCES',

@@ -1,4 +1,11 @@
 import { env } from '../config/env';
+// Barrière de contexte pour les traitements DIFFÉRÉS ci-dessous. Le contexte de requête
+// SURVIT aux traitements lancés sans être attendus (mesuré) : sans barrière, une écriture
+// au journal d'audit depuis ces chemins hériterait de l'IP et du nom de l'utilisateur dont
+// la requête les a déclenchés, et lui attribuerait une action du système. Ces fonctions
+// n'écrivent au journal aujourd'hui, mais la ré-classification après OCR passe par là :
+// la barrière rend l'invariant structurel plutôt que de dépendre d'une vigilance future.
+import { executerSansContexte } from '../utils/contexteRequete';
 import { prisma } from '../config/prisma';
 import { Prisma } from '../generated/prisma/client';
 import { categorieRepository } from '../repositories/categorie.repository';
@@ -394,7 +401,7 @@ export const iaService = {
     nomFichier: string,
   ): Promise<void> {
     if (!env.IA_ACTIVE) return;
-    void genererExtraction(pieceJointeId, ticket, buffer, typeMime, nomFichier);
+    executerSansContexte(() => void genererExtraction(pieceJointeId, ticket, buffer, typeMime, nomFichier));
   },
 
   // Démarre une suggestion RAG : réinitialise LA ligne SOLUTION du ticket en EN_COURS, puis
@@ -406,7 +413,7 @@ export const iaService = {
     const ligne = await prisma.suggestionIA.create({
       data: { ticketId, typeSuggestion: 'SOLUTION', contenu: '', statut: 'EN_COURS' },
     });
-    void genererSuggestion(ligne.id, ticketId, titre, description);
+    executerSansContexte(() => void genererSuggestion(ligne.id, ticketId, titre, description));
   },
 
   // Démarre un résumé du fil : réinitialise LA ligne RESUME en EN_COURS, puis lance la
@@ -422,7 +429,7 @@ export const iaService = {
     const ligne = await prisma.suggestionIA.create({
       data: { ticketId, typeSuggestion: 'RESUME', contenu: '', statut: 'EN_COURS' },
     });
-    void genererResume(ligne.id, ticketId, titre, description, messages);
+    executerSansContexte(() => void genererResume(ligne.id, ticketId, titre, description, messages));
   },
 
   // Flywheel (Greffe 3) — capture « suggéré vs choisi » : à la résolution / clôture / correction,

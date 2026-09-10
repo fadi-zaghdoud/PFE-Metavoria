@@ -21,4 +21,10 @@ export const auditRepository = {
   creer(donnees: EcritureAudit) {
     return prisma.journalAudit.create({ data: donnees });
   },
+
+  // Supprime les entrées antérieures à `avant`. Renvoie le nombre de lignes effacées.
+  async purger(avant: Date): Promise<number> {
+    const { count } = await prisma.journalAudit.deleteMany({ where: { dateCreation: { lt: avant } } });
+    return count;
+  },
 };

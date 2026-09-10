@@ -203,6 +203,13 @@ async function appliquerAffectation(
     type,
     ancienneValeur: ticket.technicien ? nomComplet(ticket.technicien) : null,
     nouvelleValeur: technicien ? nomComplet(technicien) : null,
+    // CIBLE de l'action : le technicien CONCERNÉ. Pour une affectation c'est celui qui
+    // reçoit le ticket ; pour une désaffectation, celui à qui on le retire — dans les deux
+    // cas la personne dont on veut pouvoir lister l'historique.
+    // Les valeurs textuelles restent, elles : ce sont les noms D'ÉPOQUE, qu'il faut
+    // continuer d'afficher. L'id répond à « toutes les affectations vers X », le nom à
+    // « qu'affichait-on à ce moment-là » — deux questions, deux colonnes.
+    cibleId: desaffectation ? (ticket.technicien?.id ?? null) : technicien.id,
   });
 
   const misAJour = await ticketRepository.update(ticket.id, {

@@ -70,6 +70,10 @@ export interface CreerEvenementData {
   type: string;
   ancienneValeur?: string | null;
   nouvelleValeur?: string | null;
+  // Technicien VISE par l'action (affectation / desaffectation), quand il y en a un.
+  // Complete le nom stocke dans les valeurs textuelles : un nom n'est pas une cle de
+  // jointure fiable (35 comptes pour 31 noms distincts dans cette base).
+  cibleId?: number | null;
 }
 
 export interface FiltresTickets {

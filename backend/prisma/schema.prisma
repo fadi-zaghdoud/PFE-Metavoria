@@ -74,7 +74,9 @@ model Utilisateur {
   ticketsDemandes    Ticket[]              @relation("TicketsDemandes")
   ticketsAssignes    Ticket[]              @relation("TicketsAssignes")
   commentaires       Commentaire[]
-  evenementsTicket   EvenementTicket[]
+  evenementsTicket   EvenementTicket[]     @relation("EvenementAuteur")
+  evenementsCible    EvenementTicket[]     @relation("EvenementCible")
+  journalAudit       JournalAudit[]
   notifications      Notification[]
   refreshTokens      RefreshToken[]
   // Affectation automatique (§6.2) : specialites du technicien, ses absences,
@@ -249,7 +251,18 @@ model EvenementTicket {
   // d'autre. Sans cette garde, supprimer un compte relabelliserait ses actions
   // passees en actions systeme — une trace d'audit qui ment.
   auteurId Int?         @map("auteur_id")
-  auteur   Utilisateur? @relation(fields: [auteurId], references: [id], onDelete: Restrict)
+  auteur   Utilisateur? @relation("EvenementAuteur", fields: [auteurId], references: [id], onDelete: Restrict)
+
+  // CIBLE de l'action, quand elle en a une : le technicien vise par une AFFECTATION ou
+  // une DESAFFECTATION. `nouvelleValeur` porte son NOM — le nom D'EPOQUE, celui qu'on
+  // doit continuer d'afficher — mais un nom n'est pas une cle de jointure fiable :
+  // 35 comptes portent 31 noms distincts, et « affectations vers X » etait donc
+  // impossible a repondre. L'id et le nom repondent a deux questions differentes,
+  // aucun ne remplace l'autre.
+  // NULL sur les evenements sans cible, et sur les 4 evenements anterieurs dont le nom
+  // designe deux comptes affectables : on montre ce qu'on sait, on n'invente rien.
+  cibleId Int?         @map("cible_id")
+  cible   Utilisateur? @relation("EvenementCible", fields: [cibleId], references: [id], onDelete: SetNull)
 
   @@index([ticketId])
   @@map("evenements_ticket")
@@ -380,4 +393,83 @@ model Absence {
   // Sert la recherche « absent aujourd'hui » ET le contrôle de chevauchement.
   @@index([technicienId, dateDebut, dateFin])
   @@map("absences")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Traçabilité (§7) — Chantier 2
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Issue d'une action tracée. Un échec est au moins aussi intéressant qu'un succès :
+// cinq CONNEXION_ECHEC depuis la même IP en une minute est le signal de sécurité que
+// la journalisation actuelle ne peut pas produire.
+enum ResultatAudit {
+  SUCCES
+  ECHEC
+}
+
+// Journal d'audit applicatif — répond à « qui a fait quoi, quand, depuis où, et avec
+// quel résultat ». Table SÉPARÉE de `EvenementTicket`, et non une extension de celui-ci,
+// pour trois raisons établies à l'inventaire :
+//
+//  1. `EvenementTicket.ticket` est en onDelete: Cascade — supprimer un ticket EFFACE sa
+//     trace. Une trace d'audit qui disparaît avec l'objet audité n'en est pas une.
+//  2. Une connexion, une invitation ou un déploiement de modèle n'ont AUCUN ticket à
+//     rattacher : il faudrait rendre `ticketId` nullable et mélanger deux cycles de vie.
+//  3. Les deux ont des publics et des durées de vie différents — la timeline raconte
+//     l'histoire d'un ticket à ses acteurs, l'audit sert l'administration et survit.
+//
+// Le doublonnage des actions ticket entre les deux tables est ASSUMÉ pour cette raison.
+//
+// ⚠️ DONNÉES PERSONNELLES : cette table stocke des adresses IP. Finalité SÉCURITÉ
+// (détection d'accès anormaux), accès réservé à l'administrateur, conservation limitée
+// (voir la purge de rétention). À ne pas détourner en outil de surveillance de l'activité
+// des employés.
+model JournalAudit {
+  id Int @id @default(autoincrement())
+
+  // Nom stable de l'action : CONNEXION, CONNEXION_ECHEC, ROLE_CHANGE, TICKET_AFFECTATION…
+  action String
+
+  // Auteur de l'action. SetNull et non Restrict : une trace doit SURVIVRE à la
+  // suppression du compte — sinon soit on perd l'historique, soit on interdit toute
+  // suppression de compte.
+  acteurId Int?         @map("acteur_id")
+  acteur   Utilisateur? @relation(fields: [acteurId], references: [id], onDelete: SetNull)
+
+  // Nom de l'acteur AU MOMENT DE L'ACTION, toujours rempli. C'est LUI qui désambiguïse,
+  // pas le `null` de `acteurId` : sans cette copie, un `acteurId` nul signifierait à la
+  // fois « action du système » et « compte depuis supprimé ». Ici, « Système » est écrit
+  // en toutes lettres pour les actions automatiques, et le nom réel sinon — y compris
+  // après la disparition du compte.
+  acteurNom String @map("acteur_nom")
+
+  // Objet visé. Volontairement POLYMORPHE et sans clé étrangère : la cible peut être un
+  // ticket, un compte, une catégorie ou un modèle IA. Une contrainte référentielle
+  // supposerait une table unique, et une cascade y ramènerait le problème que cette
+  // table existe précisément pour éviter.
+  cibleType String? @map("cible_type") // TICKET | UTILISATEUR | CATEGORIE | MODELE_IA | PARAMETRE | ABSENCE
+  cibleId   Int?    @map("cible_id")
+
+  resultat ResultatAudit @default(SUCCES)
+
+  // Contexte de la requête, porté par AsyncLocalStorage (les services ne voient jamais
+  // `req`). NULL n'est PAS un repli dégradé : pour une action décidée par le système
+  // — enrichissement IA après réponse, affectation automatique — il n'y a aucune IP
+  // d'utilisateur à enregistrer, et `null` est la valeur JUSTE.
+  ip        String? @db.VarChar(45) // 45 = longueur maximale d'une adresse IPv6 textuelle
+  userAgent String? @map("user_agent")
+
+  // Détail structuré propre à l'action (ancienne et nouvelle valeur, e-mail tenté,
+  // motif de refus…). Jamais de secret : ni mot de passe, ni jeton, ni code OTP.
+  details Json?
+
+  dateCreation DateTime @default(now()) @map("date_creation")
+
+  // Les quatre lectures de la page d'audit : la liste antéchronologique, le filtre par
+  // acteur, le filtre par action, et « tout ce qui concerne cet objet ».
+  @@index([dateCreation])
+  @@index([acteurId, dateCreation])
+  @@index([action, dateCreation])
+  @@index([cibleType, cibleId])
+  @@map("journal_audit")
 }

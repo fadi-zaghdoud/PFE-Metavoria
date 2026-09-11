@@ -1,5 +1,6 @@
 import { auditRepository } from '../repositories/audit.repository';
 import { logAudit } from '../utils/logger';
+import type { FiltreAuditDto } from '../validators/audit.validator';
 
 // Rétention du journal d'audit.
 //
@@ -42,6 +43,32 @@ export function dateLimiteRetention(maintenant: Date, mois = RETENTION_JOURNAL_M
 }
 
 export const auditService = {
+  // Consultation du journal (administration). Renvoie, en plus des entrées :
+  //  - `actionsConnues`, pour peupler le menu de filtre ;
+  //  - `curseurSuivant`, identifiant à repasser pour « charger plus » — `null` quand il
+  //    n'y a plus rien à charger ;
+  //  - `ciblesNonRattachees`, le nombre d'événements d'affectation dont la cible n'a pas
+  //    pu être reliée à un compte, pour que l'écran ANNONCE cette limite.
+  async consulter(filtres: FiltreAuditDto) {
+    // Une date de fin saisie « au 10/09 » désigne la journée entière, pas son premier
+    // instant : sans cela, tout ce qui s'est produit ce jour-là serait exclu.
+    const dateFin = filtres.dateFin ? new Date(filtres.dateFin) : undefined;
+    dateFin?.setHours(23, 59, 59, 999);
+
+    const [entrees, actionsConnues, ciblesNonRattachees] = await Promise.all([
+      auditRepository.lister({ ...filtres, dateFin }),
+      auditRepository.actionsConnues(),
+      auditRepository.compterCiblesNonRattachees(),
+    ]);
+
+    // Moins de lignes que demandé : il n'y a plus rien après. Évite un « charger plus »
+    // qui ne chargerait rien.
+    const curseurSuivant =
+      entrees.length === filtres.limite ? (entrees[entrees.length - 1]?.id ?? null) : null;
+
+    return { entrees, actionsConnues, curseurSuivant, ciblesNonRattachees };
+  },
+
   // Purge les entrées expirées. NE LÈVE JAMAIS : appelée au démarrage, elle ne doit en
   // aucun cas empêcher l'API de servir. Un journal trop long est un problème d'hygiène,
   // une API qui ne démarre pas est une panne.

@@ -7,6 +7,7 @@ import {
   FolderTree,
   LayoutDashboard,
   LogOut,
+  ScrollText,
   Settings,
   Ticket,
   UserCircle,
@@ -131,6 +132,10 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
               />
               <SidebarLink
                 item={{ to: '/administration/ia', label: 'Modèle IA', icon: Brain }}
+                onNavigate={onNavigate}
+              />
+              <SidebarLink
+                item={{ to: '/administration/journal', label: "Journal d'audit", icon: ScrollText }}
                 onNavigate={onNavigate}
               />
               <SidebarLink

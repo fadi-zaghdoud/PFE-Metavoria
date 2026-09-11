@@ -265,7 +265,7 @@ Le serveur de dev Vite proxifie automatiquement les appels `/api` vers `http://l
 
 ## Modèle de données
 
-Entités principales (voir `backend/prisma/schema.prisma`) : `Utilisateur`, `Ticket`, `Categorie`, `Commentaire`, `PieceJointe`, `Notification`, `SuggestionIA`, `EvenementTicket`, `RefreshToken`, ainsi que `Parametre`, `TechnicienCategorie` et `Absence` (affectation automatique, §6.2).
+Entités principales (voir `backend/prisma/schema.prisma`) : `Utilisateur`, `Ticket`, `Categorie`, `Commentaire`, `PieceJointe`, `Notification`, `SuggestionIA`, `EvenementTicket`, `RefreshToken`, ainsi que `Parametre`, `TechnicienCategorie` et `Absence` (affectation automatique, §6.2) et `JournalAudit` (traçabilité, §7).
 
 La colonne `Ticket.embedding` (type `vector(1024)`, extension pgvector — dimension du modèle bge-m3) est alimentée par le module IA et indexée en HNSW cosinus. La colonne générée `Ticket.recherche_texte` (`tsvector`, index GIN) porte l'arm lexical de la recherche hybride. Ces deux index sont créés en **SQL brut** dans les migrations : Prisma ne sait pas les exprimer, donc **toute migration générée doit être relue avant application** (voir le journal technique, Chantier 1).
 
@@ -386,6 +386,100 @@ Le **seuil de confiance** (0,5) utilisé pour retenir une catégorie suggérée 
 code et **n'est pas encore réglable** depuis l'interface. La table de paramètres est prête à
 l'accueillir (CDC §6.5).
 
+## Journal d'audit
+
+Les actions sensibles de l'application sont **enregistrées en base**, consultables depuis
+**Administration → Journal d'audit** (CDC §7 — Traçabilité).
+
+> Avant ce chantier, la journalisation n'écrivait qu'en console. Comme chaque
+> reconstruction d'image recrée le conteneur et emporte ses journaux, il ne restait en
+> pratique que quelques heures d'historique. Les entrées sont désormais durables.
+
+### Ce qui est tracé
+
+| Domaine | Actions |
+| --- | --- |
+| **Authentification** | Connexion, **échec de connexion**, déconnexion, activation de compte, réinitialisation de mot de passe |
+| **Comptes** | Invitation, renvoi d'invitation, changement de **rôle**, activation / désactivation, spécialités |
+| **Tickets** | Création, affectation (manuelle et automatique), prise en charge, changement de statut / priorité / catégorie, évaluation, pièce jointe, demandes d'IA |
+| **Catégories** | Création, renommage, suppression |
+| **Absences** | Création, modification, suppression |
+| **Paramètres** | Changement du mode d'affectation |
+| **Module IA** | Lancement d'un réentraînement, déploiement d'un modèle |
+
+Chaque entrée porte : l'**action**, l'**acteur**, la **cible**, le **résultat**
+(succès / échec), l'**adresse IP**, le **navigateur**, l'**horodatage** et un détail
+propre à l'action.
+
+### Consulter le journal
+
+Filtres combinables : **action**, **acteur**, **période**, **résultat**. Les 100 dernières
+entrées s'affichent, un bouton **Charger plus** remonte le temps.
+
+**Cliquez une ligne** pour ouvrir son détail complet : le contexte y est écrit en français
+— « Priorité : Moyenne → Haute », « Motif : Mot de passe incorrect » — et le navigateur
+complet y figure.
+
+### Trois natures d'acteur, à ne pas confondre
+
+| Mention | Signification |
+| --- | --- |
+| **Compte confirmé** | L'action vient d'un compte authentifié. |
+| **Système** | Décidée par l'application, sans intervention humaine (affectation automatique, purge). Aucune adresse IP n'y est associée : il n'y en a pas à enregistrer. |
+| **Non authentifié** | Identité **présentée** lors d'une tentative, **jamais vérifiée** — typiquement un échec de connexion sur un e-mail inconnu. Le nom affiché n'est pas une identité confirmée. |
+
+De même, une adresse IP absente est toujours **expliquée** : « action du système » n'est pas
+la même chose que « repris de l'historique — contexte non enregistré à l'époque ».
+
+### Les échecs de connexion
+
+Les tentatives refusées sont enregistrées avec l'**e-mail saisi**, l'**adresse IP** et le
+**motif précis** — compte inexistant, mot de passe incorrect, compte désactivé, compte non
+activé. Cinq refus consécutifs depuis une même adresse deviennent lisibles d'un filtre.
+
+> Les réponses de l'API, elles, **ne changent pas** : « compte inexistant » et « mot de
+> passe incorrect » renvoient exactement le même message, pour ne pas révéler quels e-mails
+> possèdent un compte. La distinction n'existe **que dans le journal** : l'administrateur
+> la voit, un attaquant non.
+
+### Données personnelles et conservation
+
+Le journal contient des **adresses IP** et des identifiants de comptes, qui sont des
+données à caractère personnel.
+
+| | |
+| --- | --- |
+| **Finalité** | Sécurité et redevabilité : détecter les accès anormaux, et pouvoir répondre à « qui a fait cette modification, et quand ». **Pas** un outil de mesure de l'activité des employés. |
+| **Accès** | **Administrateur uniquement.** Les autres rôles reçoivent un refus (403). |
+| **Conservation** | **12 mois.** Les entrées plus anciennes sont supprimées automatiquement. |
+| **Purge** | Exécutée **au démarrage de l'API**, et tracée elle-même. |
+
+> **Limite connue** : le projet n'embarque pas de planificateur de tâches. La purge n'a
+> lieu qu'au démarrage — une instance qui tournerait plus de douze mois sans redémarrer
+> conserverait des entrées au-delà de la durée annoncée. En pratique la pile redémarre à
+> chaque déploiement.
+
+### Reprise de l'historique
+
+Les **51 événements de tickets antérieurs** à la mise en service du journal y ont été
+importés : il couvre donc l'historique réel du projet. Ces lignes sont signalées
+« repris de l'historique » et **sans adresse IP** — ce contexte n'était pas enregistré à
+l'époque, et n'a pas été inventé.
+
+De même, **4 affectations anciennes ne sont rattachables à aucun compte** : elles
+n'enregistraient que le *nom* du technicien, et ce nom désigne plusieurs comptes.
+L'écran l'annonce. Le nom reste lisible dans l'historique du ticket ; seul le lien vers un
+compte manque. Les affectations enregistrées depuis sont, elles, rattachées.
+
+### Point d'entrée API
+
+- `GET /api/audit` — consultation filtrée et paginée (Administrateur)
+
+### Perspectives non livrées
+
+Pagination infinie · export CSV / PDF · recherche plein-texte · filtre par objet visé ·
+alertes automatiques sur échecs répétés · durée de conservation réglable depuis l'interface.
+
 ## État d'avancement
 
 **Livré :**
@@ -398,6 +492,10 @@ l'accueillir (CDC §6.5).
 - ✅ **Affectation automatique** (§6.2) : interrupteur manuel/automatique persistant,
   spécialités technicien ↔ catégorie, **gestion des absences** (congé, maladie, formation)
   excluant les techniciens indisponibles, choix par charge et spécialité
+- ✅ **Journal d'audit** (§7) : actions sensibles persistées en base (authentification,
+  comptes, tickets, catégories, absences, paramètres, module IA), **échecs de connexion
+  tracés avec leur motif**, consultation filtrable réservée à l'administrateur,
+  conservation 12 mois
 - ✅ **Pièces jointes** (PDF/PNG/JPG, ≤ 10 Mo) avec **OCR local** (Tesseract, pack `fra`)
 - ✅ **Module IA complet** : classification automatique de catégorie, priorisation par scorecard
   glass-box, suggestion de solution par **RAG** (recherche hybride pgvector + full-text, reranker,

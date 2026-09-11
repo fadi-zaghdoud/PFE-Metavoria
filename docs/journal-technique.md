@@ -1756,6 +1756,10 @@ demande explicite.
 - **Cause** : non prouvable a posteriori. La seule mécanique connue capable de cela est
   exactement celle que la migration J6 documentait déjà — un outil qui aligne la base sur
   `schema.prisma` supprime les objets SQL bruts qu'il ne voit pas.
+  > **Mise à jour du 10/09/2026 — la cause est désormais ÉTABLIE.** Voir la note
+  > rétrospective en fin de « Chantier 2 » : restaurer les index a réactivé le piège et
+  > l'a rendu visible. Ces lignes n'apparaissaient pas ici pour la seule raison qu'il n'y
+  > avait alors plus rien à supprimer.
 - **Impact** : nul et invisible à 869 tickets, bloquant à l'échelle visée (§7 : réponse IA
   < 5 s, montée en charge sans refonte). C'est pour cela que personne ne l'avait vu.
 - **Traitement** : recréés en `IF NOT EXISTS` dans la migration du chantier, donc
@@ -1959,3 +1963,210 @@ demande explicite.
   **soumise à validation**.
 - **Pondération de la charge par priorité** : écartée, faute de poids justifiables par les
   données. Perspective documentée, non fabriquée.
+
+---
+
+# Chantier 2 — Traçabilité exploitable (§7)
+
+> Exigence non fonctionnelle du CDC §7 : « Journalisation (logs) des actions critiques :
+> création, affectation, modification de statut des tickets ». Satisfaite sur le papier
+> depuis juillet — et pourtant inexploitable, pour des raisons mesurées ci-dessous.
+> Livré en 8 étapes (lots A, B, C, E), branche `docker`, commits `2be7c32` → `2c2a780`.
+
+## Le chiffre qui justifie le chantier
+
+- **Date** : 10/09/2026. `[établi en séance]`
+- **Mesuré au démarrage** : il restait **21 lignes `[AUDIT]`** dans les journaux du
+  conteneur, pour un projet qui trace **depuis le 11 juillet**. Non par rotation — aucune
+  n'était configurée — mais parce que **chaque `docker compose build` recrée le conteneur
+  et emporte ses journaux**. Le conteneur avait été créé la veille.
+- **Autrement dit** : l'exigence §7 était tenue littéralement, et avait retenu **moins
+  d'une journée d'historique**. C'est l'argument à donner tel quel : la conformité de façade
+  se mesure, elle ne se discute pas.
+
+## L'inventaire, avant tout plan
+
+| Point | État constaté |
+| --- | --- |
+| `EvenementTicket` | Lisible **ticket par ticket** uniquement — aucune route transversale, 4 chemins de lecture tous internes |
+| Hors tickets | **22 actions sensibles, 1 tracée** : `auth.service` 0/12, `categorie.service` 0/4, `utilisateur.service` 1/6, déploiement IA 0 |
+| Cible des affectations | Stockée en **NOM**, jamais en id — et cette base compte **35 comptes pour 31 noms distincts** |
+| Stock non assigné | **53 tickets** en attente d'affectation |
+| `logAudit` | 17 appels, tous en console volatile |
+
+## Les décisions, et leurs raisons
+
+### Table SÉPARÉE, et non une extension de `EvenementTicket`
+
+- **Décision** : `JournalAudit`, sans relation cascade.
+- **Pourquoi, et c'est l'argument qui tranche** : `evenements_ticket.ticket_id` est en
+  `ON DELETE CASCADE` — **supprimer un ticket efface sa trace**. Constaté malgré moi au
+  Chantier 1 : chaque script de test supprimait son ticket, et le compteur d'événements
+  revenait à son point de départ au lieu d'augmenter. **Une trace qui disparaît avec
+  l'objet audité n'est pas une trace.** S'y ajoutent deux raisons : une connexion ou un
+  déploiement de modèle n'ont aucun ticket à rattacher, et les deux tables ont des publics
+  et des durées de vie différents. Le doublonnage des actions ticket est assumé.
+
+### `acteurId` en `SET NULL`, avec `acteurNom` dénormalisé
+
+- **Pourquoi** : la trace doit **survivre à la suppression du compte**. En `RESTRICT`, on
+  interdirait toute suppression ; en `SET NULL` seul, l'entrée deviendrait anonyme — et
+  pire, `null` signifierait à la fois « action du système » et « compte disparu ».
+  **C'est le NOM qui désambiguïse**, jamais le `null` : « Système » est écrit en toutes
+  lettres, le nom réel sinon. Transposition directe de la leçon du Chantier 1 sur
+  `AFFECTATION` (id **et** nom, deux questions différentes).
+
+### `AsyncLocalStorage` — et le renversement qu'a produit la mesure
+
+- **Problème** : `logAudit` est appelé à dix-sept endroits **enfouis dans la couche
+  service**, et les services ne voient jamais `req` — `connecter(input)` reçoit un DTO.
+  Les alternatives étaient de contaminer dix-sept signatures et tous leurs appelants, ou
+  de tracer au niveau HTTP en perdant les noms d'action.
+- **LE RENVERSEMENT** : le plan anticipait une **perte** du contexte sur les traitements
+  lancés sans être attendus, et prévoyait d'assumer `ip = null`. Mesure faite sur un
+  serveur Express réel, avec le patron exact du code (`void genererSuggestion(...)`),
+  lecture **120 ms après le départ de la réponse** : **le contexte SURVIT**.
+  `AsyncLocalStorage` suit la chaîne asynchrone, pas le cycle de vie HTTP.
+- **Conséquence** : le risque n'est pas de perdre le contexte, c'est de **l'hériter**.
+  Sans barrière, un traitement système écrirait au journal l'IP et le nom de l'utilisateur
+  dont la requête l'a déclenché — **et lui attribuerait une action qu'il n'a pas faite**.
+  Un journal qui **ment** est pire qu'un journal incomplet. `executerSansContexte` change
+  donc de nature : pas un utilitaire de confort, une **barrière obligatoire**.
+
+### Le bug que la porte de preuve a attrapé
+
+- **Constat, en base, au premier passage de l'étape A3** :
+  `TICKET_AFFECTATION | Demandeur Production`. L'affectation **automatique** attribuée au
+  **demandeur du ticket** — un employé qui n'a ni le droit d'affecter ni fait cette action.
+- **Correction** : barrière posée **à l'intérieur** de `affecterAutomatiquement`,
+  conditionnée à `auteurId === null`, et non au site d'appel. Ce paramètre encode déjà
+  « décidé par le système » ; la règle devient *« pas d'auteur humain, donc pas de contexte
+  humain »* — et elle tiendra pour l'affectation en lot, où l'administrateur **est**
+  l'acteur et doit conserver son contexte. Une barrière, deux usages couverts.
+- **Barrières préventives** ensuite posées sur les trois chemins différés
+  (`genererSuggestion`, `genererResume`, `genererExtraction`). Aucun n'écrit au journal
+  aujourd'hui — mais la ré-classification après OCR passe par là, et faire dépendre la
+  correction d'une vigilance future serait rejouer ce bug.
+
+### L'anti-énumération, préservée et prouvée mécaniquement
+
+- **Contrainte** : `connecter()` masque délibérément l'existence d'un e-mail — comparaison
+  bcrypt systématique contre un hash factice (anti-timing), message identique pour
+  « compte inconnu » et « mot de passe faux ».
+- **Preuve** : l'empreinte des cinq réponses a été capturée **avant** toute modification,
+  puis **après**, et les deux fichiers ont le **même MD5** (`e47f8c47…`). Vérification
+  mécanique, pas une inspection.
+- **Les trois modes d'échec sont distingués DANS LE JOURNAL, et seulement là.**
+  L'administrateur voit la différence, l'attaquant ne la voit pas. `options.acteur` était
+  nécessaire : à la connexion, aucun jeton n'a encore été vérifié, donc le contexte ne
+  porte aucune identité — sans cette surcharge, une tentative aurait été attribuée à
+  « Système », ce qui aurait été faux. Distinction retenue : `id` = identité **confirmée**,
+  `nom` = identité **présentée**.
+
+### Le mur des noms, cassé — et sa part irréductible assumée
+
+- **Problème** : « toutes les affectations vers X » était sans réponse fiable. Le nom n'est
+  pas une clé de jointure : **deux comptes affectables** partagent « Fadi Zaghdoud ».
+- **Décision** : colonne `cibleId` **à côté** du nom, pas à sa place. L'id répond à « vers
+  quel compte », le nom d'époque à « qu'affichait-on alors ». Subtilité de la
+  désaffectation : `nouvelleValeur` y vaut `null` — personne ne reçoit le ticket — et la
+  cible se lit dans `ancienneValeur`.
+- **Reprise partielle, mesurée à blanc avant écriture : 10 des 14 résolus, 4 non.**
+  **Ces quatre restent NULL, délibérément.** Choisir l'un des deux comptes serait deviner,
+  et une trace devinée est pire qu'une trace absente : elle attribuerait à quelqu'un une
+  action qui n'est peut-être pas la sienne. L'écran **annonce** la limite.
+- **Prouvé contre le mécanisme** : un ticket affecté puis désaffecté au **second** des deux
+  homonymes donne 2 événements par `cibleId`, là où le nom en rend 5 répartis sur 2 comptes.
+
+### Reprise de l'historique : 51 événements importés
+
+- **Pourquoi** : sans elle, la page d'audit s'ouvrirait **vide** — et surtout, l'historique
+  existe déjà, il est simplement dans une autre table. Le journal couvre donc **depuis le
+  11 juillet**.
+- **Ce qui est honnêtement inconnu reste NULL** : `ip` et `userAgent` n'ont jamais été
+  capturés à l'époque. Chaque ligne porte `importeDeLHistorique: true`, pour que l'écran
+  dise « contexte de requête inconnu » au lieu de laisser croire à une trace complète.
+
+### Rétention 12 mois, et la limite écrite plutôt que cachée
+
+- **Cadre** : finalité **sécurité et redevabilité** — détecter les accès anormaux, répondre
+  à « qui a changé ce rôle, et quand ». **Pas** un outil de mesure de l'activité des
+  employés. Accès **administrateur uniquement**. Durée **12 mois** : un cycle annuel
+  complet, sans conserver indéfiniment des adresses IP, qui sont des données personnelles.
+- **Purge lancée après `listen` et non attendue** : l'API sert déjà quand elle s'exécute,
+  donc ni sa lenteur ni son échec ne peuvent retarder le démarrage. *Un journal trop long
+  est un problème d'hygiène, une API qui ne démarre pas est une panne.*
+- **LIMITE ASSUMÉE** : le projet n'a **aucun planificateur**. La purge est déclenchée au
+  démarrage, et nulle part ailleurs. **Une instance qui tournerait plus de douze mois sans
+  redémarrer ne purgerait pas.** En pratique la pile redémarre à chaque déploiement, mais
+  la limite est réelle — elle est écrite en tête du service, pas laissée à découvrir.
+- Le 29 février reculé de douze mois tombe sur une année non bissextile : `Date` reporte au
+  1er mars. Le **sens** du décalage est testé — un jour de trop conservé est anodin, un jour
+  de trop supprimé effacerait une trace prématurément.
+
+### La page : tri, curseur, et ce qu'elle refuse de laisser deviner
+
+- **L'ordre est `dateCreation DESC, id DESC`, jamais `id DESC` seul.** Les entrées importées
+  ont les identifiants les plus élevés et les dates les plus anciennes : **mesuré, les 94
+  lignes d'alors occupaient un rang différent selon l'un ou l'autre tri.** Un tri par id
+  aurait remonté les plus anciennes en tête.
+- **Le détail est traduit, pas affiché en JSON** : couples avant/après regroupés en un
+  énoncé titré (« Priorité : Moyenne → Haute »), codes devenus phrases
+  (`MOT_DE_PASSE_INVALIDE` → « Mot de passe incorrect »).
+- **Trois natures d'acteur jamais confondues** : compte confirmé · Système · **non
+  authentifié**. Sans la troisième, un échec de connexion sur une adresse d'administrateur
+  afficherait ce nom comme acteur et se lirait comme si l'administrateur avait agi.
+- **Panneau latéral obtenu en ajoutant une variante au `Dialog` existant**, pas en créant
+  un composant : échappement, piège de focus, fermeture au clic sur le fond et animation
+  sont le code déjà en place. Additif — les quatre usages actuels sont inchangés.
+
+## Ce qui a été prouvé, et comment
+
+- **103 tests purs** (`node:test`, zéro I/O), dont **16** sur le contexte de requête :
+  survie à `await`, aux `await` imbriqués et à `setTimeout`, **isolation entre requêtes
+  concurrentes** (la plus lente ne doit pas lire l'IP de la plus rapide — le mode de
+  défaillance qui rendrait le journal activement trompeur), coupure effective de
+  l'héritage ; et **7** sur le calcul de rétention.
+- **Contrat vérifié en rendant la table injoignable** : la création de ticket répond 201, le
+  ticket est en base, le filet écrit « l'action n'est pas interrompue », et la table est
+  restaurée. Une base d'audit en panne ne bloque pas le métier. Même vérification au
+  démarrage : purge impossible, `/api/health` répond 200.
+- **Pagination éprouvée sur la zone piégeuse** : parcours complet par pas de dix, séquence
+  comparée à la vérité terrain SQL — aucun doublon, aucun trou, ordre identique, première
+  entrée importée au rang 46 et non en tête.
+- **Index vérifiés par EXPLAIN**, pas supposés présents (leçon du Chantier 1).
+- **Toutes les vérifications non destructives**, base rendue à l'identique à chaque fois.
+
+## Dettes assumées et documentées
+
+- **Lot D non livré** — le **bouton d'affectation du stock** (53 tickets non assignés au
+  moment de l'inventaire) reste à décider. La bascule en mode AUTO ne concerne toujours que
+  les tickets créés ensuite ; l'écran le dit.
+- **4 événements d'affectation antérieurs** restent non rattachables à un compte. Affiché.
+- **Purge au démarrage uniquement** (voir ci-dessus).
+- **`logAudit` n'est pas transactionnel** avec l'action tracée : une coupure juste après
+  peut perdre la ligne. L'alternative — attendre l'écriture — ajouterait de la latence à
+  chaque action et laisserait une base d'audit indisponible bloquer le métier. Mauvais
+  échange, documenté en tête du module.
+- **`TICKET_PIECE_JOINTE` et `TICKET_AFFECTATION_AUTO_SANS_SUITE`** n'ont pas été déclenchés
+  lors de la vérification (envoi multipart ; zéro technicien actif) — non comptés comme
+  vérifiés.
+- **Hors périmètre, volontairement** : pagination infinie · export CSV/PDF · recherche
+  plein-texte · filtre par cible · alertes automatiques sur échecs répétés · rétention
+  configurable depuis l'interface · traçage des **lectures** (qui a consulté quel ticket),
+  dont le volume serait disproportionné.
+
+## Note rétrospective sur le Chantier 1
+
+La cause de la disparition des index HNSW et GIN, notée alors comme **« non prouvable a
+posteriori »**, **est établie**. En préparant la migration de ce chantier, `prisma migrate
+diff` a produit **trois** lignes destructrices au lieu d'une : les deux `DROP INDEX` en plus
+du `DROP DEFAULT` déjà connu. Ces `DROP INDEX` n'apparaissaient pas au Chantier 1 **pour la
+seule raison que les index étaient alors déjà absents** — il n'y avait rien à supprimer.
+Les avoir restaurés a réactivé le piège et l'a rendu visible : Prisma voit ces index en
+base, ne les trouve pas dans `schema.prisma` (SQL brut qu'il ne sait pas exprimer) et
+propose systématiquement de les effacer.
+
+Un **filet** est désormais posé : les deux `CREATE INDEX IF NOT EXISTS` sont rejoués à
+chaque application de la migration du Chantier 2. Cette migration ne peut plus laisser la
+base dans l'état où le Chantier 1 l'a trouvée.

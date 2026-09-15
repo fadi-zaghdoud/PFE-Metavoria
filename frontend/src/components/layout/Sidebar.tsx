@@ -1,7 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
-  BarChart3,
-  BookOpen,
   Brain,
   CalendarOff,
   FolderTree,
@@ -33,11 +31,6 @@ const NAV_PRINCIPAL: NavItem[] = [
   { to: '/tableau-de-bord', label: 'Tableau de bord', icon: LayoutDashboard },
   { to: '/tickets', label: 'Tickets', icon: Ticket },
   { to: '/profil', label: 'Mon profil', icon: UserCircle },
-];
-
-const NAV_A_VENIR: { label: string; icon: LucideIcon; phase: string }[] = [
-  { label: 'Statistiques', icon: BarChart3, phase: 'Phase 4' },
-  { label: 'Base de connaissances', icon: BookOpen, phase: 'Phase 5' },
 ];
 
 function SidebarLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => void }) {
@@ -145,29 +138,12 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
             </div>
           </>
         )}
-
-        <SectionTitle>À venir</SectionTitle>
-        <div className="space-y-1">
-          {NAV_A_VENIR.map(({ label, icon: Icon, phase }) => (
-            <div
-              key={label}
-              className="flex cursor-default items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-300"
-              title={`Disponible en ${phase}`}
-            >
-              <Icon className="size-4.5 shrink-0" aria-hidden />
-              <span className="flex-1 truncate">{label}</span>
-              <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-400">
-                {phase}
-              </span>
-            </div>
-          ))}
-        </div>
       </nav>
 
       {utilisateur && (
         <div className="border-t border-slate-100 p-3">
           <div className="flex items-center gap-2.5 rounded-xl border border-transparent px-2 py-1.5 transition-colors hover:border-slate-200/70 hover:bg-slate-50">
-            <Avatar prenom={utilisateur.prenom} nom={utilisateur.nom} />
+            <Avatar prenom={utilisateur.prenom} nom={utilisateur.nom} photoUrl={utilisateur.photoUrl} />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium text-slate-900">
                 {utilisateur.prenom} {utilisateur.nom}

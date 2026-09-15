@@ -23,6 +23,22 @@ export const authApi = {
   mettreAJourProfil: (payload: MiseAJourProfilPayload, token: string) =>
     apiRequest<{ utilisateur: Utilisateur }>('/auth/moi', { method: 'PATCH', body: payload, token }),
 
+  // Photo de profil — multipart via FormData (champ `photo`), même patron que l'upload
+  // d'une pièce jointe. Les deux renvoient l'utilisateur complet à jour, à pousser dans
+  // le store pour que le sidebar se rafraîchisse immédiatement.
+  televerserPhoto: (fichier: File, token: string) => {
+    const form = new FormData();
+    form.append('photo', fichier);
+    return apiRequest<{ utilisateur: Utilisateur }>('/auth/moi/photo', {
+      method: 'POST',
+      body: form,
+      token,
+    });
+  },
+
+  supprimerPhoto: (token: string) =>
+    apiRequest<{ utilisateur: Utilisateur }>('/auth/moi/photo', { method: 'DELETE', token }),
+
   changerMotDePasse: (payload: ChangementMotDePassePayload, token: string) =>
     apiRequest<{ message: string }>('/auth/moi/mot-de-passe', { method: 'PATCH', body: payload, token }),
 

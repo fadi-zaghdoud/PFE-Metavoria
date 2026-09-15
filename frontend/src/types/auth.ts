@@ -12,6 +12,9 @@ export interface Utilisateur {
   service: string | null;
   poste: string | null;
   actif: boolean;
+  // URL Cloudinary de la photo de profil, ou null (l'interface retombe alors sur les
+  // initiales sur fond coloré). Servie directement, sans proxy backend.
+  photoUrl: string | null;
   statutCompte: StatutCompte;
   dateCreation: string;
   // Categories couvertes par ce technicien (affectation automatique §6.2). Vide pour les

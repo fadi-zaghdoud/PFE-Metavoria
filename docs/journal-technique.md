@@ -2170,3 +2170,170 @@ propose systématiquement de les effacer.
 Un **filet** est désormais posé : les deux `CREATE INDEX IF NOT EXISTS` sont rejoués à
 chaque application de la migration du Chantier 2. Cette migration ne peut plus laisser la
 base dans l'état où le Chantier 1 l'a trouvée.
+
+---
+
+# Passe interface — photo de profil, et le mode sombre chiffré puis écarté
+
+> Trois demandes d'interface traitées le **16/09/2026**, branche `audit-et-HR`. Deux
+> suppressions d'affichage trompeur, une fonctionnalité livrée, et **un chantier chiffré
+> puis refusé en connaissance de cause** — c'est ce dernier point qui a le plus de valeur
+> pour la soutenance : une estimation sert aussi à décider de ne pas faire.
+
+## Ce que l'interface annonçait, et qui était faux
+
+Inventaire au départ : l'application présentait comme **« à venir »** des modules
+**déjà livrés**.
+
+| Emplacement | Ce qui était affiché | Réalité |
+| --- | --- | --- |
+| Sidebar, section « À venir » | « Statistiques — Phase 4 » (grisé) | `features/statistiques/` livré, rendu dans le tableau de bord |
+| Sidebar, section « À venir » | « Base de connaissances — Phase 5 » (grisé) | Hors périmètre assumé, mais annoncé comme imminent |
+| Tableau de bord, « Feuille de route du projet » | Carte « Assistant IA — Phase 5 » | Module IA livré : `features/ia/`, page `/administration/ia`, suggestions dans le détail ticket |
+| Tableau de bord, « Feuille de route du projet » | Carte « Statistiques & SLA — Phase 4 » | Affichée **directement sous** `<TableauDeBord />`, qui rend ces statistiques |
+
+Le cas du tableau de bord est le plus coûteux : c'est la **page d'accueil**, donc le
+premier écran d'une démonstration, et la carte contredisait le composant situé juste
+au-dessus d'elle. `[établi en séance]`
+
+- **Sidebar** : section supprimée, avec le tableau `NAV_A_VENIR` et les imports devenus
+  inutiles (`BarChart3`, `BookOpen`).
+- **Tableau de bord** : section « Feuille de route » supprimée, `214 → 168 lignes`.
+  `ShieldCheck` conservé — il sert au `StatCard` « Administrateurs ».
+
+## Mode sombre — le chiffrage qui a fondé le refus
+
+Demande initiale : un mode sombre. Réponse : **mesurer d'abord**. Relevé sur le frontend
+avant toute décision.
+
+| Mesure | Valeur relevée |
+| --- | --- |
+| Occurrences de couleurs Tailwind en dur | **549** |
+| Fichiers concernés | **42 sur 62** |
+| Occurrences de la variante `dark:` déjà présentes | **0** |
+| Tokens **sémantiques** (`--color-surface`, `--color-text`, `--color-border`) | **aucun** — `@theme` ne définit que les rampes de marque `primary` / `accent` |
+| Répartition | pages 258 · composants `ui` 139 · `layout` 80 · `features` 54 · `lib` 16 |
+| Fichier le plus chargé | `TicketDetailPage.tsx`, **89 occurrences** — 16 % du total à lui seul |
+
+**Sur la configuration** : le projet est en **Tailwind v4** (configuration *CSS-first*,
+`@tailwindcss/vite`) — il n'existe donc aucune clé `darkMode` dans un fichier de config,
+et son absence n'est pas un manque. La variante `dark:` est disponible nativement mais
+suit `prefers-color-scheme` (réglage du système). Un **bouton** dans l'interface aurait
+demandé une ligne : `@custom-variant dark (&:where(.dark, .dark *));`.
+
+**Deux zones redoutées qui n'en étaient pas** — vérifiées avant de les inscrire au coût :
+
+- **Les graphiques** : aucune librairie de *charts*. `CarteBarres` dessine des `div` CSS
+  (rail `bg-slate-100`, remplissage en dégradé). Rien à re-thémer au-delà de deux classes.
+- **Les exports PDF / Excel** : `exportRapport.ts` porte **sa propre palette**
+  (`#4f46e5`, `setTextColor(30, 41, 59)`), sans aucun lien avec le CSS de l'application.
+  Un document exporté reste clair par nature. **Coût nul.**
+
+**Les vraies zones à risque** : `TicketDetailPage` (89), les badges de statut — les
+teintes `-50` / `-100` sont conçues pour du blanc et disparaissent sur fond sombre, chacune
+demandant sa contrepartie —, le panneau d'audit et sa page (21 + 20), `StatCard` (26) dont
+les dégradés et auras floutées sont calibrés pour le clair, et la couche `base` de
+`index.css` (fond `#f6f7fb`, halos radiaux, `ring-offset-white`, couleurs de barre de
+défilement).
+
+**Chiffrage** : voie propre (tokens sémantiques puis migration des 549 sites) **2,5 à 3,5
+jours** ; voie rapide (`dark:` posés en place) 1,5 à 2 jours, au prix d'un doublement des
+chaînes de classes sur 42 fichiers.
+
+## Les décisions, et leurs raisons
+
+### Mode sombre : NON, et la raison est une probabilité, pas un goût `[établi en séance]`
+
+- **Décision** : écarté. **Alternative écartée** : la voie rapide en `dark:`, qui aurait
+  tenu en 1,5 jour — refusée avec la voie propre, pour le même motif de fond.
+- **Raisons données** : le chantier représentait **le temps restant en totalité**, sans
+  faire avancer le rapport ; et **un mode sombre à moitié fait est pire que pas de mode
+  sombre** — un panneau resté blanc en pleine démonstration se voit immédiatement. Avec
+  **549 sites**, la probabilité d'en oublier au moins un a été jugée trop élevée.
+- **Ce que cette décision vaut pour la soutenance** : c'est un arbitrage **chiffré**. La
+  question « pourquoi pas de mode sombre ? » a une réponse en nombres, pas en préférence.
+- **Contrainte d'ordonnancement notée** : si le chantier devait être repris un jour, il
+  faudrait le faire **avant** toute passe de polissage page par page — sinon les mêmes
+  écrans seraient rouverts deux fois.
+
+### Photo de profil : URL directe, sans proxy `[établi en séance]`
+
+- **Décision** : `photoUrl` est la `secure_url` Cloudinary, **servie directement au
+  navigateur**.
+- **C'est un choix différent de celui des pièces jointes**, qui sont **proxifiées** par le
+  backend (`telechargerPieceJointe`) pour qu'aucun fichier ne soit lisible sans
+  authentification. L'écart est assumé et pour deux raisons : l'identifiant public
+  Cloudinary est aléatoire, donc l'URL n'est pas devinable ; et proxifier chaque avatar
+  ajouterait **un aller-retour backend par ligne** dans les listes de tickets.
+- **Conséquence inscrite au cadre des données personnelles** : les photos de profil sont
+  servies par URL directe à identifiant aléatoire — une URL divulguée reste lisible sans
+  session. Écrit ici pour que le choix soit visible, pas découvert.
+
+### Photo de profil : hors journal d'audit `[établi en séance]`
+
+- **Décision** : aucun événement d'audit sur le changement ou le retrait de photo.
+- **Raison** : le journal vise les actions **d'administration et de sécurité**. Changer sa
+  propre photo est du self-service anodin ; l'y verser **diluerait le signal** que le
+  Chantier 2 a précisément cherché à rendre exploitable.
+
+### `photoCloudinaryId` conservé, et détruit dans le bon ordre
+
+- Le `public_id` est stocké à part du `photoUrl`. **Sans lui, chaque changement de photo
+  laisserait un fichier orphelin** sur le compte Cloudinary — la colonne `cloudinary_id`
+  des pièces jointes existait déjà « pour une suppression ultérieure » depuis J8bis, sans
+  qu'aucune fonction de suppression n'ait jamais été écrite. Elle l'est maintenant.
+- **L'ancienne image n'est détruite qu'APRÈS l'enregistrement de la nouvelle** : si la
+  mise à jour échouait, la photo encore référencée en base existerait toujours.
+- La suppression est **best-effort et silencieuse** : l'utilisateur a demandé à changer sa
+  photo, pas à faire le ménage. Son échec ne doit pas faire échouer l'opération.
+- **Champ retiré de la réponse** : `photoCloudinaryId` est ajouté à la liste noire de
+  `toPublicUser`. Sans être un secret, c'est une référence interne au stockage ; le client
+  n'a besoin que de `photoUrl`.
+
+### Normalisation à l'upload plutôt qu'à l'affichage
+
+- Transformation Cloudinary appliquée **au moment de l'envoi** : carré de 256 px,
+  `gravity: face`, `quality: auto`. L'image est **stockée déjà recadrée**, ce qui borne le
+  poids servi quelle que soit la taille du fichier d'origine.
+- **Alternative écartée** : transformer à la volée dans l'URL d'affichage — même rendu,
+  mais l'original lourd resterait stocké et servi tant que l'URL n'est pas réécrite.
+
+## Ce qui a été prouvé, et comment
+
+- **Deux points de sérialisation vérifiés avant d'écrire la moindre ligne** :
+  `toPublicUser` fonctionne en **liste noire** (retire les secrets, propage le reste) — le
+  champ remonte donc seul dans `/auth/moi`, la connexion et les endpoints utilisateurs ;
+  `utilisateurPublicSelect` de `ticket.repository` est une **liste blanche**, et a demandé
+  **une ligne** pour que demandeur, technicien et auteur portent la photo.
+- **Les trois autres sélections d'utilisateur ont été inspectées et volontairement laissées
+  telles quelles** : `absence.repository` (2), `affectation.repository` (2) et
+  `findManyByIds` ne servent que des libellés de noms — aucun avatar n'y est rendu.
+- **Les 9 points d'appel d'`<Avatar>`** ont été recensés puis câblés : sidebar, tableau de
+  bord, profil, détail ticket (×3), liste des tickets (×2), gestion des utilisateurs.
+- **Migration additive et idempotente** (`ADD COLUMN IF NOT EXISTS` ×2), écrite à la main —
+  `prisma migrate diff` **n'a pas été sollicité**, conformément à la leçon des Chantiers 1
+  et 2. Aucune ligne destructrice ne peut s'y trouver.
+- **Appliquée et vérifiée en base** : les deux colonnes existent, `nullable`, sur les
+  **35 comptes** ; **0 porte une photo**, ce qui correspond exactement au comportement
+  antérieur (retour aux initiales sur fond coloré).
+- **69 tests sur 69 au vert**, `tsc --noEmit` propre des deux côtés, `eslint` et `oxlint`
+  sans nouvelle remarque, build frontend réussi.
+
+## Dettes assumées et documentées
+
+- **Mode sombre non livré**, chiffré à 2,5–3,5 jours par la voie propre. L'interface
+  utilise des couleurs directes ; une **tokenisation sémantique**
+  (`--color-surface` / `--color-text` / `--color-border`) en est le préalable. Évolution
+  **identifiée et chiffrée**, non engagée.
+- **Photos servies par URL directe** — voir la décision ci-dessus. Une URL divulguée reste
+  lisible sans session.
+- **Aucune trace d'audit sur les photos** — choix, pas oubli.
+- **L'administrateur ne peut pas changer la photo d'un autre compte.** Les routes sont
+  strictement self-service : la cible vient du jeton, jamais du corps de la requête.
+- **Vérification de bout en bout non faite** : l'upload réel vers Cloudinary n'a pas été
+  déclenché dans cette séance. Le chemin est typé, contrôlé à la compilation et calqué sur
+  celui des pièces jointes — il n'est pas pour autant *exécuté*. À faire avant la
+  démonstration, comme pour `TICKET_PIECE_JOINTE` au Chantier 2.
+- **Trou d'affichage dans la grille de graphiques** : un employé voit 3 cartes dans une
+  grille à 2 colonnes, la troisième occupe donc seule sa rangée. Le trou préexistait ; il
+  est devenu la fin de page depuis le retrait de la feuille de route. Non traité.

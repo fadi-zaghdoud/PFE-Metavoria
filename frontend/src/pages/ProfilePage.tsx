@@ -1,6 +1,7 @@
-import { useState, type SubmitEvent } from 'react';
-import { KeyRound, Mail } from 'lucide-react';
+import { useRef, useState, type ChangeEvent, type SubmitEvent } from 'react';
+import { Camera, KeyRound, Loader2, Mail } from 'lucide-react';
 import { authApi } from '../features/auth/authApi';
+import { ACCEPT_PHOTO, FORMATS_PHOTO_LABEL, validerPhoto } from '../features/auth/photoProfil';
 import { useAuthStore } from '../store/authStore';
 import { ApiError } from '../lib/apiClient';
 import { LABELS_ROLE, tempsRelatif } from '../lib/format';
@@ -27,6 +28,10 @@ export function ProfilePage() {
   const [erreurProfil, setErreurProfil] = useState<string | null>(null);
   const [enCoursProfil, setEnCoursProfil] = useState(false);
 
+  const inputPhoto = useRef<HTMLInputElement>(null);
+  const [enCoursPhoto, setEnCoursPhoto] = useState(false);
+  const [erreurPhoto, setErreurPhoto] = useState<string | null>(null);
+
   const [motDePasseActuel, setMotDePasseActuel] = useState('');
   const [nouveauMotDePasse, setNouveauMotDePasse] = useState('');
   const [confirmation, setConfirmation] = useState('');
@@ -51,6 +56,47 @@ export function ProfilePage() {
       setErreurProfil(err instanceof ApiError ? err.message : 'Impossible de mettre à jour le profil');
     } finally {
       setEnCoursProfil(false);
+    }
+  }
+
+  async function handleChoisirPhoto(event: ChangeEvent<HTMLInputElement>) {
+    const fichier = event.target.files?.[0];
+    // Remis à vide immédiatement : sans ça, re-choisir LE MÊME fichier après une erreur
+    // ne déclencherait aucun événement (la valeur de l'input n'aurait pas changé).
+    event.target.value = '';
+    if (!fichier) return;
+
+    const probleme = validerPhoto(fichier);
+    if (probleme) {
+      setErreurPhoto(probleme);
+      return;
+    }
+
+    setErreurPhoto(null);
+    setEnCoursPhoto(true);
+    try {
+      const { utilisateur: miseAJour } = await authApi.televerserPhoto(fichier, token!);
+      // Le store alimente aussi le sidebar : la nouvelle photo y apparaît sans rechargement.
+      mettreAJourUtilisateur(miseAJour);
+      toast.success('Photo mise à jour', 'Votre nouvelle photo de profil est enregistrée.');
+    } catch (err) {
+      setErreurPhoto(err instanceof ApiError ? err.message : "Impossible d'envoyer la photo");
+    } finally {
+      setEnCoursPhoto(false);
+    }
+  }
+
+  async function handleRetirerPhoto() {
+    setErreurPhoto(null);
+    setEnCoursPhoto(true);
+    try {
+      const { utilisateur: miseAJour } = await authApi.supprimerPhoto(token!);
+      mettreAJourUtilisateur(miseAJour);
+      toast.success('Photo retirée', 'Vos initiales sont de nouveau affichées.');
+    } catch (err) {
+      setErreurPhoto(err instanceof ApiError ? err.message : 'Impossible de retirer la photo');
+    } finally {
+      setEnCoursPhoto(false);
     }
   }
 
@@ -85,7 +131,40 @@ export function ProfilePage() {
       {/* Carte d'identité */}
       <Card className="mb-6 overflow-hidden bg-gradient-to-br from-white to-primary-50/50">
         <CardContent className="flex flex-wrap items-center gap-4">
-          <Avatar prenom={utilisateur.prenom} nom={utilisateur.nom} size="lg" className="ring-2 ring-white shadow-sm" />
+          <div className="relative shrink-0">
+            <Avatar
+              prenom={utilisateur.prenom}
+              nom={utilisateur.nom}
+              photoUrl={utilisateur.photoUrl}
+              size="lg"
+              className="ring-2 ring-white shadow-sm"
+            />
+            {enCoursPhoto && (
+              <span
+                className="absolute inset-0 flex items-center justify-center rounded-full bg-slate-900/45"
+                aria-hidden
+              >
+                <Loader2 className="size-5 animate-spin text-white" />
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => inputPhoto.current?.click()}
+              disabled={enCoursPhoto}
+              aria-label={utilisateur.photoUrl ? 'Changer la photo de profil' : 'Ajouter une photo de profil'}
+              title={`${utilisateur.photoUrl ? 'Changer' : 'Ajouter'} une photo (${FORMATS_PHOTO_LABEL}, 2 Mo maximum)`}
+              className="absolute -bottom-0.5 -right-0.5 rounded-full bg-white p-1.5 text-slate-500 shadow-sm ring-1 ring-slate-200 transition-colors hover:text-primary-600 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Camera className="size-3.5" aria-hidden />
+            </button>
+            <input
+              ref={inputPhoto}
+              type="file"
+              accept={ACCEPT_PHOTO}
+              className="hidden"
+              onChange={handleChoisirPhoto}
+            />
+          </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-lg font-semibold tracking-tight text-slate-900">
@@ -99,8 +178,23 @@ export function ProfilePage() {
               <Mail className="size-3.5" aria-hidden />
               {utilisateur.email}
             </p>
+            {utilisateur.photoUrl && (
+              <button
+                type="button"
+                onClick={handleRetirerPhoto}
+                disabled={enCoursPhoto}
+                className="mt-1.5 text-xs font-medium text-slate-400 underline-offset-2 transition-colors hover:text-rose-600 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Retirer la photo
+              </button>
+            )}
           </div>
           <p className="text-xs text-slate-400">Membre depuis {tempsRelatif(utilisateur.dateCreation)}</p>
+          {erreurPhoto && (
+            <div className="w-full">
+              <Alert variant="danger">{erreurPhoto}</Alert>
+            </div>
+          )}
         </CardContent>
       </Card>
 

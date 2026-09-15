@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight,
-  BrainCircuit,
   ShieldCheck,
   UserCheck,
   UserCircle,
@@ -19,24 +18,6 @@ import { Card, CardContent, CardHeader } from '../components/ui/Card';
 import { Avatar } from '../components/ui/Avatar';
 import { Badge } from '../components/ui/Badge';
 import { Skeleton } from '../components/ui/Skeleton';
-
-// Cartes "modules à venir" — feuille de route du cahier des charges.
-const MODULES_A_VENIR = [
-  {
-    icon: BrainCircuit,
-    titre: 'Assistant IA',
-    texte: 'Classification automatique, priorisation et suggestions de résolution.',
-    phase: 'Phase 5',
-    grad: 'from-primary-500 to-accent-600',
-  },
-  {
-    icon: ShieldCheck,
-    titre: 'Statistiques & SLA',
-    texte: 'Rapports détaillés, temps de résolution et délais SLA.',
-    phase: 'Phase 4',
-    grad: 'from-emerald-500 to-teal-600',
-  },
-];
 
 function StatsAdmin() {
   const token = useAuthStore((state) => state.token);
@@ -99,7 +80,7 @@ function StatsAdmin() {
                   key={u.id}
                   className="flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-slate-50"
                 >
-                  <Avatar prenom={u.prenom} nom={u.nom} />
+                  <Avatar prenom={u.prenom} nom={u.nom} photoUrl={u.photoUrl} />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-slate-900">
                       {u.prenom} {u.nom}
@@ -181,34 +162,6 @@ export function DashboardPage() {
           <StatsAdmin />
         </div>
       )}
-
-      <div>
-        <h2 className="mb-3 text-sm font-semibold text-slate-900">Feuille de route du projet</h2>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          {MODULES_A_VENIR.map(({ icon: Icon, titre, texte, phase, grad }, i) => (
-            <Card
-              key={titre}
-              className="animate-fade-up group relative flex flex-col overflow-hidden p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
-              style={{ animationDelay: `${i * 80}ms` }}
-            >
-              <span
-                aria-hidden
-                className={`pointer-events-none absolute -right-10 -top-10 size-28 rounded-full bg-gradient-to-br ${grad} opacity-[0.08] blur-2xl transition-opacity duration-300 group-hover:opacity-[0.16]`}
-              />
-              <div className="relative flex items-start justify-between">
-                <span
-                  className={`flex size-11 items-center justify-center rounded-xl bg-gradient-to-br ${grad} text-white shadow-glow-sm ring-1 ring-inset ring-white/20`}
-                >
-                  <Icon className="size-5" aria-hidden />
-                </span>
-                <Badge variant="neutral">{phase}</Badge>
-              </div>
-              <h3 className="relative mt-4 text-sm font-semibold text-slate-900">{titre}</h3>
-              <p className="relative mt-1 flex-1 text-sm leading-relaxed text-slate-500">{texte}</p>
-            </Card>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }

@@ -8,6 +8,7 @@ const utilisateurPublicSelect = {
   id: true,
   prenom: true,
   nom: true,
+  photoUrl: true,
   email: true,
   service: true,
   role: true,

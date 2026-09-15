@@ -335,7 +335,7 @@ export function UsersManagementPage() {
                   <tr key={u.id} className="transition-colors hover:bg-slate-50/60">
                     <Td>
                       <div className="flex items-center gap-3">
-                        <Avatar prenom={u.prenom} nom={u.nom} />
+                        <Avatar prenom={u.prenom} nom={u.nom} photoUrl={u.photoUrl} />
                         <div className="min-w-0">
                           <p className="flex items-center gap-1.5 truncate font-medium text-slate-900">
                             <span className="truncate">

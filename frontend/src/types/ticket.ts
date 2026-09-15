@@ -12,6 +12,7 @@ export interface PersonnePublique {
   email: string;
   service: string | null;
   role: Role;
+  photoUrl: string | null;
 }
 
 export interface Categorie {

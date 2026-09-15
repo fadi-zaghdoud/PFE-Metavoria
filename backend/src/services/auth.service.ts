@@ -7,12 +7,19 @@ import { utilisateurRepository } from '../repositories/utilisateur.repository';
 import { refreshTokenRepository } from '../repositories/refreshToken.repository';
 import { emailService } from './email.service';
 import {
+  AppError,
   ConflictError,
   ForbiddenError,
   TooManyRequestsError,
   UnauthorizedError,
   ValidationError,
 } from '../utils/AppError';
+import {
+  estConfigure,
+  supprimerCloudinary,
+  TRANSFORMATION_AVATAR,
+  uploaderBuffer,
+} from '../config/cloudinary';
 import { toPublicUser } from '../utils/toPublicUser';
 import { logAudit } from '../utils/logger';
 import type { JwtPayload } from '../middlewares/auth.middleware';
@@ -286,6 +293,66 @@ export const authService = {
 
   async mettreAJourProfil(userId: number, input: MiseAJourProfilInput) {
     const utilisateur = await utilisateurRepository.update(userId, input);
+    return toPublicUser(utilisateur);
+  },
+
+  // Photo de profil — strictement self-service : l'identifiant vient du jeton, jamais
+  // du corps de la requête, donc personne ne peut changer la photo d'un autre compte.
+  // Volontairement HORS journal d'audit : celui-ci trace les actions d'administration et
+  // de sécurité ; y verser un changement d'avatar diluerait ce signal.
+  async televerserPhoto(
+    userId: number,
+    fichier: { buffer: Buffer; mimetype: string; size: number },
+  ) {
+    if (!estConfigure()) {
+      throw new ValidationError("Le stockage des images n'est pas configuré");
+    }
+    const precedent = await utilisateurRepository.findById(userId);
+    if (!precedent) throw new UnauthorizedError('Utilisateur introuvable');
+
+    // Même traitement d'erreur que les pièces jointes : une panne du service externe
+    // ressort en 502 explicite plutôt qu'en 500 opaque.
+    let stockage: { url: string; publicId: string };
+    try {
+      stockage = await uploaderBuffer(
+        fichier.buffer,
+        'smart-ticketing/avatars',
+        'image',
+        TRANSFORMATION_AVATAR,
+      );
+    } catch (err) {
+      console.error(
+        '[PhotoProfil] upload Cloudinary échoué :',
+        err instanceof Error ? err.message : err,
+      );
+      throw new AppError(502, "L'envoi de la photo a échoué (réessayez plus tard).");
+    }
+
+    const utilisateur = await utilisateurRepository.update(userId, {
+      photoUrl: stockage.url,
+      photoCloudinaryId: stockage.publicId,
+    });
+
+    // L'ancienne image n'est détruite qu'APRÈS l'enregistrement de la nouvelle : si la
+    // mise à jour échouait, la photo encore référencée en base existerait toujours.
+    if (precedent.photoCloudinaryId) {
+      await supprimerCloudinary(precedent.photoCloudinaryId);
+    }
+    return toPublicUser(utilisateur);
+  },
+
+  async supprimerPhoto(userId: number) {
+    const precedent = await utilisateurRepository.findById(userId);
+    if (!precedent) throw new UnauthorizedError('Utilisateur introuvable');
+
+    const utilisateur = await utilisateurRepository.update(userId, {
+      photoUrl: null,
+      photoCloudinaryId: null,
+    });
+    if (precedent.photoCloudinaryId) {
+      await supprimerCloudinary(precedent.photoCloudinaryId);
+    }
+    // L'interface retombe d'elle-même sur les initiales sur fond coloré.
     return toPublicUser(utilisateur);
   },
 

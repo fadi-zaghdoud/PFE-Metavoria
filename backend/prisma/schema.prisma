@@ -58,6 +58,14 @@ model Utilisateur {
   actif        Boolean  @default(true)
   dateCreation DateTime @default(now()) @map("date_creation")
 
+  // Photo de profil (Cloudinary, dossier « avatars »). `photoUrl` est la secure_url
+  // servie directement au navigateur — contrairement aux pieces jointes, elle n'est PAS
+  // proxifiee : l'identifiant public aleatoire tient lieu de protection, et un aller-retour
+  // backend par avatar penaliserait les listes de tickets. `photoCloudinaryId` conserve le
+  // public_id pour detruire l'ancienne image a chaque remplacement (sans lui : orphelins).
+  photoUrl          String? @map("photo_url")
+  photoCloudinaryId String? @map("photo_cloudinary_id")
+
   // Invitation par un administrateur : hash SHA-256 du token (jamais en clair),
   // lien valable 72 h. Effacés à l'activation du compte.
   tokenInvitation       String?   @unique @map("token_invitation")

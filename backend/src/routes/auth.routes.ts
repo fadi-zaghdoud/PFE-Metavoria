@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authController } from '../controllers/auth.controller';
 import { requireAuth } from '../middlewares/auth.middleware';
+import { uploadPhotoProfil } from '../middlewares/upload.middleware';
 import {
   limiteurConnexion,
   limiteurDemandeCode,
@@ -56,3 +57,13 @@ authRouter.post('/deconnexion', asyncHandler(authController.deconnexion));
 authRouter.get('/moi', requireAuth, asyncHandler(authController.profil));
 authRouter.patch('/moi', requireAuth, asyncHandler(authController.mettreAJourProfil));
 authRouter.patch('/moi/mot-de-passe', requireAuth, asyncHandler(authController.changerMotDePasse));
+
+// Photo de profil : self-service, `requireAuth` suffit — la cible est toujours l'auteur
+// du jeton, aucun identifiant n'est accepté depuis la requête.
+authRouter.post(
+  '/moi/photo',
+  requireAuth,
+  uploadPhotoProfil,
+  asyncHandler(authController.televerserPhoto),
+);
+authRouter.delete('/moi/photo', requireAuth, asyncHandler(authController.supprimerPhoto));

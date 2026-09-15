@@ -459,6 +459,26 @@ données à caractère personnel.
 > conserverait des entrées au-delà de la durée annoncée. En pratique la pile redémarre à
 > chaque déploiement.
 
+#### Photos de profil
+
+La **photo de profil** est une donnée personnelle d'une autre nature que le journal, et
+suit des règles distinctes.
+
+| | |
+| --- | --- |
+| **Caractère** | **Facultative.** Sans photo, l'interface affiche les initiales sur un fond coloré — aucun compte n'est incomplet pour autant. |
+| **Maîtrise** | **Self-service exclusif.** Chaque utilisateur ajoute, remplace ou retire **sa propre** photo depuis sa page profil. Un administrateur ne peut pas modifier celle d'un autre compte. |
+| **Stockage** | Cloudinary, recadrée en 256×256 **au moment de l'envoi** — l'original lourd n'est jamais conservé. |
+| **Diffusion** | **URL directe à identifiant aléatoire**, sans proxy (voir l'avertissement ci-dessous). |
+| **Suppression** | Immédiate sur demande de l'utilisateur. Le fichier précédent est **détruit du stockage** à chaque remplacement comme au retrait — rien ne s'accumule. |
+| **Journal d'audit** | **Volontairement absent.** Le journal vise les actions d'administration et de sécurité ; y verser les changements d'avatar diluerait ce signal. |
+
+> **À savoir, et assumé** : contrairement aux **pièces jointes**, qui transitent par le
+> backend et restent illisibles sans authentification, les photos de profil sont servies
+> **directement** par le stockage. La protection tient à l'identifiant aléatoire de l'URL :
+> elle n'est pas devinable, mais **une URL divulguée reste lisible sans session**. Ce choix
+> évite un aller-retour backend par avatar sur chaque liste de tickets.
+
 ### Reprise de l'historique
 
 Les **51 événements de tickets antérieurs** à la mise en service du journal y ont été
@@ -485,7 +505,7 @@ alertes automatiques sur échecs répétés · durée de conservation réglable 
 **Livré :**
 
 - ✅ Authentification JWT (inscription, connexion, RBAC, jetons courts + refresh rotatif, rate limiting)
-- ✅ Réinitialisation de mot de passe par code OTP, gestion du profil, invitation et activation de compte
+- ✅ Réinitialisation de mot de passe par code OTP, gestion du profil (**photo de profil** comprise), invitation et activation de compte
 - ✅ Administration des utilisateurs (rôles, activation/désactivation) et des **catégories**
 - ✅ Cycle de vie complet des tickets : création, affectation, prise en charge, résolution,
   satisfaction, clôture, recatégorisation, commentaires, historique d'événements, notifications

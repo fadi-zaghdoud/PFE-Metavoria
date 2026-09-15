@@ -37,10 +37,11 @@ export function uploaderBuffer(
   buffer: Buffer,
   dossier: string,
   resourceType: 'image' | 'raw' = 'image',
+  transformation?: Record<string, unknown>[],
 ): Promise<ResultatUpload> {
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
-      { resource_type: resourceType, folder: dossier, timeout: 120000 },
+      { resource_type: resourceType, folder: dossier, timeout: 120000, transformation },
       (err, res) => {
         if (err || !res) {
           return reject(new Error(err?.message ?? 'Upload Cloudinary échoué'));
@@ -50,4 +51,27 @@ export function uploaderBuffer(
     );
     stream.end(buffer);
   });
+}
+
+// Normalisation appliquée aux photos de profil AU MOMENT DE L'UPLOAD : carré de 256 px
+// cadré sur le visage. Cloudinary stocke alors l'image déjà recadrée, ce qui borne le
+// poids servi quelle que soit la taille du fichier d'origine (une photo de 2 Mo devient
+// une vignette de quelques dizaines de Ko).
+export const TRANSFORMATION_AVATAR = [
+  { width: 256, height: 256, crop: 'fill', gravity: 'face' },
+  { quality: 'auto', fetch_format: 'auto' },
+];
+
+// Suppression best-effort d'un fichier déjà uploadé. Utilisée au remplacement d'une photo
+// de profil : sans elle, chaque changement laisserait l'ancienne image orpheline sur le
+// compte Cloudinary. L'échec n'est JAMAIS propagé — l'utilisateur a demandé à changer sa
+// photo, pas à faire le ménage : le nouvel état est déjà le bon même si l'ancien fichier
+// survit.
+export async function supprimerCloudinary(publicId: string): Promise<void> {
+  if (!configure) return;
+  try {
+    await cloudinary.uploader.destroy(publicId);
+  } catch {
+    // Silencieux — cf. commentaire ci-dessus.
+  }
 }

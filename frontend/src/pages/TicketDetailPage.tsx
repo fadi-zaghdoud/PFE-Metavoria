@@ -61,7 +61,7 @@ function MessageBulle({ commentaire, estDemandeur }: { commentaire: Commentaire;
   const { auteur } = commentaire;
   return (
     <div className="flex gap-3">
-      <Avatar prenom={auteur.prenom} nom={auteur.nom} size="sm" className="mt-1" />
+      <Avatar prenom={auteur.prenom} nom={auteur.nom} photoUrl={auteur.photoUrl} size="sm" className="mt-1" />
       <div
         className={cn(
           'min-w-0 flex-1 rounded-lg px-3.5 py-2.5',
@@ -1053,7 +1053,7 @@ export function TicketDetailPage() {
                   </Select>
                 ) : ticket.technicien ? (
                   <div className="flex items-center gap-2">
-                    <Avatar prenom={ticket.technicien.prenom} nom={ticket.technicien.nom} size="sm" />
+                    <Avatar prenom={ticket.technicien.prenom} nom={ticket.technicien.nom} photoUrl={ticket.technicien.photoUrl} size="sm" />
                     <span className="truncate text-sm text-slate-700">
                       {ticket.technicien.prenom} {ticket.technicien.nom}
                     </span>
@@ -1103,7 +1103,7 @@ export function TicketDetailPage() {
           <Card>
             <CardHeader title="Demandeur" />
             <CardContent className="flex items-center gap-3">
-              <Avatar prenom={ticket.demandeur.prenom} nom={ticket.demandeur.nom} />
+              <Avatar prenom={ticket.demandeur.prenom} nom={ticket.demandeur.nom} photoUrl={ticket.demandeur.photoUrl} />
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium text-slate-900">
                   {ticket.demandeur.prenom} {ticket.demandeur.nom}

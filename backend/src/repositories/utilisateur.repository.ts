@@ -29,6 +29,8 @@ export interface MettreAJourUtilisateurInput {
   codeReinitialisationTentatives?: number;
   tokenInvitation?: string | null; // hash SHA-256
   tokenInvitationExpire?: Date | null;
+  photoUrl?: string | null;
+  photoCloudinaryId?: string | null;
 }
 
 export interface FiltresUtilisateurs {

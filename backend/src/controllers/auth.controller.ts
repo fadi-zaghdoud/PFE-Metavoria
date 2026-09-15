@@ -47,6 +47,26 @@ export const authController = {
     res.status(200).json({ utilisateur });
   },
 
+  // Upload multipart (champ `photo`) — multer a rempli req.file en amont.
+  async televerserPhoto(req: Request, res: Response) {
+    if (!req.user) {
+      throw new UnauthorizedError();
+    }
+    if (!req.file) {
+      throw new ValidationError('Image manquante ou format non supporté (PNG, JPG ou WEBP, ≤ 2 Mo)');
+    }
+    const utilisateur = await authService.televerserPhoto(req.user.sub, req.file);
+    res.status(200).json({ utilisateur });
+  },
+
+  async supprimerPhoto(req: Request, res: Response) {
+    if (!req.user) {
+      throw new UnauthorizedError();
+    }
+    const utilisateur = await authService.supprimerPhoto(req.user.sub);
+    res.status(200).json({ utilisateur });
+  },
+
   async changerMotDePasse(req: Request, res: Response) {
     if (!req.user) {
       throw new UnauthorizedError();

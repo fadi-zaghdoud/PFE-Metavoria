@@ -29,7 +29,8 @@ TAILLE_LOT = int(os.environ.get("EMBED_TAILLE_LOT", "32"))
 # `bge-reranker-v2-m3` : même famille que bge-m3, multilingue, adapté FR + termes EN.
 MODELE_RERANKER = os.environ.get("RERANK_MODELE", "BAAI/bge-reranker-v2-m3")
 # torch est CPU-only ici (cf. J6) → reranker sur CPU. Un GPU/torch-CUDA ramènerait
-# ~368 ms/paire à ~30-50 ms et lèverait la contrainte de profondeur (perspective).
+# les 343 ms/paire mesurés (19/09/2026) à ~30-50 ms et lèverait la contrainte de
+# profondeur (perspective).
 RERANK_DEVICE = os.environ.get("RERANK_DEVICE", "cpu")
 # Longueur max de la paire (requête+doc). Nos tickets ≈ 18 mots médian (J1) → 512 est
 # probablement du gaspillage ; 256 halve la latence. Défaut prudent 512 tant que

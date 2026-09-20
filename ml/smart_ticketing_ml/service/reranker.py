@@ -7,8 +7,11 @@ un seul chargement.
 
 Contrairement à l'embedder (qui encode requête et document séparément, puis
 compare les vecteurs), un cross-encoder lit la **paire (requête, document)
-conjointement** → bien plus précis, au prix de la latence : ~368 ms/paire mesuré
-sur CPU (torch 2.2 CPU-only, cf. dimensionnement J6). Les scores sortent en
+conjointement** → bien plus précis, au prix de la latence : **343 ms/paire** mesuré
+le 19/09/2026 sur la configuration livrée (CPU, torch 2.2 CPU-only, `max_length=512`,
+20 documents réels de la KB) — soit **6,86 s** pour un lot de K=20, au-delà du budget
+CDC de 5 s. Une seule paire (porte d'abstention top-1) coûte **0,379 s**. Les chiffres
+antérieurs de 368 et 410 ms/paire venaient d'autres configurations. Les scores sortent en
 `(0,1)` (sigmoïde du logit) et **ne sont pas calibrés** — le seuil calibré /
 l'abstention sont un travail du J6b.
 """

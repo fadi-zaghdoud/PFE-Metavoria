@@ -27,6 +27,13 @@ export const changerRoleSchema = z.object({
   role: roleEnum,
 });
 
+// Specialites d'un technicien : la liste COMPLETE des categories couvertes. Un tableau
+// vide est valide et signifie « aucune specialite » — le technicien reste alors candidat
+// aux affectations de repli.
+export const specialitesSchema = z.object({
+  categorieIds: z.array(z.number().int().positive()).max(50),
+});
+
 export const changerStatutActifSchema = z.object({
   actif: z.boolean(),
 });
@@ -34,4 +41,5 @@ export const changerStatutActifSchema = z.object({
 export type ListeUtilisateursQueryDto = z.infer<typeof listeUtilisateursQuerySchema>;
 export type ChangerRoleDto = z.infer<typeof changerRoleSchema>;
 export type ChangerStatutActifDto = z.infer<typeof changerStatutActifSchema>;
+export type SpecialitesDto = z.infer<typeof specialitesSchema>;
 export type InvitationDto = z.infer<typeof invitationSchema>;

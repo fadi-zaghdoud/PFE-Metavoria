@@ -12,6 +12,7 @@ export interface PersonnePublique {
   email: string;
   service: string | null;
   role: Role;
+  photoUrl: string | null;
 }
 
 export interface Categorie {
@@ -62,6 +63,9 @@ export type TypeEvenement =
   | 'CHANGEMENT_PRIORITE'
   | 'CHANGEMENT_CATEGORIE'
   | 'AFFECTATION'
+  // Affectation decidee par le systeme (mode AUTO, §6.2). Type DISTINCT d'AFFECTATION :
+  // rend les affectations automatiques filtrables et denombrables.
+  | 'AFFECTATION_AUTO'
   | 'DESAFFECTATION'
   | 'PRISE_EN_CHARGE'
   | 'EVALUATION';
@@ -75,8 +79,9 @@ export interface EvenementTicket {
   nouvelleValeur: string | null;
   dateCreation: string;
   ticketId: number;
-  auteurId: number;
-  auteur: PersonnePublique;
+  // null = « Systeme » : evenement sans auteur humain (affectation automatique).
+  auteurId: number | null;
+  auteur: PersonnePublique | null;
 }
 
 // Ticket tel que renvoyé par la liste (avec compteur de commentaires).
@@ -214,7 +219,15 @@ export interface StatistiquesTickets {
   repartitionStatut: { statut: StatutTicket; count: number }[];
   repartitionPriorite: { priorite: PrioriteTicket; count: number }[];
   repartitionCategorie: { categorie: string; count: number }[];
-  chargeParTechnicien: { technicien: string; count: number }[];
+  // `absenceJusquau` : date de fin d'absence en cours ("YYYY-MM-DD"), ou null.
+  // Le MOTIF n'est jamais exposé ici — ce graphique est visible par tous les techniciens,
+  // et MALADIE est une donnée de santé. Seules les dates remontent.
+  chargeParTechnicien: {
+    technicienId: number;
+    technicien: string;
+    count: number;
+    absenceJusquau: string | null;
+  }[];
 }
 
 export interface FiltresStatistiques {

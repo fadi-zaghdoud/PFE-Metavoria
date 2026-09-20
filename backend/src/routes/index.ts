@@ -5,6 +5,9 @@ import { ticketsRouter } from './tickets.routes';
 import { categoriesRouter } from './categories.routes';
 import { notificationsRouter } from './notifications.routes';
 import { iaRouter } from './ia.routes';
+import { absencesRouter } from './absences.routes';
+import { parametresRouter } from './parametres.routes';
+import { auditRouter } from './audit.routes';
 
 export const apiRouter = Router();
 
@@ -18,3 +21,6 @@ apiRouter.use('/tickets', ticketsRouter);
 apiRouter.use('/categories', categoriesRouter);
 apiRouter.use('/notifications', notificationsRouter);
 apiRouter.use('/ia', iaRouter);
+apiRouter.use('/absences', absencesRouter);
+apiRouter.use('/parametres', parametresRouter);
+apiRouter.use('/audit', auditRouter);

@@ -8,6 +8,7 @@ const utilisateurPublicSelect = {
   id: true,
   prenom: true,
   nom: true,
+  photoUrl: true,
   email: true,
   service: true,
   role: true,
@@ -62,12 +63,18 @@ export type CommentaireAvecAuteur = Prisma.CommentaireGetPayload<{
 
 export interface CreerEvenementData {
   ticketId: number;
-  auteurId: number;
+  // null = « Systeme » : une affectation decidee a la creation en mode AUTO n'a pas
+  // d'auteur humain (l'acteur de la creation est le demandeur, un employe).
+  auteurId: number | null;
   // CHANGEMENT_STATUT | CHANGEMENT_PRIORITE | CHANGEMENT_CATEGORIE | AFFECTATION |
   // DESAFFECTATION | PRISE_EN_CHARGE | EVALUATION
   type: string;
   ancienneValeur?: string | null;
   nouvelleValeur?: string | null;
+  // Technicien VISE par l'action (affectation / desaffectation), quand il y en a un.
+  // Complete le nom stocke dans les valeurs textuelles : un nom n'est pas une cle de
+  // jointure fiable (35 comptes pour 31 noms distincts dans cette base).
+  cibleId?: number | null;
 }
 
 export interface FiltresTickets {
@@ -276,7 +283,6 @@ export const ticketRepository = {
       parCategorie,
       satisfaction,
       repartitionNotes,
-      chargeTechniciens,
       clotures,
       prisesEnCharge,
     ] = await Promise.all([
@@ -291,12 +297,6 @@ export const ticketRepository = {
       prisma.ticket.groupBy({
         by: ['satisfactionNote'],
         where: { ...scope, satisfactionNote: { not: null } },
-        _count: { _all: true },
-      }),
-      // Charge courante : tickets encore ouverts, par technicien assigné.
-      prisma.ticket.groupBy({
-        by: ['technicienId'],
-        where: { ...scope, technicienId: { not: null }, statut: { in: ['NOUVEAU', 'EN_COURS', 'EN_ATTENTE'] } },
         _count: { _all: true },
       }),
       // Pour le temps moyen de résolution (création -> clôture).
@@ -317,7 +317,6 @@ export const ticketRepository = {
       parCategorie,
       satisfaction,
       repartitionNotes,
-      chargeTechniciens,
       clotures,
       prisesEnCharge,
     };

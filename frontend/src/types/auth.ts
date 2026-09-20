@@ -12,8 +12,18 @@ export interface Utilisateur {
   service: string | null;
   poste: string | null;
   actif: boolean;
+  // URL Cloudinary de la photo de profil, ou null (l'interface retombe alors sur les
+  // initiales sur fond coloré). Servie directement, sans proxy backend.
+  photoUrl: string | null;
   statutCompte: StatutCompte;
   dateCreation: string;
+  // Categories couvertes par ce technicien (affectation automatique §6.2). Vide pour les
+  // autres roles. Absent des reponses anterieures a l'ajout des specialites.
+  specialites?: number[];
+  // Date de fin de l'absence EN COURS (« YYYY-MM-DD »), ou null. Le MOTIF n'est jamais
+  // expose ici : cette liste sert aussi a choisir un technicien, et MALADIE est une
+  // donnee de sante. Il n'apparait que sur la page Absences, reservee a l'administrateur.
+  absenceJusquau?: string | null;
 }
 
 export interface InscriptionPayload {

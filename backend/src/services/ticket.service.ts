@@ -7,6 +7,7 @@ import {
   type TicketListe,
 } from '../repositories/ticket.repository';
 import { categorieRepository } from '../repositories/categorie.repository';
+import { affectationRepository } from '../repositories/affectation.repository';
 import { utilisateurRepository } from '../repositories/utilisateur.repository';
 import { notificationService } from './notification.service';
 import { iaService } from './ia.service';
@@ -15,6 +16,15 @@ import { estConfigure, uploaderBuffer } from '../config/cloudinary';
 import { MAX_PIECES_PAR_TICKET } from '../middlewares/upload.middleware';
 import { AppError, ForbiddenError, NotFoundError, ValidationError } from '../utils/AppError';
 import { logAudit } from '../utils/logger';
+import { dateDuJour } from './absence.disponibilite';
+import { executerSansContexte } from '../utils/contexteRequete';
+import {
+  categorieEffective,
+  choisirTechnicien,
+  type MotifAffectation,
+  type ResultatChoix,
+} from './affectation.regle';
+import { parametreService } from './parametre.service';
 import { Prisma } from '../generated/prisma/client';
 import type { Priorite, Role, StatutTicket } from '../generated/prisma/enums';
 
@@ -153,6 +163,82 @@ async function resoudreTechnicien(technicienId: number | null): Promise<Utilisat
   return technicien;
 }
 
+// Type de l'evenement d'affectation. AFFECTATION_AUTO est DISTINCT d'AFFECTATION : il
+// rend la fonctionnalite demontrable et filtrable (« combien de tickets ont ete
+// auto-affectes ? »), ce qu'un auteur `null` seul ne permettrait pas — un evenement
+// systeme reste un evenement systeme, mais tous ne sont pas des affectations automatiques.
+type TypeEvenementAffectation = 'AFFECTATION' | 'DESAFFECTATION' | 'AFFECTATION_AUTO';
+
+// Resultat de l'affectation automatique : la decision de la regle pure, elargie de deux
+// cas qui n'appartiennent pas a la regle mais au service.
+export type ResultatAffectationAuto =
+  ResultatChoix | { affecte: false; raison: 'TICKET_DEJA_ASSIGNE' | 'ECHEC_TECHNIQUE' };
+
+// CŒUR PARTAGE de l'affectation — manuelle comme automatique.
+// Extrait tel quel de `affecter()` : evenement, mise a jour, journal d'audit, notification.
+// Aucune regle d'autorisation ici ; chaque appelant applique la sienne en amont
+// (l'administrateur pour le chemin manuel, le mode AUTO pour le chemin automatique).
+//
+// `auteurId === null` signifie « Systeme » : a la creation en mode AUTO, l'acteur est le
+// DEMANDEUR (un employe) et lui attribuer l'affectation serait faux.
+//
+// `motif` : uniquement journalise. Il explique pourquoi ce technicien a ete retenu
+// (specialite, ou l'un des trois replis) sans jamais influencer l'ecriture.
+async function appliquerAffectation(
+  ticket: TicketDetail,
+  technicien: UtilisateurEntite | null,
+  auteurId: number | null,
+  motif?: MotifAffectation,
+): Promise<TicketDetail> {
+  const desaffectation = technicien === null;
+  const type: TypeEvenementAffectation = desaffectation
+    ? 'DESAFFECTATION'
+    : motif
+      ? 'AFFECTATION_AUTO'
+      : 'AFFECTATION';
+
+  await ticketRepository.creerEvenement({
+    ticketId: ticket.id,
+    auteurId,
+    type,
+    ancienneValeur: ticket.technicien ? nomComplet(ticket.technicien) : null,
+    nouvelleValeur: technicien ? nomComplet(technicien) : null,
+    // CIBLE de l'action : le technicien CONCERNÉ. Pour une affectation c'est celui qui
+    // reçoit le ticket ; pour une désaffectation, celui à qui on le retire — dans les deux
+    // cas la personne dont on veut pouvoir lister l'historique.
+    // Les valeurs textuelles restent, elles : ce sont les noms D'ÉPOQUE, qu'il faut
+    // continuer d'afficher. L'id répond à « toutes les affectations vers X », le nom à
+    // « qu'affichait-on à ce moment-là » — deux questions, deux colonnes.
+    cibleId: desaffectation ? (ticket.technicien?.id ?? null) : technicien.id,
+  });
+
+  const misAJour = await ticketRepository.update(ticket.id, {
+    technicienId: technicien?.id ?? null,
+    statut: desaffectation ? 'NOUVEAU' : 'EN_ATTENTE',
+  });
+  logAudit('TICKET_AFFECTATION', {
+    ticketId: ticket.id,
+    technicienId: technicien?.id ?? null,
+    parUtilisateur: auteurId,
+    automatique: motif !== undefined,
+    ...(motif ? { motif } : {}),
+  });
+
+  // Notifier le technicien nouvellement affecte (jamais lors d'une desaffectation).
+  // Une affectation decidee par le systeme notifie toujours : `auteurId` vaut null,
+  // donc la comparaison ne peut pas s'auto-exclure.
+  if (technicien && technicien.id !== auteurId) {
+    await notificationService.notifier({
+      destinataire: { id: technicien.id, email: technicien.email, prenom: technicien.prenom },
+      type: 'AFFECTATION',
+      sujet: `Ticket #${ticket.id} vous est affecté`,
+      message: `Le ticket « ${misAJour.titre} » vous a été affecté.`,
+      ticketId: ticket.id,
+    });
+  }
+  return misAJour;
+}
+
 export const ticketService = {
   async lister(acteur: Acteur, filtres: FiltresTickets): Promise<TicketListe[]> {
     // Un employé ne voit que ses propres tickets, quels que soient les filtres reçus.
@@ -191,8 +277,35 @@ export const ticketService = {
 
     // Enrichissement IA (Greffe 1) — NON bloquant : le ticket est déjà committé.
     // `enrichirTicket` absorbe toute erreur (service down, timeout, écriture) → la
-    // création réussit toujours. On relit ensuite pour renvoyer d'éventuelles suggestions.
-    await iaService.enrichirTicket(ticket);
+    // création réussit toujours. Il renvoie la classification retenue, dont l'affectation
+    // automatique a besoin : `Ticket.categorieId` reste NULL à la création (l'IA suggère,
+    // elle n'écrit jamais la catégorie — c'est la boucle humaine).
+    const suggestion = await iaService.enrichirTicket(ticket);
+
+    // Affectation automatique (§6.2) — seulement si l'administrateur a mis l'interrupteur
+    // sur AUTO. Lecture du mode à chaque création, sans cache : l'interrupteur doit être
+    // immédiat. Toute anomalie (mode illisible, IA muette, aucun technicien, échec
+    // d'écriture) laisse le ticket NOUVEAU non assigné — comme en mode MANUEL.
+    //
+    // CONTRAT : la création d'un ticket ne doit JAMAIS échouer à cause de l'affectation
+    // automatique. Le ticket est déjà committé et la réponse est déjà due au demandeur ;
+    // une affectation qui n'aboutit pas est un travail pour l'administrateur, pas une
+    // erreur pour l'utilisateur. D'où ce filet, en plus de celui de
+    // `affecterAutomatiquement` : il couvre aussi la lecture du mode.
+    try {
+      if ((await parametreService.modeAffectation()) === 'AUTO') {
+        await ticketService.affecterAutomatiquement(
+          ticket,
+          categorieEffective(input.categorieId ?? null, suggestion),
+        );
+      }
+    } catch (err) {
+      console.warn(
+        `[AFFECTATION] mode indéterminé pour le ticket #${ticket.id} — il reste non assigné :`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+
     return (await ticketRepository.findById(ticket.id)) ?? ticket;
   },
 
@@ -258,7 +371,12 @@ export const ticketService = {
       resolution: texteSolution,
       resolutionDate: texteSolution ? new Date() : null,
     });
-    logAudit('TICKET_STATUT', { ticketId: id, de: ticket.statut, vers: 'RESOLU', parUtilisateur: acteur.id });
+    logAudit('TICKET_STATUT', {
+      ticketId: id,
+      de: ticket.statut,
+      vers: 'RESOLU',
+      parUtilisateur: acteur.id,
+    });
 
     // Flywheel : à la résolution, la catégorie du ticket devient un label validé par l'humain.
     await iaService.reconcilierSuggestions(id, misAJour.categorie?.nom ?? null);
@@ -299,7 +417,12 @@ export const ticketService = {
       statut: 'CLOTURE',
       dateCloture: new Date(),
     });
-    logAudit('TICKET_STATUT', { ticketId: id, de: ticket.statut, vers: 'CLOTURE', parUtilisateur: acteur.id });
+    logAudit('TICKET_STATUT', {
+      ticketId: id,
+      de: ticket.statut,
+      vers: 'CLOTURE',
+      parUtilisateur: acteur.id,
+    });
 
     // Flywheel : filet (clôture admin) — la catégorie finale reste un label validé.
     await iaService.reconcilierSuggestions(id, misAJour.categorie?.nom ?? null);
@@ -331,7 +454,12 @@ export const ticketService = {
     });
 
     const misAJour = await ticketRepository.update(id, { priorite });
-    logAudit('TICKET_PRIORITE', { ticketId: id, de: ticket.priorite, vers: priorite, parUtilisateur: acteur.id });
+    logAudit('TICKET_PRIORITE', {
+      ticketId: id,
+      de: ticket.priorite,
+      vers: priorite,
+      parUtilisateur: acteur.id,
+    });
     return misAJour;
   },
 
@@ -353,33 +481,85 @@ export const ticketService = {
     if (technicienId === ticket.technicienId) return ticket;
 
     const technicien = await resoudreTechnicien(technicienId);
-    const desaffectation = technicienId === null;
+    return appliquerAffectation(ticket, technicien, acteur.id);
+  },
 
-    await ticketRepository.creerEvenement({
-      ticketId: id,
-      auteurId: acteur.id,
-      type: desaffectation ? 'DESAFFECTATION' : 'AFFECTATION',
-      ancienneValeur: ticket.technicien ? nomComplet(ticket.technicien) : null,
-      nouvelleValeur: technicien ? nomComplet(technicien) : null,
-    });
-
-    const misAJour = await ticketRepository.update(id, {
-      technicienId,
-      statut: desaffectation ? 'NOUVEAU' : 'EN_ATTENTE',
-    });
-    logAudit('TICKET_AFFECTATION', { ticketId: id, technicienId, parUtilisateur: acteur.id });
-
-    // Notifier le technicien nouvellement affecté (jamais lors d'une désaffectation).
-    if (technicien && technicien.id !== acteur.id) {
-      await notificationService.notifier({
-        destinataire: { id: technicien.id, email: technicien.email, prenom: technicien.prenom },
-        type: 'AFFECTATION',
-        sujet: `Ticket #${id} vous est affecté`,
-        message: `Le ticket « ${misAJour.titre} » vous a été affecté.`,
-        ticketId: id,
-      });
+  // Affectation AUTOMATIQUE (§6.2, mode AUTO) — décidée par le système à la création.
+  // Rejoint exactement le même cœur que l'affectation manuelle : l'événement, le journal
+  // d'audit et la notification du technicien sont donc identiques et gratuits.
+  //
+  // Ne lève JAMAIS : la création d'un ticket ne doit pas échouer parce que l'affectation
+  // automatique n'a pas abouti (R6). Toute anomalie laisse le ticket NOUVEAU, non assigné,
+  // exactement comme en mode MANUEL — l'administrateur reprend la main.
+  //
+  // `categorieId` : catégorie EFFECTIVE, déjà arbitrée par l'appelant (catégorie réelle du
+  // demandeur, sinon suggestion IA au-dessus du seuil, sinon null).
+  // `auteurId` : null quand la décision vient du système.
+  async affecterAutomatiquement(
+    ticket: TicketDetail,
+    categorieId: number | null,
+    auteurId: number | null = null,
+  ): Promise<ResultatAffectationAuto> {
+    // Précaution : ne jamais écraser une affectation existante.
+    if (ticket.technicienId !== null) {
+      return { affecte: false, raison: 'TICKET_DEJA_ASSIGNE' };
     }
-    return misAJour;
+
+    // BARRIÈRE DE CONTEXTE. `auteurId === null` signifie « décidé par le système » — cas
+    // de la création en mode AUTO, où l'acteur de la requête est le DEMANDEUR, un employé
+    // qui n'a pas le droit d'affecter et n'a pas fait cette action.
+    //
+    // Sans cette barrière, le journal d'audit lui attribuerait l'affectation : le contexte
+    // de requête SURVIT aux traitements lancés depuis la requête (mesuré à l'étape A2), il
+    // n'est donc pas perdu, il est HÉRITÉ. Constaté en base avant correction :
+    // « TICKET_AFFECTATION | Demandeur Production ». Un journal qui ment est pire qu'un
+    // journal incomplet.
+    //
+    // Quand `auteurId` est renseigné — un administrateur déclenchant l'affectation en lot —
+    // l'action lui appartient réellement et le contexte doit être conservé.
+    const executer =
+      auteurId === null
+        ? executerSansContexte
+        : (fn: () => Promise<ResultatAffectationAuto>) => fn();
+
+    return executer(async () => {
+      try {
+        const candidats = await affectationRepository.chargeCourante({
+          jour: dateDuJour(new Date()),
+        });
+        const resultat = choisirTechnicien(
+          candidats
+            .filter((c) => c.eligibleAffectation)
+            .map((c) => ({
+              id: c.technicienId,
+              categories: c.categories,
+              charge: c.charge,
+              dernierTicketAssigne: c.dernierTicketAssigne,
+              absenceEnCours: c.absenceEnCours,
+            })),
+          categorieId,
+        );
+
+        if (!resultat.affecte) {
+          logAudit('TICKET_AFFECTATION_AUTO_SANS_SUITE', {
+            ticketId: ticket.id,
+            raison: resultat.raison,
+          });
+          return resultat;
+        }
+
+        // Relecture de la cible : elle a pu être désactivée entre le calcul et l'écriture.
+        const technicien = await resoudreTechnicien(resultat.technicienId);
+        await appliquerAffectation(ticket, technicien, auteurId, resultat.motif);
+        return resultat;
+      } catch (err) {
+        console.warn(
+          `[AFFECTATION] automatique impossible sur le ticket #${ticket.id} — il reste non assigné :`,
+          err instanceof Error ? err.message : err,
+        );
+        return { affecte: false, raison: 'ECHEC_TECHNIQUE' };
+      }
+    });
   },
 
   // Correction de la catégorie après création (T-W6 — socle du flywheel J9).
@@ -513,10 +693,20 @@ export const ticketService = {
     const resourceType = fichier.mimetype === 'application/pdf' ? 'raw' : 'image';
     let stockage: { url: string; publicId: string };
     try {
-      stockage = await uploaderBuffer(fichier.buffer, `smart-ticketing/tickets/${id}`, resourceType);
+      stockage = await uploaderBuffer(
+        fichier.buffer,
+        `smart-ticketing/tickets/${id}`,
+        resourceType,
+      );
     } catch (err) {
-      console.error('[PieceJointe] upload Cloudinary échoué :', err instanceof Error ? err.message : err);
-      throw new AppError(502, "L'envoi vers le stockage de fichiers a échoué (réessayez plus tard).");
+      console.error(
+        '[PieceJointe] upload Cloudinary échoué :',
+        err instanceof Error ? err.message : err,
+      );
+      throw new AppError(
+        502,
+        "L'envoi vers le stockage de fichiers a échoué (réessayez plus tard).",
+      );
     }
     const piece = await ticketRepository.creerPieceJointe({
       ticketId: id,
@@ -526,12 +716,22 @@ export const ticketService = {
       typeMime: fichier.mimetype,
       taille: fichier.size,
     });
-    logAudit('TICKET_PIECE_JOINTE', { ticketId: id, pieceJointeId: piece.id, parUtilisateur: acteur.id });
+    logAudit('TICKET_PIECE_JOINTE', {
+      ticketId: id,
+      pieceJointeId: piece.id,
+      parUtilisateur: acteur.id,
+    });
 
     // OCR (J8bis Lot B) : extraction en ARRIÈRE-PLAN à partir du buffer DÉJÀ en main (pas de
     // re-téléchargement Cloudinary). Non bloquant → la réponse d'upload part immédiatement ;
     // l'OCR fiable peuple `texte_extrait` et déclenche une re-classification « après OCR ».
-    void iaService.demarrerExtraction(piece.id, ticket, fichier.buffer, fichier.mimetype, fichier.originalname);
+    void iaService.demarrerExtraction(
+      piece.id,
+      ticket,
+      fichier.buffer,
+      fichier.mimetype,
+      fichier.originalname,
+    );
 
     return piece;
   },
@@ -559,7 +759,9 @@ export const ticketService = {
     const ticket = await ticketRepository.findById(id);
     if (!ticket) throw new NotFoundError('Ticket introuvable');
     if (!estAdmin(acteur) && !estTechnicienAssigne(acteur, ticket)) {
-      throw new ForbiddenError('Seul le technicien assigné ou un administrateur peut demander un résumé');
+      throw new ForbiddenError(
+        'Seul le technicien assigné ou un administrateur peut demander un résumé',
+      );
     }
     if (ticket.commentaires.length < 2) {
       throw new ValidationError("Un résumé n'a d'intérêt qu'à partir de 2 messages dans le fil");
@@ -649,10 +851,16 @@ export const ticketService = {
       parCategorie,
       satisfaction,
       repartitionNotes,
-      chargeTechniciens,
       clotures,
       prisesEnCharge,
     } = await ticketRepository.statistiques(scope);
+
+    // Charge courante — extraite dans son propre dépôt : la même agrégation sert
+    // l'affectation automatique (§6.2), qui a besoin d'ids et des techniciens à 0.
+    const chargeTechniciens = await affectationRepository.chargeCourante({
+      jour: dateDuJour(new Date()),
+      scope,
+    });
 
     const compter = (s: StatutTicket) => parStatut.find((g) => g.statut === s)?._count._all ?? 0;
 
@@ -666,7 +874,10 @@ export const ticketService = {
     const premierePriseEnCharge = new Map<number, number>();
     for (const a of prisesEnCharge) {
       if (!premierePriseEnCharge.has(a.ticketId)) {
-        premierePriseEnCharge.set(a.ticketId, a.dateCreation.getTime() - a.ticket.dateCreation.getTime());
+        premierePriseEnCharge.set(
+          a.ticketId,
+          a.dateCreation.getTime() - a.ticket.dateCreation.getTime(),
+        );
       }
     }
     const delaiPriseEnChargeMoyenHeures = moyenneHeures([...premierePriseEnCharge.values()]);
@@ -674,11 +885,6 @@ export const ticketService = {
     // Noms lisibles pour les répartitions par catégorie et la charge par technicien.
     const categories = await categorieRepository.findMany();
     const nomCategorie = new Map(categories.map((c) => [c.id, c.nom]));
-    const idsTech = chargeTechniciens
-      .map((g) => g.technicienId)
-      .filter((id): id is number => id !== null);
-    const techniciens = idsTech.length ? await utilisateurRepository.findManyByIds(idsTech) : [];
-    const nomTechnicien = new Map(techniciens.map((u) => [u.id, `${u.prenom} ${u.nom}`]));
 
     return {
       totalTickets: parStatut.reduce((n, g) => n + g._count._all, 0),
@@ -688,7 +894,9 @@ export const ticketService = {
       tempsResolutionMoyenHeures,
       delaiPriseEnChargeMoyenHeures,
       satisfactionMoyenne:
-        satisfaction._avg.satisfactionNote != null ? arrondi(satisfaction._avg.satisfactionNote) : null,
+        satisfaction._avg.satisfactionNote != null
+          ? arrondi(satisfaction._avg.satisfactionNote)
+          : null,
       nombreEvaluations: satisfaction._count.satisfactionNote,
       repartitionSatisfaction: [1, 2, 3, 4, 5].map((note) => ({
         note,
@@ -702,16 +910,22 @@ export const ticketService = {
       repartitionCategorie: parCategorie
         .map((g) => ({
           categorie:
-            g.categorieId != null ? nomCategorie.get(g.categorieId) ?? 'Inconnue' : 'Non classé',
+            g.categorieId != null ? (nomCategorie.get(g.categorieId) ?? 'Inconnue') : 'Non classé',
           count: g._count._all,
         }))
         .sort((a, b) => b.count - a.count),
+      // Le MOTIF d'absence n'est jamais exposé ici : ce graphique est visible par tous
+      // les techniciens (garde `estSupport` côté interface), et MALADIE est une donnée
+      // de santé. Seule la date de fin remonte, pour que l'administrateur puisse
+      // redistribuer en connaissance de cause.
       chargeParTechnicien: chargeTechniciens
-        .map((g) => ({
-          technicien: g.technicienId != null ? nomTechnicien.get(g.technicienId) ?? 'Inconnu' : '—',
-          count: g._count._all,
+        .map((t) => ({
+          technicienId: t.technicienId,
+          technicien: t.nom,
+          count: t.charge,
+          absenceJusquau: t.absenceEnCours?.dateFin ?? null,
         }))
-        .sort((a, b) => b.count - a.count),
+        .sort((a, b) => b.count - a.count || a.technicien.localeCompare(b.technicien)),
     };
   },
 };

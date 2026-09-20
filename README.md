@@ -265,9 +265,9 @@ Le serveur de dev Vite proxifie automatiquement les appels `/api` vers `http://l
 
 ## Modèle de données
 
-Entités principales (voir `backend/prisma/schema.prisma`) : `Utilisateur`, `Ticket`, `Categorie`, `Commentaire`, `PieceJointe`, `Notification`, `SuggestionIA` (schéma prévu, logique IA à implémenter en phase 5 du projet).
+Entités principales (voir `backend/prisma/schema.prisma`) : `Utilisateur`, `Ticket`, `Categorie`, `Commentaire`, `PieceJointe`, `Notification`, `SuggestionIA`, `EvenementTicket`, `RefreshToken`, ainsi que `Parametre`, `TechnicienCategorie` et `Absence` (affectation automatique, §6.2) et `JournalAudit` (traçabilité, §7).
 
-La colonne `Ticket.embedding` (type `vector(1536)`, extension pgvector) est déjà en place pour la recherche de similarité par RAG, mais n'est pas encore alimentée — cela fait partie du module IA à venir.
+La colonne `Ticket.embedding` (type `vector(1024)`, extension pgvector — dimension du modèle bge-m3) est alimentée par le module IA et indexée en HNSW cosinus. La colonne générée `Ticket.recherche_texte` (`tsvector`, index GIN) porte l'arm lexical de la recherche hybride. Ces deux index sont créés en **SQL brut** dans les migrations : Prisma ne sait pas les exprimer, donc **toute migration générée doit être relue avant application** (voir le journal technique, Chantier 1).
 
 ## Authentification & rôles
 
@@ -293,15 +293,229 @@ Réinitialisation de mot de passe par **code OTP à 6 chiffres** (3 étapes) :
 
 Sécurité : mots de passe bcrypt (cost 12) avec politique de complexité (8+ caractères, majuscule, minuscule, chiffre), codes OTP stockés hashés (SHA-256), **rate limiting** par IP sur toutes les routes sensibles, protection anti-timing sur la connexion, validation Zod systématique côté backend. Le contrôle d'accès par rôle (RBAC) se fait via le middleware `requireRole(...roles)` (`backend/src/middlewares/auth.middleware.ts`).
 
+## Affectation des tickets
+
+Les tickets peuvent être attribués aux techniciens **manuellement** ou **automatiquement**,
+selon la charge de travail et la spécialité (CDC §6.2). L'affectation manuelle reste
+disponible **dans les deux modes** : un administrateur peut toujours corriger.
+
+### Régler le mode — Administration → Paramètres
+
+Deux modes, réservés à l'administrateur :
+
+| Mode | Comportement |
+| --- | --- |
+| **Manuel** *(défaut)* | Les nouveaux tickets restent non assignés. L'administrateur affecte lui-même. |
+| **Automatique** | Chaque nouveau ticket est assigné selon la charge et la spécialité, en excluant les techniciens absents. |
+
+Le réglage est **persistant** : il survit au redémarrage de la pile. Un administrateur peut
+donc passer en automatique avant une absence prolongée et revenir en manuel à son retour.
+
+> **Basculer en automatique n'affecte que les tickets créés ensuite.** Les tickets déjà en
+> attente d'affectation restent non assignés — l'écran l'indique et propose le lien vers la
+> file à traiter à la main.
+
+### Définir les spécialités — Administration → Utilisateurs
+
+La colonne **Spécialités** de chaque technicien ouvre une liste de cases à cocher : les
+catégories qu'il traite en priorité. Un technicien peut en couvrir plusieurs.
+
+Sans aucune spécialité, un technicien reste candidat aux **affectations de repli** — il
+n'est simplement prioritaire sur aucune catégorie.
+
+### Saisir une absence — Administration → Absences
+
+Le tableau liste les absences (technicien, période, durée, motif, statut, qui l'a saisie) et
+se filtre sur **En cours / À venir / Passées / Toutes**.
+
+- Les **dates sont incluses** des deux côtés : une absence du 10 au 20 couvre le 20 en entier.
+- Motifs : **Congé, Maladie, Formation, Autre**, plus un commentaire libre facultatif.
+- Une absence **passée** peut être saisie après coup (cas fréquent : « il était malade lundi,
+  on l'apprend mardi »).
+- **Deux absences ne peuvent pas se chevaucher** pour un même technicien : la saisie est
+  refusée et le message indique les dates de l'absence en conflit. Des périodes contiguës
+  (10–15 puis 16–20) restent acceptées.
+
+Une absence **n'affecte que l'affectation automatique**. C'est un mécanisme distinct de la
+désactivation d'un compte, qui coupe la connexion et vise un départ :
+
+- le technicien absent **garde son accès complet** à l'application ;
+- ses **tickets déjà assignés ne bougent pas** ;
+- il **redevient disponible tout seul** à la date de fin, sans intervention.
+
+L'absence en cours est rappelée par une pastille **Absent** dans la liste des utilisateurs,
+par une mention « absent jusqu'au … » dans le sélecteur de technicien d'un ticket, et par
+une puce sur le graphique de charge du tableau de bord. Le **motif** n'est visible que sur
+la page Absences : le graphique de charge est consultable par tous les techniciens, et un
+arrêt maladie est une donnée de santé.
+
+### Comment le technicien est choisi
+
+En mode automatique, à la création d'un ticket :
+
+1. **Catégorie retenue** — celle choisie par le demandeur si elle existe ; sinon celle
+   suggérée par l'IA, à condition que sa confiance atteigne le seuil ; sinon aucune.
+2. **Candidats** — les techniciens **actifs** et **non absents ce jour**.
+3. **Spécialité** — si la catégorie est connue et couverte, seuls ces spécialistes sont
+   retenus. La spécialité est une contrainte de compétence : un spécialiste chargé passe
+   avant un généraliste disponible.
+4. **Départage** — le moins chargé (tickets ouverts) ; à égalité, celui servi le moins
+   récemment ; à égalité encore, le plus petit identifiant.
+
+Le ticket passe alors **En attente**, le technicien est notifié, et l'historique du ticket
+porte un événement « a assigné automatiquement le ticket à … » attribué à **Système**.
+
+**Si aucune affectation n'est possible** — aucun technicien actif, tous absents, ou une
+erreur technique — **le ticket est simplement créé sans être assigné**. La création d'un
+ticket n'échoue jamais à cause de l'affectation automatique.
+
+**Repli sur la charge seule** quand la catégorie n'est pas exploitable : module IA
+indisponible, confiance insuffisante, ou aucun spécialiste disponible pour cette catégorie.
+
+### Points d'entrée API
+
+- `GET /api/parametres` · `PATCH /api/parametres` — lecture et réglage du mode (Administrateur)
+- `GET /api/absences` · `POST /api/absences` · `PATCH /api/absences/:id` ·
+  `DELETE /api/absences/:id` — gestion des absences (Administrateur)
+- `PUT /api/utilisateurs/:id/specialites` — définit les catégories couvertes par un
+  technicien (Administrateur ; la liste envoyée **remplace** l'existante)
+
+### Limite connue
+
+Le **seuil de confiance** (0,5) utilisé pour retenir une catégorie suggérée est fixé dans le
+code et **n'est pas encore réglable** depuis l'interface. La table de paramètres est prête à
+l'accueillir (CDC §6.5).
+
+## Journal d'audit
+
+Les actions sensibles de l'application sont **enregistrées en base**, consultables depuis
+**Administration → Journal d'audit** (CDC §7 — Traçabilité).
+
+> Avant ce chantier, la journalisation n'écrivait qu'en console. Comme chaque
+> reconstruction d'image recrée le conteneur et emporte ses journaux, il ne restait en
+> pratique que quelques heures d'historique. Les entrées sont désormais durables.
+
+### Ce qui est tracé
+
+| Domaine | Actions |
+| --- | --- |
+| **Authentification** | Connexion, **échec de connexion**, déconnexion, activation de compte, réinitialisation de mot de passe |
+| **Comptes** | Invitation, renvoi d'invitation, changement de **rôle**, activation / désactivation, spécialités |
+| **Tickets** | Création, affectation (manuelle et automatique), prise en charge, changement de statut / priorité / catégorie, évaluation, pièce jointe, demandes d'IA |
+| **Catégories** | Création, renommage, suppression |
+| **Absences** | Création, modification, suppression |
+| **Paramètres** | Changement du mode d'affectation |
+| **Module IA** | Lancement d'un réentraînement, déploiement d'un modèle |
+
+Chaque entrée porte : l'**action**, l'**acteur**, la **cible**, le **résultat**
+(succès / échec), l'**adresse IP**, le **navigateur**, l'**horodatage** et un détail
+propre à l'action.
+
+### Consulter le journal
+
+Filtres combinables : **action**, **acteur**, **période**, **résultat**. Les 100 dernières
+entrées s'affichent, un bouton **Charger plus** remonte le temps.
+
+**Cliquez une ligne** pour ouvrir son détail complet : le contexte y est écrit en français
+— « Priorité : Moyenne → Haute », « Motif : Mot de passe incorrect » — et le navigateur
+complet y figure.
+
+### Trois natures d'acteur, à ne pas confondre
+
+| Mention | Signification |
+| --- | --- |
+| **Compte confirmé** | L'action vient d'un compte authentifié. |
+| **Système** | Décidée par l'application, sans intervention humaine (affectation automatique, purge). Aucune adresse IP n'y est associée : il n'y en a pas à enregistrer. |
+| **Non authentifié** | Identité **présentée** lors d'une tentative, **jamais vérifiée** — typiquement un échec de connexion sur un e-mail inconnu. Le nom affiché n'est pas une identité confirmée. |
+
+De même, une adresse IP absente est toujours **expliquée** : « action du système » n'est pas
+la même chose que « repris de l'historique — contexte non enregistré à l'époque ».
+
+### Les échecs de connexion
+
+Les tentatives refusées sont enregistrées avec l'**e-mail saisi**, l'**adresse IP** et le
+**motif précis** — compte inexistant, mot de passe incorrect, compte désactivé, compte non
+activé. Cinq refus consécutifs depuis une même adresse deviennent lisibles d'un filtre.
+
+> Les réponses de l'API, elles, **ne changent pas** : « compte inexistant » et « mot de
+> passe incorrect » renvoient exactement le même message, pour ne pas révéler quels e-mails
+> possèdent un compte. La distinction n'existe **que dans le journal** : l'administrateur
+> la voit, un attaquant non.
+
+### Données personnelles et conservation
+
+Le journal contient des **adresses IP** et des identifiants de comptes, qui sont des
+données à caractère personnel.
+
+| | |
+| --- | --- |
+| **Finalité** | Sécurité et redevabilité : détecter les accès anormaux, et pouvoir répondre à « qui a fait cette modification, et quand ». **Pas** un outil de mesure de l'activité des employés. |
+| **Accès** | **Administrateur uniquement.** Les autres rôles reçoivent un refus (403). |
+| **Conservation** | **12 mois.** Les entrées plus anciennes sont supprimées automatiquement. |
+| **Purge** | Exécutée **au démarrage de l'API**, et tracée elle-même. |
+
+> **Limite connue** : le projet n'embarque pas de planificateur de tâches. La purge n'a
+> lieu qu'au démarrage — une instance qui tournerait plus de douze mois sans redémarrer
+> conserverait des entrées au-delà de la durée annoncée. En pratique la pile redémarre à
+> chaque déploiement.
+
+#### Photos de profil
+
+La **photo de profil** est une donnée personnelle d'une autre nature que le journal, et
+suit des règles distinctes.
+
+| | |
+| --- | --- |
+| **Caractère** | **Facultative.** Sans photo, l'interface affiche les initiales sur un fond coloré — aucun compte n'est incomplet pour autant. |
+| **Maîtrise** | **Self-service exclusif.** Chaque utilisateur ajoute, remplace ou retire **sa propre** photo depuis sa page profil. Un administrateur ne peut pas modifier celle d'un autre compte. |
+| **Stockage** | Cloudinary, recadrée en 256×256 **au moment de l'envoi** — l'original lourd n'est jamais conservé. |
+| **Diffusion** | **URL directe à identifiant aléatoire**, sans proxy (voir l'avertissement ci-dessous). |
+| **Suppression** | Immédiate sur demande de l'utilisateur. Le fichier précédent est **détruit du stockage** à chaque remplacement comme au retrait — rien ne s'accumule. |
+| **Journal d'audit** | **Volontairement absent.** Le journal vise les actions d'administration et de sécurité ; y verser les changements d'avatar diluerait ce signal. |
+
+> **À savoir, et assumé** : contrairement aux **pièces jointes**, qui transitent par le
+> backend et restent illisibles sans authentification, les photos de profil sont servies
+> **directement** par le stockage. La protection tient à l'identifiant aléatoire de l'URL :
+> elle n'est pas devinable, mais **une URL divulguée reste lisible sans session**. Ce choix
+> évite un aller-retour backend par avatar sur chaque liste de tickets.
+
+### Reprise de l'historique
+
+Les **51 événements de tickets antérieurs** à la mise en service du journal y ont été
+importés : il couvre donc l'historique réel du projet. Ces lignes sont signalées
+« repris de l'historique » et **sans adresse IP** — ce contexte n'était pas enregistré à
+l'époque, et n'a pas été inventé.
+
+De même, **4 affectations anciennes ne sont rattachables à aucun compte** : elles
+n'enregistraient que le *nom* du technicien, et ce nom désigne plusieurs comptes.
+L'écran l'annonce. Le nom reste lisible dans l'historique du ticket ; seul le lien vers un
+compte manque. Les affectations enregistrées depuis sont, elles, rattachées.
+
+### Point d'entrée API
+
+- `GET /api/audit` — consultation filtrée et paginée (Administrateur)
+
+### Perspectives non livrées
+
+Pagination infinie · export CSV / PDF · recherche plein-texte · filtre par objet visé ·
+alertes automatiques sur échecs répétés · durée de conservation réglable depuis l'interface.
+
 ## État d'avancement
 
 **Livré :**
 
 - ✅ Authentification JWT (inscription, connexion, RBAC, jetons courts + refresh rotatif, rate limiting)
-- ✅ Réinitialisation de mot de passe par code OTP, gestion du profil, invitation et activation de compte
+- ✅ Réinitialisation de mot de passe par code OTP, gestion du profil (**photo de profil** comprise), invitation et activation de compte
 - ✅ Administration des utilisateurs (rôles, activation/désactivation) et des **catégories**
 - ✅ Cycle de vie complet des tickets : création, affectation, prise en charge, résolution,
   satisfaction, clôture, recatégorisation, commentaires, historique d'événements, notifications
+- ✅ **Affectation automatique** (§6.2) : interrupteur manuel/automatique persistant,
+  spécialités technicien ↔ catégorie, **gestion des absences** (congé, maladie, formation)
+  excluant les techniciens indisponibles, choix par charge et spécialité
+- ✅ **Journal d'audit** (§7) : actions sensibles persistées en base (authentification,
+  comptes, tickets, catégories, absences, paramètres, module IA), **échecs de connexion
+  tracés avec leur motif**, consultation filtrable réservée à l'administrateur,
+  conservation 12 mois
 - ✅ **Pièces jointes** (PDF/PNG/JPG, ≤ 10 Mo) avec **OCR local** (Tesseract, pack `fra`)
 - ✅ **Module IA complet** : classification automatique de catégorie, priorisation par scorecard
   glass-box, suggestion de solution par **RAG** (recherche hybride pgvector + full-text, reranker,

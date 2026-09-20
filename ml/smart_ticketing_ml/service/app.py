@@ -30,22 +30,26 @@ from ..summarize import resumer
 # perdrait son enrichissement IA. On charge donc le chemin de CLASSIFICATION en
 # tâche de fond — l'écoute HTTP et /sante restent disponibles immédiatement.
 #
-# Le RERANKER est préchauffé LUI AUSSI. Le raisonnement initial — « /suggest a un
-# budget de 60 s, inutile de le préchauffer » — a été INVALIDÉ par la mesure en
-# conteneur : le premier /suggest, qui chargeait le reranker DANS la requête, a
-# pris 71,1 s (contre 25,6 s et 21,2 s aux appels suivants), donc au-delà du budget
-# IA_SUGGESTION_TIMEOUT_MS — le backend l'aurait abandonné. Coût : ~2,3 Go de RAM
-# de plus au démarrage, assumé.
+# Le RERANKER n'est PAS préchauffé — il n'est pas câblé dans la chaîne de suggestion.
+# `/suggest` ne l'atteint que derrière la garde `if seuil is not None` de
+# `retrieval/suggestion.py`, or le seuil d'abstention vaut `None` par défaut
+# (`retrieval/config.py:SEUIL_ABSTENTION_DEFAUT`) et aucune variable d'environnement
+# ni paramètre admin ne le règle : la garde n'est jamais franchie. Le préchauffer
+# immobilisait donc ~2,3 Go de RAM pour un modèle qui ne s'exécutait jamais.
+# Il reste chargé PARESSEUSEMENT, au premier appel, par ses deux vrais appelants :
+# `POST /rerank` et le harnais d'évaluation (`eval/run_retrieval.py`, variante
+# `rrf_rerank`). Le recâbler dans la suggestion suppose de modifier `suggestion.py`
+# (régler un seuil, ou demander la variante `rrf_rerank`) — il faudra alors remettre
+# son préchauffage ICI, sans quoi le premier appel repaiera le chargement en ligne.
 #
 # Piloté par IA_WARMUP (défaut false — cf. service/config.py).
 def _prechauffer() -> None:
-    """Charge bge-m3, le classifieur figé, puis le reranker. Aucune erreur n'est fatale : en cas
+    """Charge bge-m3 puis le classifieur figé. Aucune erreur n'est fatale : en cas
     d'échec (artefact absent, cache HF vide), on retombe sur le chargement paresseux."""
     # Ordre volontaire : le chemin de CLASSIFICATION d'abord (budget serré de 4 s à
-    # la création d'un ticket), le reranker ensuite (consommateur asynchrone).
+    # la création d'un ticket).
     for etape, charger in (("embeddings", embedder.charger_modele),
-                           ("classifieur", predictors.charger_classifieur),
-                           ("reranker", reranker.charger_modele)):
+                           ("classifieur", predictors.charger_classifieur)):
         debut = time.perf_counter()
         try:
             charger()

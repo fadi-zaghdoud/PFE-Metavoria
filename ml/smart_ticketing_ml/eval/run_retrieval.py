@@ -192,9 +192,12 @@ def _markdown(meta, jeux, anti_fuite, couvertures, fig) -> str:
         L.append(f"## Figure\n\n![nDCG@5]({fig})\n")
 
     L.append("---")
-    L.append("_Décision de production (`retrieval/config.py`) : `RERANK_ACTIF_DEFAUT=False` — "
-             "l'ordre d'affichage reste **RRF** ; le reranker ne sert qu'au **score** de la porte "
-             "d'abstention (top-1). Le réentraînement du reranker attend le flywheel J9._")
+    L.append("_Décision de production : le reranker n'est **pas câblé** dans la chaîne de "
+             "suggestion — l'ordre d'affichage est `\"rrf\"`, écrit en dur dans `suggestion.py`, "
+             "et la porte d'abstention qui seule l'appellerait reste fermée "
+             "(`SEUIL_ABSTENTION_DEFAUT = None`). Il ne s'exécute que via `POST /rerank` et ce "
+             "harnais (variante `rrf_rerank`). Le recâbler suppose de modifier `suggestion.py` ; "
+             "le réentraînement du reranker attend le flywheel J9._")
     return "\n".join(L) + "\n"
 
 

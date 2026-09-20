@@ -713,6 +713,19 @@ demande explicite.
      l'ablation (voir « en cours ») : l'ordre fin du rerank aide le synthétique mais nuit au
      réel — à confirmer sur le tableau final.
 
+     > ⚠️ **RECTIFIÉ LE 19/09/2026.** Le découplage ORDRE/SCORE décrit ici était l'**intention**
+     > de conception ; il n'a jamais été le comportement livré. Deux erreurs dans ce point.
+     > **(a)** `RERANK_ACTIF_DEFAUT` n'était **lue par aucune ligne de code** — une constante
+     > morte présentée comme la décision de production. Supprimée le 19/09/2026, remplacée par
+     > un commentaire qui décrit l'état réel. **(b)** « Il ne sert qu'à scorer la porte
+     > d'abstention » : en pratique il ne sert à **rien** dans l'application, la porte étant
+     > fermée par `SEUIL_ABSTENTION_DEFAUT = None` — que rien ne règle, ni variable
+     > d'environnement, ni paramètre admin (le registre backend ignore encore
+     > `SEUIL_CONFIANCE_IA`, §6.5). Vérifié à l'exécution : `confiance = None` sur 3 puis 6
+     > appels `/suggest`. Le reranker ne s'exécute que via `POST /rerank` et le harnais
+     > d'évaluation. **Le recâbler suppose de modifier `suggestion.py`**, pas de régler un
+     > paramètre. Cf. la section « Correctif — le reranker retiré du préchauffage ».
+
 - **Mesures — dimensionnement production (reranker)** : leçon « **mesurer deux fois,
   système au repos** ». Une 1ʳᵉ mesure donnait **17 s** à K=10/max_length 256 → **artefact**
   (contention CPU juste après chargement du modèle) ; deux runs propres concordent :
@@ -781,6 +794,18 @@ demande explicite.
     disponible pour le **score d'abstention** (top-1). **Corrige l'hypothèse J6a antérieure
     (« rerank nuit sur réel »)**, qui était basée sur moins de données (commentaire
     `retrieval/config.py` mis à jour en conséquence).
+
+    > ⚠️ **RECTIFIÉ LE 19/09/2026.** Le raisonnement bénéfice/coût reste valable et les chiffres
+    > d'ablation sont intacts ; c'est sa **traduction en code** qui n'a jamais eu lieu. La
+    > « décision `RERANK_ACTIF_DEFAUT=False` » portait sur une constante que personne ne lisait,
+    > et « le rerank reste disponible pour le score d'abstention » décrit une porte qu'aucune
+    > configuration n'ouvre. Formulation exacte à retenir pour le rapport : **le reranker est
+    > livré et fonctionnel, mais hors du chemin par défaut** — non câblé dans la chaîne de
+    > suggestion. Deux nuances à ne pas perdre en soutenance : l'échantillon réel utile de
+    > l'ablation est **n=25**, pas 46 (21 requêtes sans analogue dans la KB) ; et le coût
+    > « ~8 s/requête » était de la prose, sans artefact — **mesuré depuis** à **6,86 s** à
+    > chaud (K=20, `max_length=512`, 20 documents réels), cf. « Le coût du reranker, enfin
+    > mesuré ». L'ordre de grandeur était bon ; le chiffre exact ne l'était pas.
   - **Ce que l'ablation confirme fortement, c'est le fil rouge** (sémantique vs surface,
     cf. J7) : le **lexical (surface) s'effondre sur le réel** (nDCG@5 **0,885 → 0,196**,
     MRR 0,277) tandis que le **dense (sémantique) porte le réel** (0,518). La **fusion RRF**
@@ -1597,6 +1622,29 @@ demande explicite.
   du backend, qui l'aurait abandonné. Le préchauffage couvre donc bge-m3, le classifieur **et**
   le reranker. *Note d'honnêteté : le raisonnement initial (« /suggest a 60 s, inutile de
   préchauffer le reranker ») a été **invalidé par la mesure**.*
+
+  > ⚠️ **RECTIFIÉ LE 19/09/2026 — l'attribution ci-dessus est FAUSSE, le chiffre est juste.**
+  > Les 71,1 s ont bien été mesurées ; ce n'est pas le reranker qui les causait. Il ne pouvait
+  > pas les causer : la garde `if seuil is not None` de `suggestion.py` existe **depuis J6**
+  > (`631c36c`), soit **avant** cette mesure, et avec `SEUIL_ABSTENTION_DEFAUT = None` le chemin
+  > `/suggest` n'appelle jamais le reranker. L'entrée attribuait le coût au seul modèle qu'elle
+  > venait d'ajouter au préchauffage, sans l'isoler.
+  >
+  > **Ce que la mesure de contrôle a montré** (19/09/2026, cf. la section « Correctif — le
+  > reranker retiré du préchauffage » en fin de journal) : avec **tout** préchauffé — bge-m3,
+  > classifieur **et** reranker — le premier `/suggest` coûtait **encore 40,9 s** contre 15,1 s
+  > et 13,7 s ensuite. Le surcoût de premier appel survivait donc au préchauffage : il ne venait
+  > pas d'un modèle du service `ml`.
+  >
+  > **Cause réelle, isolée par expérience à variable unique** : le chargement de `qwen2.5:7b`
+  > par **Ollama** à la première génération. Service `ml` laissé intact (bge-m3 chargé, reranker
+  > **non** chargé), seul le LLM déchargé puis rechargé — `/suggest` : **13,0 s** (LLM résident)
+  > → **39,8 s** (LLM déchargé) → **11,3 s** (LLM rechargé). Le surcoût suit l'état d'Ollama,
+  > pas celui du reranker. `OLLAMA_KEEP_ALIVE=-1` est ce qui le rend non récurrent ensuite.
+  >
+  > **Conséquence** : le préchauffage du reranker ne protégeait rien. Retiré — les ~2,3 Go de RAM
+  > qu'il immobilisait sont rendus. Le préchauffage de bge-m3 et du classifieur, lui, reste
+  > justifié : il protège le budget de 4 s de `/classify` à la création d'un ticket.
 - **Compose** : services **`ml`** et **`ml-prefetch`** (one-shot qui **charge** les deux modèles
   — un cache corrompu échoue au démarrage de la pile, pas en pleine démonstration), volume
   `hf-cache`, bind-mount `./ml/artifacts` (le candidat de `/reentrainer` apparaît côté hôte).
@@ -1718,3 +1766,793 @@ demande explicite.
   premier `/suggest` reste à 26,2 s contre 9,5 s ensuite — dans le budget, donc non traité.
 - **Reste** : environnement de démonstration final, doc API (Swagger), préparation soutenance.
   `[À COMPLÉTER PAR FEDI]`
+
+---
+
+# Chantier 1 — Affectation automatique et absences (§6.2)
+
+> Exigence du CDC §6.2 identifiée **manquante** à l'inventaire : « Affectation automatique
+> ou manuelle du ticket à un technicien selon la charge de travail et la catégorie ».
+> Livré en 8 étapes, chacune fermée par une porte de preuve avant de passer à la suivante.
+> Branche `docker`, commits `837d74b` → `3332478`.
+
+## Inventaire de départ — ce qui existait vraiment
+
+- **Date** : 07/09/2026. `[établi en séance]`
+- **Affectation** : 100 % manuelle, administrateur seul (`affecter()`, `PATCH
+  /api/tickets/:id/affectation`, un `<select>` sur le détail de ticket). **Aucun appel
+  automatique nulle part** : un ticket naissait `NOUVEAU` non assigné et y restait.
+- **Charge des techniciens** : déjà calculée et affichée (« Charge par technicien »), mais
+  **enfouie** dans `statistiques()` — un `Promise.all` de 8 requêtes dont on ne pouvait pas
+  extraire la charge seule —, renvoyant des **noms et non des ids**, filtrée par le
+  périmètre du tableau de bord, et **omettant les techniciens à 0** (un `groupBy` ne rend
+  pas de ligne vide) : précisément ceux qu'une affectation doit préférer.
+- **Notion de spécialité** : **inexistante**. `Utilisateur` n'avait que `service` et
+  `poste`, deux champs de **texte libre**, non éditables après l'invitation, et jamais
+  reliés aux catégories.
+
+## Deux découvertes faites en préparant la migration (Étape 1)
+
+### Les index de recherche du module IA avaient disparu de la base
+
+- **Date** : 09/09/2026. `[établi en séance]`
+- **Constat** : les migrations J4 (HNSW sur l'embedding) et J6 (GIN sur le tsvector) sont
+  marquées **appliquées** — `finished_at` renseigné, aucun rollback — et leurs colonnes
+  existent, mais **les deux index étaient absents**. Un `EXPLAIN` sur une requête
+  plein-texte donnait `Seq Scan` : la recherche dense du RAG et l'arm lexical J6 tournaient
+  **sans leurs index**.
+- **Cause** : non prouvable a posteriori. La seule mécanique connue capable de cela est
+  exactement celle que la migration J6 documentait déjà — un outil qui aligne la base sur
+  `schema.prisma` supprime les objets SQL bruts qu'il ne voit pas.
+  > **Mise à jour du 10/09/2026 — la cause est désormais ÉTABLIE.** Voir la note
+  > rétrospective en fin de « Chantier 2 » : restaurer les index a réactivé le piège et
+  > l'a rendu visible. Ces lignes n'apparaissaient pas ici pour la seule raison qu'il n'y
+  > avait alors plus rien à supprimer.
+- **Impact** : nul et invisible à 869 tickets, bloquant à l'échelle visée (§7 : réponse IA
+  < 5 s, montée en charge sans refonte). C'est pour cela que personne ne l'avait vu.
+- **Traitement** : recréés en `IF NOT EXISTS` dans la migration du chantier, donc
+  rejouables. **Vérifié après application que le planificateur les utilise réellement**
+  (`Bitmap Index Scan` sur le GIN, `Index Scan` sur le HNSW) — il ne suffisait pas qu'ils
+  soient présents.
+
+### Le piège Prisma est permanent sur ce projet
+
+- **Constat** : `prisma migrate diff` produit systématiquement
+  `ALTER TABLE "tickets" ALTER COLUMN "recherche_texte" DROP DEFAULT`, en croyant voir un
+  DEFAULT sur une colonne `GENERATED ALWAYS STORED`.
+- **Vérifié empiriquement** sur la base, en transaction annulée : PostgreSQL répond
+  `ERROR: column ... is a generated column / HINT: Use ... DROP EXPRESSION instead`.
+  Appliquée telle quelle, **la migration entière aurait avorté**.
+- **Règle** : toute migration générée sur ce projet ressortira cette ligne et devra être
+  relue à la main. Consigné en tête du fichier de migration, pas seulement ici.
+
+## Les décisions, et leurs raisons
+
+### La spécialité est un FILTRE DUR, pas un bonus
+
+- **Décision** : le pool se réduit d'abord aux spécialistes disponibles de la catégorie ;
+  la charge n'arbitre qu'**à l'intérieur** de ce pool. Conséquence assumée et **figée par
+  un test** : un spécialiste à 12 tickets l'emporte sur un généraliste à 0.
+- **Pourquoi** : le §6.2 demande d'affecter « selon la charge **et** la catégorie ». La
+  catégorie est lue comme une **contrainte de compétence**, la charge comme l'arbitre entre
+  compétents. Router un ticket réseau vers un généraliste disponible mais non formé serait
+  un faux gain. Un score mêlant les deux exigerait d'inventer une pondération que **rien
+  dans les données ne justifie** — même refus que pour la pondération par priorité.
+
+### Le mode par défaut est MANUEL, et tous les replis y ramènent
+
+- **Décision** : ligne absente en base, valeur illisible, base injoignable → **MANUEL**.
+- **Pourquoi** : l'absence de configuration doit reproduire le **comportement actuel** de
+  l'application, jamais provoquer une bascule silencieuse. Le sens du repli est **testé**,
+  pas seulement le repli : huit entrées illisibles sont balayées pour vérifier qu'aucune ne
+  peut produire `AUTO`. Un repli du mauvais côté activerait l'affectation automatique sur
+  une simple valeur corrompue.
+
+### La confidentialité du motif tient par construction, à trois barrières
+
+- **Décision** : le motif d'absence n'existe **ni** dans le type de retour de
+  `chargeCourante()`, **ni** dans la liste des utilisateurs, **ni** dans la réponse des
+  statistiques. Il n'apparaît que sur la page Absences, réservée à l'administrateur.
+- **Pourquoi** : le graphique « Charge par technicien » est gardé par `estSupport` — donc
+  **visible par tous les techniciens**, pas seulement par l'administrateur. Afficher le
+  motif y exposerait les arrêts `MALADIE` à toute l'équipe, une donnée de santé. La fuite
+  est rendue **impossible sans modifier d'abord le dépôt**, plutôt qu'évitée par
+  discipline. Vérifié en sérialisant la réponse complète vue par un compte technicien.
+
+### Deux fuseaux horaires, pour deux questions différentes
+
+- **Décision** : « quel jour sommes-nous ? » se calcule en **fuseau métier**
+  (`Africa/Tunis`) ; « quel jour représente cette valeur de la base ? » se lit en **UTC**.
+- **Pourquoi** : vérifié contre PostgreSQL **avant** d'écrire le code — Prisma matérialise
+  une colonne `DATE` à **minuit UTC** (`DATE '2026-08-20'` revient en
+  `2026-08-20T00:00:00.000Z`). La relire dans le fuseau métier fonctionnerait *par chance*
+  à Tunis (décalage positif) et renverrait **la veille** sur un décalage négatif
+  (`America/New_York` → `2026-08-19`). Le coût métier de l'erreur inverse est chiffré par
+  un test : à 23h30 UTC il est déjà le lendemain à Tunis, donc sans le fuseau métier **un
+  technicien rentrant de congé resterait exclu de l'affectation une heure chaque nuit**.
+- **Corollaire** : les dates d'absence sont en `@db.Date` et non en timestamp — une absence
+  est un **intervalle de calendrier**, pas un intervalle d'instants. « Fin le 20 » à 00h00
+  ne couvrirait pas le 20 du tout. Bornes **incluses** des deux côtés.
+
+### `dernierTicketAssigne` est une approximation, et le restera
+
+- **Décision** : le départage à charge égale utilise la **date de création du dernier
+  ticket assigné**, et non la date d'affectation.
+- **Pourquoi** : les événements `AFFECTATION` stockent le **nom** du technicien
+  (`nomComplet(technicien)`) et **non son id**. Le nom n'est pas une clé de jointure fiable
+  (homonymes, changement de nom) : la requête exacte **ne peut pas exister** en l'état.
+  Consigné dans le code pour éviter qu'on le « corrige » plus tard vers une jointure
+  impossible. **À traiter au Chantier 2**, dont la page d'audit rencontrera le même mur.
+
+### Le départage est un ordre TOTAL, sinon il est intestable
+
+- **Décision** : charge croissante → dernier ticket assigné le plus ancien (`null`, jamais
+  servi, devant) → **id croissant**.
+- **Pourquoi** : sans le troisième rang, deux techniciens strictement identiques donneraient
+  un résultat dépendant de l'ordre de la base — non reproductible, donc non testable. Sans
+  le deuxième, le troisième favoriserait éternellement le même technicien. L'indépendance à
+  l'ordre de la liste est vérifiée sur trois permutations.
+
+### « Tous les spécialistes absents » ne coûte aucune branche
+
+- **Décision** : l'absence est filtrée **avant** la spécialité.
+- **Pourquoi** : le pool de spécialistes disponibles devient simplement vide et l'on retombe
+  sur le repli déjà écrit. Seul le **motif** distingue la situation
+  (`REPLI_SPECIALISTES_ABSENTS` / `REPLI_AUCUN_SPECIALISTE` / `REPLI_CHARGE`), calculé après
+  coup et **sans effet sur la décision** : il sert le diagnostic de l'administrateur.
+
+### Le cœur d'affectation est partagé, la garde ne l'est pas
+
+- **Décision** : `appliquerAffectation()` extrait de `affecter()` — événement, mise à jour,
+  journal, notification. `affecter()` garde sa garde administrateur et passe de 41 à 12
+  lignes ; le chemin automatique appelle le même cœur.
+- **Pourquoi** : `affecter()` exigeait un administrateur, ce qui le rendait **inutilisable
+  depuis la création** où l'acteur est le demandeur, un employé. L'affectation automatique
+  hérite ainsi gratuitement de la trace et de la notification. Effet de bord heureux : la
+  condition « ne pas se notifier soi-même » (`technicien.id !== auteurId`) est **toujours
+  vraie** quand l'auteur est `null`, donc un technicien auto-affecté est toujours notifié —
+  le bon comportement, sans code supplémentaire.
+
+### `auteur_id` nullable en `ON DELETE RESTRICT`, et non `SET NULL`
+
+- **Décision** : `NULL` signifie « Système » et **rien d'autre**.
+- **Pourquoi** : Prisma générait un `ON DELETE SET NULL` pour la relation devenue
+  optionnelle. Sans la garde `Restrict`, supprimer un compte **relabelliserait ses actions
+  passées en actions système** — une trace d'audit qui ment. Effet de bord : le diff a cessé
+  de vouloir détruire et recréer la clé étrangère, soit une opération risquée en moins.
+
+### `AFFECTATION_AUTO` est un type distinct
+
+- **Pourquoi** : un auteur `null` seul ne suffirait pas — tout événement système n'est pas
+  une affectation automatique. Un type dédié rend la fonctionnalité **dénombrable et
+  filtrable**, ce dont le Chantier 2 aura besoin.
+
+### Le contrat non négociable, tenu à deux niveaux
+
+- **Décision** : la création d'un ticket ne doit **jamais** échouer à cause de l'affectation
+  automatique. `affecterAutomatiquement()` absorbe le choix et l'écriture ; `creer()`
+  enveloppe **en plus la lecture du mode**.
+- **Pourquoi** : sans ce second filet, une base de paramètres injoignable ferait échouer une
+  création de ticket. Le ticket est déjà committé et la réponse est déjà due au demandeur :
+  une affectation qui n'aboutit pas est un travail pour l'administrateur, pas une erreur
+  pour l'utilisateur. Vérifié : avec zéro technicien actif, la création réussit, le ticket
+  reste `NOUVEAU`, et la raison est journalisée.
+
+### Les absences sont un mécanisme distinct de `actif`
+
+- **Pourquoi** : désactiver un compte **coupe la connexion** — c'est fait pour un départ,
+  pas pour un congé. Un technicien absent garde son accès complet, ses tickets déjà
+  assignés ne bougent pas, et il **redevient disponible tout seul** à la date de fin : c'est
+  l'argument décisif d'une table datée sur un simple booléen, qu'il faudrait penser à
+  remettre à zéro. Le statut et la durée sont **calculés**, jamais stockés — un statut
+  stocké deviendrait faux tout seul au passage de minuit.
+- **Chevauchements interdits** (409) : deux absences qui se recouvrent n'apportent aucune
+  information — « absent » est un état booléen sur un jour donné — mais rendraient ambigus
+  le motif du jour commun, la date de fin affichée, et l'effet d'une suppression.
+  L'interdiction garantit **au plus une absence en cours par technicien**, ce dont dépendent
+  la règle d'affectation et le marqueur de charge. Les périodes **contiguës** restent
+  autorisées.
+- **Absences passées acceptées** : c'est le cas le plus courant (« il était malade lundi, on
+  l'apprend mardi ») et elles n'ont aucun effet sur l'affectation, qui ne regarde que le
+  jour courant. L'interdire serait une contrainte sans bénéfice.
+
+### Le motif est une énumération, pas du texte libre
+
+- **Pourquoi** : le projet a **déjà fait l'erreur inverse** avec `service`, impossible à
+  joindre de façon fiable aux catégories — c'est précisément pourquoi les spécialités
+  passent par une table de liaison. Du texte libre produirait « congé », « Congés »,
+  « vacances », « CP » : quatre motifs distincts, non filtrables. Le `commentaire`
+  optionnel récupère l'expressivité perdue.
+
+## Ce qui a été prouvé, et comment
+
+- **80 tests purs** (`node:test`, zéro I/O) : registre de paramètres 18, disponibilité 23,
+  règle d'affectation 34, statut de catégorie 5. Chaque étape est **verte avant tout
+  branchement**.
+- **Non-régression du chemin manuel** vérifiée contre l'API HTTP réelle, chaque assertion
+  doublée d'une lecture en base, plus un test vérifiant que **zéro** événement
+  `AFFECTATION_AUTO` est produit par le chemin manuel.
+- **Six scénarios d'affectation** contre la base et le service IA réels, dont deux construits
+  **pour détecter, pas pour passer** : le cas « catégorie choisie par le demandeur » oppose
+  une catégorie déclarée `Matériel` à une suggestion IA `Réseau` **à 0,813 de confiance** —
+  et le ticket part au spécialiste Matériel ; le cas « IA coupée » déclare exprès un
+  spécialiste Réseau, dont la sélection aurait prouvé une fuite de catégorie.
+- **Bout en bout sur la pile reconstruite**, avec redémarrage : mode, absences et spécialités
+  survivent. Toutes les vérifications sont **non destructives**, base rendue à l'identique
+  (869 tickets) — y compris celle qui a dû déplacer temporairement un ticket vers
+  l'administrateur pour exercer une branche que les données ne couvraient pas.
+- **Note d'outillage** : `npm run build` (`tsc -b`) est plus strict que `tsc --noEmit` et a
+  rattrapé une variante d'`Alert` inexistante. C'est lui la porte côté frontend.
+
+## Dettes assumées et documentées
+
+- **§6.5 — seuils IA non réglables** : le seuil de confiance (0,5) est une **constante en
+  dur, dupliquée** entre le frontend (`SEUIL_CONFIANCE_AFFICHAGE`) et le backend
+  (`SEUIL_CONFIANCE_AFFECTATION`). La table `parametres` est **prête à les accueillir** —
+  un nouveau réglage y coûte une ligne, pas une migration — mais **rien n'est livré**.
+  ⚠️ Ne pas l'affirmer en soutenance.
+- **Stock existant non traité à la bascule** : passer en AUTO n'affecte que les tickets
+  **créés ensuite**. Les tickets déjà en attente restent non assignés. Le trou est **nommé à
+  l'écran** (« N tickets non assignés — ce changement ne les affecte pas ») ; son traitement
+  est reporté au **Chantier 2**.
+- **Périmètre de la charge** : le graphique respecte les filtres du tableau de bord, donc
+  « charge par technicien » filtrée sur août signifie *tickets ouverts créés en août* — un
+  mélange entre un **état courant** et une **période**. Pré-existant, **délibérément non
+  modifié** : le rendre non filtré aurait changé le comportement du tableau de bord au-delà
+  du périmètre validé.
+- **`DeprecationWarning` de `pg`** sur le chemin création/notification. Vérifié qu'il ne
+  provient **ni** d'un `Promise.all` simple **ni** de `chargeCourante()` : pré-existant,
+  invisible jusqu'ici parce que les journaux partaient dans le conteneur. Non traité.
+- **`container_name` en dur** : déjà consigné en Phase 7, toujours valable — deux instances
+  de la pile ne peuvent pas coexister sur une machine.
+- **Auto-déclaration des absences par le technicien** : écartée en v1. Toute l'administration
+  est `requireRole('ADMINISTRATEUR')` sans exception, et un technicien pourrait s'exclure
+  unilatéralement de l'affectation sans validation. Évolution naturelle : auto-déclaration
+  **soumise à validation**.
+- **Pondération de la charge par priorité** : écartée, faute de poids justifiables par les
+  données. Perspective documentée, non fabriquée.
+
+---
+
+# Chantier 2 — Traçabilité exploitable (§7)
+
+> Exigence non fonctionnelle du CDC §7 : « Journalisation (logs) des actions critiques :
+> création, affectation, modification de statut des tickets ». Satisfaite sur le papier
+> depuis juillet — et pourtant inexploitable, pour des raisons mesurées ci-dessous.
+> Livré en 8 étapes (lots A, B, C, E), branche `docker`, commits `2be7c32` → `2c2a780`.
+
+## Le chiffre qui justifie le chantier
+
+- **Date** : 10/09/2026. `[établi en séance]`
+- **Mesuré au démarrage** : il restait **21 lignes `[AUDIT]`** dans les journaux du
+  conteneur, pour un projet qui trace **depuis le 11 juillet**. Non par rotation — aucune
+  n'était configurée — mais parce que **chaque `docker compose build` recrée le conteneur
+  et emporte ses journaux**. Le conteneur avait été créé la veille.
+- **Autrement dit** : l'exigence §7 était tenue littéralement, et avait retenu **moins
+  d'une journée d'historique**. C'est l'argument à donner tel quel : la conformité de façade
+  se mesure, elle ne se discute pas.
+
+## L'inventaire, avant tout plan
+
+| Point | État constaté |
+| --- | --- |
+| `EvenementTicket` | Lisible **ticket par ticket** uniquement — aucune route transversale, 4 chemins de lecture tous internes |
+| Hors tickets | **22 actions sensibles, 1 tracée** : `auth.service` 0/12, `categorie.service` 0/4, `utilisateur.service` 1/6, déploiement IA 0 |
+| Cible des affectations | Stockée en **NOM**, jamais en id — et cette base compte **35 comptes pour 31 noms distincts** |
+| Stock non assigné | **53 tickets** en attente d'affectation |
+| `logAudit` | 17 appels, tous en console volatile |
+
+## Les décisions, et leurs raisons
+
+### Table SÉPARÉE, et non une extension de `EvenementTicket`
+
+- **Décision** : `JournalAudit`, sans relation cascade.
+- **Pourquoi, et c'est l'argument qui tranche** : `evenements_ticket.ticket_id` est en
+  `ON DELETE CASCADE` — **supprimer un ticket efface sa trace**. Constaté malgré moi au
+  Chantier 1 : chaque script de test supprimait son ticket, et le compteur d'événements
+  revenait à son point de départ au lieu d'augmenter. **Une trace qui disparaît avec
+  l'objet audité n'est pas une trace.** S'y ajoutent deux raisons : une connexion ou un
+  déploiement de modèle n'ont aucun ticket à rattacher, et les deux tables ont des publics
+  et des durées de vie différents. Le doublonnage des actions ticket est assumé.
+
+### `acteurId` en `SET NULL`, avec `acteurNom` dénormalisé
+
+- **Pourquoi** : la trace doit **survivre à la suppression du compte**. En `RESTRICT`, on
+  interdirait toute suppression ; en `SET NULL` seul, l'entrée deviendrait anonyme — et
+  pire, `null` signifierait à la fois « action du système » et « compte disparu ».
+  **C'est le NOM qui désambiguïse**, jamais le `null` : « Système » est écrit en toutes
+  lettres, le nom réel sinon. Transposition directe de la leçon du Chantier 1 sur
+  `AFFECTATION` (id **et** nom, deux questions différentes).
+
+### `AsyncLocalStorage` — et le renversement qu'a produit la mesure
+
+- **Problème** : `logAudit` est appelé à dix-sept endroits **enfouis dans la couche
+  service**, et les services ne voient jamais `req` — `connecter(input)` reçoit un DTO.
+  Les alternatives étaient de contaminer dix-sept signatures et tous leurs appelants, ou
+  de tracer au niveau HTTP en perdant les noms d'action.
+- **LE RENVERSEMENT** : le plan anticipait une **perte** du contexte sur les traitements
+  lancés sans être attendus, et prévoyait d'assumer `ip = null`. Mesure faite sur un
+  serveur Express réel, avec le patron exact du code (`void genererSuggestion(...)`),
+  lecture **120 ms après le départ de la réponse** : **le contexte SURVIT**.
+  `AsyncLocalStorage` suit la chaîne asynchrone, pas le cycle de vie HTTP.
+- **Conséquence** : le risque n'est pas de perdre le contexte, c'est de **l'hériter**.
+  Sans barrière, un traitement système écrirait au journal l'IP et le nom de l'utilisateur
+  dont la requête l'a déclenché — **et lui attribuerait une action qu'il n'a pas faite**.
+  Un journal qui **ment** est pire qu'un journal incomplet. `executerSansContexte` change
+  donc de nature : pas un utilitaire de confort, une **barrière obligatoire**.
+
+### Le bug que la porte de preuve a attrapé
+
+- **Constat, en base, au premier passage de l'étape A3** :
+  `TICKET_AFFECTATION | Demandeur Production`. L'affectation **automatique** attribuée au
+  **demandeur du ticket** — un employé qui n'a ni le droit d'affecter ni fait cette action.
+- **Correction** : barrière posée **à l'intérieur** de `affecterAutomatiquement`,
+  conditionnée à `auteurId === null`, et non au site d'appel. Ce paramètre encode déjà
+  « décidé par le système » ; la règle devient *« pas d'auteur humain, donc pas de contexte
+  humain »* — et elle tiendra pour l'affectation en lot, où l'administrateur **est**
+  l'acteur et doit conserver son contexte. Une barrière, deux usages couverts.
+- **Barrières préventives** ensuite posées sur les trois chemins différés
+  (`genererSuggestion`, `genererResume`, `genererExtraction`). Aucun n'écrit au journal
+  aujourd'hui — mais la ré-classification après OCR passe par là, et faire dépendre la
+  correction d'une vigilance future serait rejouer ce bug.
+
+### L'anti-énumération, préservée et prouvée mécaniquement
+
+- **Contrainte** : `connecter()` masque délibérément l'existence d'un e-mail — comparaison
+  bcrypt systématique contre un hash factice (anti-timing), message identique pour
+  « compte inconnu » et « mot de passe faux ».
+- **Preuve** : l'empreinte des cinq réponses a été capturée **avant** toute modification,
+  puis **après**, et les deux fichiers ont le **même MD5** (`e47f8c47…`). Vérification
+  mécanique, pas une inspection.
+- **Les trois modes d'échec sont distingués DANS LE JOURNAL, et seulement là.**
+  L'administrateur voit la différence, l'attaquant ne la voit pas. `options.acteur` était
+  nécessaire : à la connexion, aucun jeton n'a encore été vérifié, donc le contexte ne
+  porte aucune identité — sans cette surcharge, une tentative aurait été attribuée à
+  « Système », ce qui aurait été faux. Distinction retenue : `id` = identité **confirmée**,
+  `nom` = identité **présentée**.
+
+### Le mur des noms, cassé — et sa part irréductible assumée
+
+- **Problème** : « toutes les affectations vers X » était sans réponse fiable. Le nom n'est
+  pas une clé de jointure : **deux comptes affectables** partagent « Fadi Zaghdoud ».
+- **Décision** : colonne `cibleId` **à côté** du nom, pas à sa place. L'id répond à « vers
+  quel compte », le nom d'époque à « qu'affichait-on alors ». Subtilité de la
+  désaffectation : `nouvelleValeur` y vaut `null` — personne ne reçoit le ticket — et la
+  cible se lit dans `ancienneValeur`.
+- **Reprise partielle, mesurée à blanc avant écriture : 10 des 14 résolus, 4 non.**
+  **Ces quatre restent NULL, délibérément.** Choisir l'un des deux comptes serait deviner,
+  et une trace devinée est pire qu'une trace absente : elle attribuerait à quelqu'un une
+  action qui n'est peut-être pas la sienne. L'écran **annonce** la limite.
+- **Prouvé contre le mécanisme** : un ticket affecté puis désaffecté au **second** des deux
+  homonymes donne 2 événements par `cibleId`, là où le nom en rend 5 répartis sur 2 comptes.
+
+### Reprise de l'historique : 51 événements importés
+
+- **Pourquoi** : sans elle, la page d'audit s'ouvrirait **vide** — et surtout, l'historique
+  existe déjà, il est simplement dans une autre table. Le journal couvre donc **depuis le
+  11 juillet**.
+- **Ce qui est honnêtement inconnu reste NULL** : `ip` et `userAgent` n'ont jamais été
+  capturés à l'époque. Chaque ligne porte `importeDeLHistorique: true`, pour que l'écran
+  dise « contexte de requête inconnu » au lieu de laisser croire à une trace complète.
+
+### Rétention 12 mois, et la limite écrite plutôt que cachée
+
+- **Cadre** : finalité **sécurité et redevabilité** — détecter les accès anormaux, répondre
+  à « qui a changé ce rôle, et quand ». **Pas** un outil de mesure de l'activité des
+  employés. Accès **administrateur uniquement**. Durée **12 mois** : un cycle annuel
+  complet, sans conserver indéfiniment des adresses IP, qui sont des données personnelles.
+- **Purge lancée après `listen` et non attendue** : l'API sert déjà quand elle s'exécute,
+  donc ni sa lenteur ni son échec ne peuvent retarder le démarrage. *Un journal trop long
+  est un problème d'hygiène, une API qui ne démarre pas est une panne.*
+- **LIMITE ASSUMÉE** : le projet n'a **aucun planificateur**. La purge est déclenchée au
+  démarrage, et nulle part ailleurs. **Une instance qui tournerait plus de douze mois sans
+  redémarrer ne purgerait pas.** En pratique la pile redémarre à chaque déploiement, mais
+  la limite est réelle — elle est écrite en tête du service, pas laissée à découvrir.
+- Le 29 février reculé de douze mois tombe sur une année non bissextile : `Date` reporte au
+  1er mars. Le **sens** du décalage est testé — un jour de trop conservé est anodin, un jour
+  de trop supprimé effacerait une trace prématurément.
+
+### La page : tri, curseur, et ce qu'elle refuse de laisser deviner
+
+- **L'ordre est `dateCreation DESC, id DESC`, jamais `id DESC` seul.** Les entrées importées
+  ont les identifiants les plus élevés et les dates les plus anciennes : **mesuré, les 94
+  lignes d'alors occupaient un rang différent selon l'un ou l'autre tri.** Un tri par id
+  aurait remonté les plus anciennes en tête.
+- **Le détail est traduit, pas affiché en JSON** : couples avant/après regroupés en un
+  énoncé titré (« Priorité : Moyenne → Haute »), codes devenus phrases
+  (`MOT_DE_PASSE_INVALIDE` → « Mot de passe incorrect »).
+- **Trois natures d'acteur jamais confondues** : compte confirmé · Système · **non
+  authentifié**. Sans la troisième, un échec de connexion sur une adresse d'administrateur
+  afficherait ce nom comme acteur et se lirait comme si l'administrateur avait agi.
+- **Panneau latéral obtenu en ajoutant une variante au `Dialog` existant**, pas en créant
+  un composant : échappement, piège de focus, fermeture au clic sur le fond et animation
+  sont le code déjà en place. Additif — les quatre usages actuels sont inchangés.
+
+## Ce qui a été prouvé, et comment
+
+- **103 tests purs** (`node:test`, zéro I/O), dont **16** sur le contexte de requête :
+  survie à `await`, aux `await` imbriqués et à `setTimeout`, **isolation entre requêtes
+  concurrentes** (la plus lente ne doit pas lire l'IP de la plus rapide — le mode de
+  défaillance qui rendrait le journal activement trompeur), coupure effective de
+  l'héritage ; et **7** sur le calcul de rétention.
+- **Contrat vérifié en rendant la table injoignable** : la création de ticket répond 201, le
+  ticket est en base, le filet écrit « l'action n'est pas interrompue », et la table est
+  restaurée. Une base d'audit en panne ne bloque pas le métier. Même vérification au
+  démarrage : purge impossible, `/api/health` répond 200.
+- **Pagination éprouvée sur la zone piégeuse** : parcours complet par pas de dix, séquence
+  comparée à la vérité terrain SQL — aucun doublon, aucun trou, ordre identique, première
+  entrée importée au rang 46 et non en tête.
+- **Index vérifiés par EXPLAIN**, pas supposés présents (leçon du Chantier 1).
+- **Toutes les vérifications non destructives**, base rendue à l'identique à chaque fois.
+
+## Dettes assumées et documentées
+
+- **Lot D non livré** — le **bouton d'affectation du stock** (53 tickets non assignés au
+  moment de l'inventaire) reste à décider. La bascule en mode AUTO ne concerne toujours que
+  les tickets créés ensuite ; l'écran le dit.
+- **4 événements d'affectation antérieurs** restent non rattachables à un compte. Affiché.
+- **Purge au démarrage uniquement** (voir ci-dessus).
+- **`logAudit` n'est pas transactionnel** avec l'action tracée : une coupure juste après
+  peut perdre la ligne. L'alternative — attendre l'écriture — ajouterait de la latence à
+  chaque action et laisserait une base d'audit indisponible bloquer le métier. Mauvais
+  échange, documenté en tête du module.
+- **`TICKET_PIECE_JOINTE` et `TICKET_AFFECTATION_AUTO_SANS_SUITE`** n'ont pas été déclenchés
+  lors de la vérification (envoi multipart ; zéro technicien actif) — non comptés comme
+  vérifiés.
+- **Hors périmètre, volontairement** : pagination infinie · export CSV/PDF · recherche
+  plein-texte · filtre par cible · alertes automatiques sur échecs répétés · rétention
+  configurable depuis l'interface · traçage des **lectures** (qui a consulté quel ticket),
+  dont le volume serait disproportionné.
+
+## Note rétrospective sur le Chantier 1
+
+La cause de la disparition des index HNSW et GIN, notée alors comme **« non prouvable a
+posteriori »**, **est établie**. En préparant la migration de ce chantier, `prisma migrate
+diff` a produit **trois** lignes destructrices au lieu d'une : les deux `DROP INDEX` en plus
+du `DROP DEFAULT` déjà connu. Ces `DROP INDEX` n'apparaissaient pas au Chantier 1 **pour la
+seule raison que les index étaient alors déjà absents** — il n'y avait rien à supprimer.
+Les avoir restaurés a réactivé le piège et l'a rendu visible : Prisma voit ces index en
+base, ne les trouve pas dans `schema.prisma` (SQL brut qu'il ne sait pas exprimer) et
+propose systématiquement de les effacer.
+
+Un **filet** est désormais posé : les deux `CREATE INDEX IF NOT EXISTS` sont rejoués à
+chaque application de la migration du Chantier 2. Cette migration ne peut plus laisser la
+base dans l'état où le Chantier 1 l'a trouvée.
+
+---
+
+# Passe interface — photo de profil, et le mode sombre chiffré puis écarté
+
+> Trois demandes d'interface traitées le **16/09/2026**, branche `audit-et-HR`. Deux
+> suppressions d'affichage trompeur, une fonctionnalité livrée, et **un chantier chiffré
+> puis refusé en connaissance de cause** — c'est ce dernier point qui a le plus de valeur
+> pour la soutenance : une estimation sert aussi à décider de ne pas faire.
+
+## Ce que l'interface annonçait, et qui était faux
+
+Inventaire au départ : l'application présentait comme **« à venir »** des modules
+**déjà livrés**.
+
+| Emplacement | Ce qui était affiché | Réalité |
+| --- | --- | --- |
+| Sidebar, section « À venir » | « Statistiques — Phase 4 » (grisé) | `features/statistiques/` livré, rendu dans le tableau de bord |
+| Sidebar, section « À venir » | « Base de connaissances — Phase 5 » (grisé) | Hors périmètre assumé, mais annoncé comme imminent |
+| Tableau de bord, « Feuille de route du projet » | Carte « Assistant IA — Phase 5 » | Module IA livré : `features/ia/`, page `/administration/ia`, suggestions dans le détail ticket |
+| Tableau de bord, « Feuille de route du projet » | Carte « Statistiques & SLA — Phase 4 » | Affichée **directement sous** `<TableauDeBord />`, qui rend ces statistiques |
+
+Le cas du tableau de bord est le plus coûteux : c'est la **page d'accueil**, donc le
+premier écran d'une démonstration, et la carte contredisait le composant situé juste
+au-dessus d'elle. `[établi en séance]`
+
+- **Sidebar** : section supprimée, avec le tableau `NAV_A_VENIR` et les imports devenus
+  inutiles (`BarChart3`, `BookOpen`).
+- **Tableau de bord** : section « Feuille de route » supprimée, `214 → 168 lignes`.
+  `ShieldCheck` conservé — il sert au `StatCard` « Administrateurs ».
+
+## Mode sombre — le chiffrage qui a fondé le refus
+
+Demande initiale : un mode sombre. Réponse : **mesurer d'abord**. Relevé sur le frontend
+avant toute décision.
+
+| Mesure | Valeur relevée |
+| --- | --- |
+| Occurrences de couleurs Tailwind en dur | **549** |
+| Fichiers concernés | **42 sur 62** |
+| Occurrences de la variante `dark:` déjà présentes | **0** |
+| Tokens **sémantiques** (`--color-surface`, `--color-text`, `--color-border`) | **aucun** — `@theme` ne définit que les rampes de marque `primary` / `accent` |
+| Répartition | pages 258 · composants `ui` 139 · `layout` 80 · `features` 54 · `lib` 16 |
+| Fichier le plus chargé | `TicketDetailPage.tsx`, **89 occurrences** — 16 % du total à lui seul |
+
+**Sur la configuration** : le projet est en **Tailwind v4** (configuration *CSS-first*,
+`@tailwindcss/vite`) — il n'existe donc aucune clé `darkMode` dans un fichier de config,
+et son absence n'est pas un manque. La variante `dark:` est disponible nativement mais
+suit `prefers-color-scheme` (réglage du système). Un **bouton** dans l'interface aurait
+demandé une ligne : `@custom-variant dark (&:where(.dark, .dark *));`.
+
+**Deux zones redoutées qui n'en étaient pas** — vérifiées avant de les inscrire au coût :
+
+- **Les graphiques** : aucune librairie de *charts*. `CarteBarres` dessine des `div` CSS
+  (rail `bg-slate-100`, remplissage en dégradé). Rien à re-thémer au-delà de deux classes.
+- **Les exports PDF / Excel** : `exportRapport.ts` porte **sa propre palette**
+  (`#4f46e5`, `setTextColor(30, 41, 59)`), sans aucun lien avec le CSS de l'application.
+  Un document exporté reste clair par nature. **Coût nul.**
+
+**Les vraies zones à risque** : `TicketDetailPage` (89), les badges de statut — les
+teintes `-50` / `-100` sont conçues pour du blanc et disparaissent sur fond sombre, chacune
+demandant sa contrepartie —, le panneau d'audit et sa page (21 + 20), `StatCard` (26) dont
+les dégradés et auras floutées sont calibrés pour le clair, et la couche `base` de
+`index.css` (fond `#f6f7fb`, halos radiaux, `ring-offset-white`, couleurs de barre de
+défilement).
+
+**Chiffrage** : voie propre (tokens sémantiques puis migration des 549 sites) **2,5 à 3,5
+jours** ; voie rapide (`dark:` posés en place) 1,5 à 2 jours, au prix d'un doublement des
+chaînes de classes sur 42 fichiers.
+
+## Les décisions, et leurs raisons
+
+### Mode sombre : NON, et la raison est une probabilité, pas un goût `[établi en séance]`
+
+- **Décision** : écarté. **Alternative écartée** : la voie rapide en `dark:`, qui aurait
+  tenu en 1,5 jour — refusée avec la voie propre, pour le même motif de fond.
+- **Raisons données** : le chantier représentait **le temps restant en totalité**, sans
+  faire avancer le rapport ; et **un mode sombre à moitié fait est pire que pas de mode
+  sombre** — un panneau resté blanc en pleine démonstration se voit immédiatement. Avec
+  **549 sites**, la probabilité d'en oublier au moins un a été jugée trop élevée.
+- **Ce que cette décision vaut pour la soutenance** : c'est un arbitrage **chiffré**. La
+  question « pourquoi pas de mode sombre ? » a une réponse en nombres, pas en préférence.
+- **Contrainte d'ordonnancement notée** : si le chantier devait être repris un jour, il
+  faudrait le faire **avant** toute passe de polissage page par page — sinon les mêmes
+  écrans seraient rouverts deux fois.
+
+### Photo de profil : URL directe, sans proxy `[établi en séance]`
+
+- **Décision** : `photoUrl` est la `secure_url` Cloudinary, **servie directement au
+  navigateur**.
+- **C'est un choix différent de celui des pièces jointes**, qui sont **proxifiées** par le
+  backend (`telechargerPieceJointe`) pour qu'aucun fichier ne soit lisible sans
+  authentification. L'écart est assumé et pour deux raisons : l'identifiant public
+  Cloudinary est aléatoire, donc l'URL n'est pas devinable ; et proxifier chaque avatar
+  ajouterait **un aller-retour backend par ligne** dans les listes de tickets.
+- **Conséquence inscrite au cadre des données personnelles** : les photos de profil sont
+  servies par URL directe à identifiant aléatoire — une URL divulguée reste lisible sans
+  session. Écrit ici pour que le choix soit visible, pas découvert.
+
+### Photo de profil : hors journal d'audit `[établi en séance]`
+
+- **Décision** : aucun événement d'audit sur le changement ou le retrait de photo.
+- **Raison** : le journal vise les actions **d'administration et de sécurité**. Changer sa
+  propre photo est du self-service anodin ; l'y verser **diluerait le signal** que le
+  Chantier 2 a précisément cherché à rendre exploitable.
+
+### `photoCloudinaryId` conservé, et détruit dans le bon ordre
+
+- Le `public_id` est stocké à part du `photoUrl`. **Sans lui, chaque changement de photo
+  laisserait un fichier orphelin** sur le compte Cloudinary — la colonne `cloudinary_id`
+  des pièces jointes existait déjà « pour une suppression ultérieure » depuis J8bis, sans
+  qu'aucune fonction de suppression n'ait jamais été écrite. Elle l'est maintenant.
+- **L'ancienne image n'est détruite qu'APRÈS l'enregistrement de la nouvelle** : si la
+  mise à jour échouait, la photo encore référencée en base existerait toujours.
+- La suppression est **best-effort et silencieuse** : l'utilisateur a demandé à changer sa
+  photo, pas à faire le ménage. Son échec ne doit pas faire échouer l'opération.
+- **Champ retiré de la réponse** : `photoCloudinaryId` est ajouté à la liste noire de
+  `toPublicUser`. Sans être un secret, c'est une référence interne au stockage ; le client
+  n'a besoin que de `photoUrl`.
+
+### Normalisation à l'upload plutôt qu'à l'affichage
+
+- Transformation Cloudinary appliquée **au moment de l'envoi** : carré de 256 px,
+  `gravity: face`, `quality: auto`. L'image est **stockée déjà recadrée**, ce qui borne le
+  poids servi quelle que soit la taille du fichier d'origine.
+- **Alternative écartée** : transformer à la volée dans l'URL d'affichage — même rendu,
+  mais l'original lourd resterait stocké et servi tant que l'URL n'est pas réécrite.
+
+## Ce qui a été prouvé, et comment
+
+- **Deux points de sérialisation vérifiés avant d'écrire la moindre ligne** :
+  `toPublicUser` fonctionne en **liste noire** (retire les secrets, propage le reste) — le
+  champ remonte donc seul dans `/auth/moi`, la connexion et les endpoints utilisateurs ;
+  `utilisateurPublicSelect` de `ticket.repository` est une **liste blanche**, et a demandé
+  **une ligne** pour que demandeur, technicien et auteur portent la photo.
+- **Les trois autres sélections d'utilisateur ont été inspectées et volontairement laissées
+  telles quelles** : `absence.repository` (2), `affectation.repository` (2) et
+  `findManyByIds` ne servent que des libellés de noms — aucun avatar n'y est rendu.
+- **Les 9 points d'appel d'`<Avatar>`** ont été recensés puis câblés : sidebar, tableau de
+  bord, profil, détail ticket (×3), liste des tickets (×2), gestion des utilisateurs.
+- **Migration additive et idempotente** (`ADD COLUMN IF NOT EXISTS` ×2), écrite à la main —
+  `prisma migrate diff` **n'a pas été sollicité**, conformément à la leçon des Chantiers 1
+  et 2. Aucune ligne destructrice ne peut s'y trouver.
+- **Appliquée et vérifiée en base** : les deux colonnes existent, `nullable`, sur les
+  **35 comptes** ; **0 porte une photo**, ce qui correspond exactement au comportement
+  antérieur (retour aux initiales sur fond coloré).
+- **69 tests sur 69 au vert**, `tsc --noEmit` propre des deux côtés, `eslint` et `oxlint`
+  sans nouvelle remarque, build frontend réussi.
+
+## Dettes assumées et documentées
+
+- **Mode sombre non livré**, chiffré à 2,5–3,5 jours par la voie propre. L'interface
+  utilise des couleurs directes ; une **tokenisation sémantique**
+  (`--color-surface` / `--color-text` / `--color-border`) en est le préalable. Évolution
+  **identifiée et chiffrée**, non engagée.
+- **Photos servies par URL directe** — voir la décision ci-dessus. Une URL divulguée reste
+  lisible sans session.
+- **Aucune trace d'audit sur les photos** — choix, pas oubli.
+- **L'administrateur ne peut pas changer la photo d'un autre compte.** Les routes sont
+  strictement self-service : la cible vient du jeton, jamais du corps de la requête.
+- **Vérification de bout en bout non faite** : l'upload réel vers Cloudinary n'a pas été
+  déclenché dans cette séance. Le chemin est typé, contrôlé à la compilation et calqué sur
+  celui des pièces jointes — il n'est pas pour autant *exécuté*. À faire avant la
+  démonstration, comme pour `TICKET_PIECE_JOINTE` au Chantier 2.
+- **Trou d'affichage dans la grille de graphiques** : un employé voit 3 cartes dans une
+  grille à 2 colonnes, la troisième occupe donc seule sa rangée. Le trou préexistait ; il
+  est devenu la fin de page depuis le retrait de la feuille de route. Non traité.
+
+---
+
+# Correctif — le reranker retiré du préchauffage (mémoire rendue, attribution corrigée)
+
+> Séance du **19/09/2026**, branche `audit-et-HR`. Point de départ : une vérification
+> d'annexe avant rédaction du rapport — « le reranker est-il vraiment désactivé par
+> défaut ? ». La lecture du code a montré autre chose qu'un composant désactivé : un
+> composant **jamais câblé**, dont on préchauffait quand même les **~2,3 Go** à chaque
+> démarrage. La séance a mesuré, corrigé, remesuré — et au passage **réfuté une
+> attribution de cause inscrite en Phase 7**. C'est ce second point qui compte le plus
+> pour la soutenance : une mesure qui corrige une mesure antérieure.
+
+## Le constat, établi par lecture puis confirmé à l'exécution
+
+Trois faits, chacun vérifiable indépendamment :
+
+| Fait | Preuve |
+| --- | --- |
+| `RERANK_ACTIF_DEFAUT` n'était lue par aucune ligne de code | `grep` sur le dépôt : sa définition, plus quatre mentions en documentation. Zéro lecture. |
+| La porte qui seule appellerait le reranker ne s'ouvre jamais | `if seuil is not None` avec `SEUIL_ABSTENTION_DEFAUT = None`, que rien ne règle (aucune variable d'environnement ; `SEUIL_CONFIANCE_IA` absent du registre backend, §6.5) |
+| `POST /rerank` n'a aucun appelant dans le projet | le backend n'appelle que `/classify` et `/suggest` ; aucune occurrence de `rerank` dans `backend/src` ni `frontend/src` |
+
+Confirmation à l'exécution, et c'est elle qui tranche : **`confiance = None` sur les trois
+appels `/suggest` de la mesure de référence**, puis sur les six de la mesure d'après. Le
+champ `confiance` n'est renseigné que si la porte s'ouvre. Elle ne s'est jamais ouverte.
+
+## Les mesures — avant, après
+
+Protocole identique de part et d'autre : `docker compose down`, puis `up -d`, attente de
+`/sante`, attente de la fin du préchauffage, relevés `docker stats` au repos, série de
+`POST /suggest` sur une requête unique. Cache HF déjà peuplé dans les deux cas.
+
+| Mesure | Avant | Après |
+| --- | --- | --- |
+| Lignes `[warmup]` | 3 — `embeddings 4,9 s` · `classifieur 0,0 s` · `reranker 2,3 s` | 2 — `embeddings 4,7 s` · `classifieur 0,0 s` |
+| **RAM du conteneur `ml` au repos** | **5,104 GiB** (32,95 %) | **2,737 GiB** (17,67 %) |
+| RAM, conteneur recréé (contrôle) | — | 2,799 GiB (18,07 %) |
+| `/sante` → `reranker.modele_charge` | `true` | `false` (clé conservée) |
+| `/suggest` #1 | **40,9 s** | **33,3 s** |
+| `/suggest` suivants | 15,1 · 13,7 s | 10,7 · 11,2 · 10,9 · 10,7 · 10,8 s |
+| `confiance` rapportée | `None` ×3 | `None` ×6 |
+| `/rerank` à chaud | 0,53 s | 0,45 · 0,42 s |
+| `/rerank` premier appel | 0,53 s (préchauffé) | **3,45 s** (chargement paresseux) |
+| Suite de tests ML | — | **56 passed** |
+
+**Gain net : −2,3 Go de RAM résidente** (5,104 → 2,799 GiB sur conteneur neuf).
+
+Deux contrôles d'équivalence, parce qu'une baisse de RAM ne vaut rien si le comportement
+change :
+
+- `/rerank` rend des scores **identiques au bit près** avant et après —
+  `[0.0007941364892758429, 1.6183814295800403e-05, 0.4577465355396271]`.
+- `modele_charge` bascule `false → true` au premier `/rerank`, la RAM passant de 2,82 à
+  **5,27 GiB**. Ce **+2,45 GiB** mesure l'empreinte du reranker par une seconde voie,
+  indépendante de la première, et confirme que c'est bien lui qu'on a cessé de charger.
+
+**Ce que l'on ne prétend PAS.** Le gain de latence sur `/suggest` (40,9 → 33,3 s, puis
+~14 → ~11 s) **n'est pas attribué au correctif** : le reranker n'a jamais été dans ce
+chemin, en retirer le préchauffage ne peut pas l'accélérer directement. L'explication
+plausible est indirecte — 2,3 Go rendus sur un hôte de 15,49 GiB qui fait aussi tourner
+Ollama. À retenir comme « aucune dégradation », pas comme une accélération.
+
+## Le coût du reranker, enfin mesuré — la mesure qui manquait au dossier
+
+Jusqu'ici, la décision de ne pas câbler le reranker s'appuyait sur **un bénéfice mesuré**
+(l'ablation) et **un coût de prose** : le « ~8 s/requête » inscrit au journal ne venait
+d'aucun artefact — le JSON d'ablation ne contient aucun champ de latence, et les deux
+chiffres par paire en circulation (368 ms dans la docstring du module, 410 ms au
+dimensionnement J6) ne concordaient pas. Mesure faite le 19/09/2026 pour clore ce trou.
+
+**Protocole.** `POST /rerank` sur **20 documents réels de la base de connaissances**
+(K = `K_CANDIDATS` livré), extraits par la requête exacte du harnais — `_FILTRE_KB` plus
+le `COALESCE(t.resolution, 1er commentaire)` de `_charger_docs`, au format reranké
+`titre / description / résolution`. Longueur des documents : min 228, médiane 330, max 426
+caractères. Requête = un ticket VPN entrant de 255 caractères. `max_length = 512`, le
+défaut **réellement livré** (et non le 256 du dimensionnement annoncé). Trois mesures à
+froid, chacune sur un conteneur `ml` recréé.
+
+| Série | Médiane | Étendue |
+| --- | --- | --- |
+| **À froid, K=20** (chargement du modèle inclus) | **9,98 s** | 9,24 – 10,04 |
+| **À chaud, K=20** | **6,86 s** | 6,63 – 7,08 → **343 ms/paire** |
+| **À chaud, K=1** (coût qu'aurait la porte d'abstention) | **0,379 s** | 0,349 – 0,405 |
+
+**Ce que le chiffre change, et ce qu'il ne change pas.**
+
+- **L'argument de latence tient, et devient vérifiable.** 6,86 s à chaud dépasse le budget
+  CDC de < 5 s. Le « ~8 s » de la prose était donc du bon ordre de grandeur, légèrement
+  surestimé ; il est remplacé partout par **6,86 s mesuré**. Les 343 ms/paire mesurés se
+  situent entre les deux chiffres qui circulaient, sans les départager rétroactivement —
+  ils ont été relevés sur une autre configuration (`max_length=512`, corpus réel).
+- **Mais il ne justifie que le non-réordonnancement.** La **porte d'abstention** ne
+  rerank qu'une seule paire : **0,379 s**, soit ~3 % d'un `/suggest` qui coûte déjà 11 à
+  33 s à cause de la génération. **La latence n'est donc pas ce qui tient la porte
+  fermée** — c'est l'absence de seuil calibré (posture J5 : aucun seuil figé sur du
+  synthétique). Distinction à tenir en soutenance : un jury qui entend « trop lent »
+  demandera pourquoi la porte, elle, n'est pas branchée.
+
+La décision repose désormais sur **un bénéfice mesuré** (nDCG@5 +0,01, MRR −0,06 sur le
+réel, n=25) et **un coût mesuré** (6,86 s à K=20), sans rien d'invérifiable.
+
+## L'attribution des 71,1 s, réfutée par expérience
+
+L'entrée de Phase 7 attribuait un premier `/suggest` à 71,1 s au chargement du reranker
+dans la requête. La mesure de référence l'a contredite : **tout étant préchauffé,
+reranker compris, le premier `/suggest` coûtait encore 40,9 s.** Le surcoût survivait donc
+au préchauffage.
+
+Expérience à **variable unique** pour isoler la cause — service `ml` laissé intact,
+bge-m3 chargé, reranker **non** chargé (`modele_charge: false` vérifié à chaque étape),
+seul le LLM déchargé puis rechargé côté Ollama :
+
+| Étape | État Ollama | `/suggest` |
+| --- | --- | --- |
+| A — témoin | `qwen2.5:7b` résident | **13,0 s** |
+| B — `ollama stop qwen2.5:7b` | vide | **39,8 s** |
+| C — rechargé par l'appel B | `qwen2.5:7b` résident | **11,3 s** |
+
+Le surcoût suit l'état d'Ollama, pas celui du reranker, et l'étape B reproduit les 40,9 s
+du premier appel. **Cause réelle : le chargement de `qwen2.5:7b` par Ollama à la première
+génération** — non récurrent ensuite grâce à `OLLAMA_KEEP_ALIVE=-1`.
+
+*Enseignement de méthode, à réutiliser :* l'entrée de Phase 7 a attribué un coût au seul
+composant qu'elle venait d'ajouter au préchauffage, sans l'isoler. Le correctif n'a pas
+consisté à mieux raisonner, mais à **ne changer qu'une variable à la fois**.
+
+## Ce qui a été livré
+
+| Fichier | Changement |
+| --- | --- |
+| `service/app.py` | `reranker.charger_modele` retiré de `_prechauffer()` — **suppression sèche, pas de drapeau**. Un `IA_WARMUP_RERANKER` aurait recréé la confusion de `RERANK_ACTIF_DEFAUT` : il aurait laissé croire qu'on *active* le reranker alors qu'on ne ferait que le *charger en RAM*. Commentaire remplacé par l'état réel, avec la consigne de **remettre le préchauffage ici** si `suggestion.py` est recâblé. |
+| `retrieval/config.py` | `RERANK_ACTIF_DEFAUT` **supprimée**. Un drapeau qui ne commande rien est pire qu'une absence de drapeau. Remplacée par un commentaire disant les trois vérités : constante morte, porte fermée, ordre `"rrf"` en dur. |
+| `eval/run_retrieval.py` | Le harnais **imprimait `RERANK_ACTIF_DEFAUT=False` dans le pied de chaque rapport d'ablation généré**. Sans retouche, toute régénération future aurait cité une constante disparue. |
+
+Les deux rapports d'ablation archivés (`ml/eval/reports/j6/` et `ml/artifacts/eval/`)
+**n'ont pas été touchés** : artefacts datés du 27/07/2026, les réécrire falsifierait la
+trace de ce qui avait été décidé alors. La rectification vit ici, pas dans l'archive.
+
+## Ce qui a été prouvé, et comment
+
+- **Le reranker ne s'exécutait pas** — `confiance = None` sur neuf appels `/suggest` au
+  total, avant comme après.
+- **Il coûtait ~2,3 Go** — deux mesures indépendantes : la différence avant/après au repos
+  (5,104 → 2,799 GiB) et le saut au chargement paresseux (2,82 → 5,27 GiB).
+- **Le correctif ne casse rien** — scores `/rerank` identiques au bit près, `/classify`
+  dans son budget (3,55 s au premier appel, puis 0,19 et 0,25 s), **56 tests au vert**.
+- **Les 71,1 s ne venaient pas du reranker** — expérience à variable unique, trois points.
+
+## Dettes assumées et documentées
+
+- **Le dimensionnement annoncé n'est pas celui qui tourne.** Le journal J6 inscrit comme
+  décision NFR `K_prod=10, max_length=256` (mesuré : 4,08 s, sous le budget CDC < 5 s,
+  contre 10,6 s à K=20). Le code livré porte `K_CANDIDATS = 20` (`retrieval/config.py`) et
+  `RERANK_MAX_LENGTH` par défaut **512** (`service/config.py`) ; ni le `docker-compose.yml`
+  ni `.env.example` ne les surchargent. Vérifié à l'exécution : `/sante` rapporte
+  `"max_length": 512`. **Écart signalé, délibérément non corrigé dans cette séance** — il
+  ne change rien tant que le reranker reste hors du chemin, mais il devra être tranché
+  *avant* tout recâblage, sinon le premier usage réel partirait sur un dimensionnement
+  explicitement écarté à la mesure. À ne pas présenter en soutenance comme « dimensionné
+  pour la production » : le dimensionnement a été *mesuré*, pas *appliqué*.
+- **`POST /rerank` reste un endpoint sans appelant.** Conservé volontairement : il est le
+  point d'entrée qui rend le composant démontrable en soutenance, et le seul moyen de
+  l'exercer sans modifier le code. Son premier appel paie désormais 3,45 s de chargement.
+- **La porte d'abstention reste un mécanisme sans réglage.** `SEUIL_ABSTENTION_DEFAUT =
+  None` est cohérent avec la posture J5 (aucun seuil figé sur du synthétique), mais tant
+  que `SEUIL_CONFIANCE_IA` n'entre pas au registre des paramètres (§6.5), le mécanisme
+  n'est pas atteignable en exploitation.
+- **La comparaison de latence est bruitée.** À requête identique, le premier appel a rendu
+  une suggestion citée et les suivants se sont abstenus par grounding, dans les deux
+  séries. Les écarts de quelques secondes entre séries ne sont pas interprétables.

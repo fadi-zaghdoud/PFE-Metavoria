@@ -46,17 +46,25 @@ enum Priorite {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Utilisateur {
-  id     Int    @id @default(autoincrement())
-  nom    String
-  prenom String
-  email  String @unique
+  id           Int      @id @default(autoincrement())
+  nom          String
+  prenom       String
+  email        String   @unique
   // Null tant que le compte invité n'a pas été activé (statut « En attente »).
-  motDePasse String?  @map("mot_de_passe")
-  role       Role     @default(EMPLOYE)
-  service    String?
-  poste      String?
-  actif      Boolean  @default(true)
+  motDePasse   String?  @map("mot_de_passe")
+  role         Role     @default(EMPLOYE)
+  service      String?
+  poste        String?
+  actif        Boolean  @default(true)
   dateCreation DateTime @default(now()) @map("date_creation")
+
+  // Photo de profil (Cloudinary, dossier « avatars »). `photoUrl` est la secure_url
+  // servie directement au navigateur — contrairement aux pieces jointes, elle n'est PAS
+  // proxifiee : l'identifiant public aleatoire tient lieu de protection, et un aller-retour
+  // backend par avatar penaliserait les listes de tickets. `photoCloudinaryId` conserve le
+  // public_id pour detruire l'ancienne image a chaque remplacement (sans lui : orphelins).
+  photoUrl          String? @map("photo_url")
+  photoCloudinaryId String? @map("photo_cloudinary_id")
 
   // Invitation par un administrateur : hash SHA-256 du token (jamais en clair),
   // lien valable 72 h. Effacés à l'activation du compte.
@@ -71,12 +79,20 @@ model Utilisateur {
   codeReinitialisationTentatives Int       @default(0) @map("code_reinitialisation_tentatives")
 
   // Relations
-  ticketsDemandes  Ticket[]          @relation("TicketsDemandes")
-  ticketsAssignes  Ticket[]          @relation("TicketsAssignes")
-  commentaires     Commentaire[]
-  evenementsTicket EvenementTicket[]
-  notifications    Notification[]
-  refreshTokens    RefreshToken[]
+  ticketsDemandes    Ticket[]              @relation("TicketsDemandes")
+  ticketsAssignes    Ticket[]              @relation("TicketsAssignes")
+  commentaires       Commentaire[]
+  evenementsTicket   EvenementTicket[]     @relation("EvenementAuteur")
+  evenementsCible    EvenementTicket[]     @relation("EvenementCible")
+  journalAudit       JournalAudit[]
+  notifications      Notification[]
+  refreshTokens      RefreshToken[]
+  // Affectation automatique (§6.2) : specialites du technicien, ses absences,
+  // les absences qu'il a saisies (admin) et les parametres qu'il a modifies.
+  specialites        TechnicienCategorie[]
+  absences           Absence[]             @relation("AbsencesTechnicien")
+  absencesSaisies    Absence[]             @relation("AbsencesSaisies")
+  parametresModifies Parametre[]
 
   @@map("utilisateurs")
 }
@@ -86,11 +102,11 @@ model Utilisateur {
 // (déconnexion, désactivation) et détection de réutilisation d'un jeton déjà
 // tourné (signale un vol → toute la famille de l'utilisateur est révoquée).
 model RefreshToken {
-  id            Int      @id @default(autoincrement())
-  tokenHash     String   @unique @map("token_hash")
-  expireLe      DateTime @map("expire_le")
-  revoke        Boolean  @default(false)
-  creeLe        DateTime @default(now()) @map("cree_le")
+  id        Int      @id @default(autoincrement())
+  tokenHash String   @unique @map("token_hash")
+  expireLe  DateTime @map("expire_le")
+  revoke    Boolean  @default(false)
+  creeLe    DateTime @default(now()) @map("cree_le")
 
   utilisateurId Int         @map("utilisateur_id")
   utilisateur   Utilisateur @relation(fields: [utilisateurId], references: [id], onDelete: Cascade)
@@ -100,39 +116,41 @@ model RefreshToken {
 }
 
 model Categorie {
-  id          Int     @id @default(autoincrement())
-  nom         String  @unique
-  description String?
+  id           Int      @id @default(autoincrement())
+  nom          String   @unique
+  description  String?
   // Horodatage de création (Phase A — cycle de vie des catégories) : sert à afficher
   // « en apprentissage depuis … » côté admin. Le STATUT (en apprentissage / apprenable /
   // active) reste CALCULÉ (classes du modèle IA vs base + compteur de labels), jamais stocké.
   dateCreation DateTime @default(now()) @map("date_creation")
 
-  tickets Ticket[]
+  tickets     Ticket[]
+  // Techniciens declares specialistes de cette categorie (affectation automatique §6.2).
+  techniciens TechnicienCategorie[]
 
   @@map("categories")
 }
 
 model Ticket {
-  id               Int          @id @default(autoincrement())
-  titre            String
-  description      String
-  statut           StatutTicket @default(NOUVEAU)
-  priorite         Priorite     @default(MOYENNE)
+  id                      Int          @id @default(autoincrement())
+  titre                   String
+  description             String
+  statut                  StatutTicket @default(NOUVEAU)
+  priorite                Priorite     @default(MOYENNE)
   // Ticket issu du corpus synthétique (bootstrap IA) : exclu des KPI réels (§6.4).
-  synthetique      Boolean      @default(false)
-  dateCreation     DateTime     @default(now()) @map("date_creation")
-  dateCloture      DateTime?    @map("date_cloture")
-  satisfactionNote        Int?      @map("satisfaction_note") // 1..5, renseignée à la clôture
-  satisfactionCommentaire String?   @map("satisfaction_commentaire") // retour libre optionnel du demandeur
-  satisfactionDate        DateTime? @map("satisfaction_date") // horodatage de l'évaluation
+  synthetique             Boolean      @default(false)
+  dateCreation            DateTime     @default(now()) @map("date_creation")
+  dateCloture             DateTime?    @map("date_cloture")
+  satisfactionNote        Int?         @map("satisfaction_note") // 1..5, renseignée à la clôture
+  satisfactionCommentaire String?      @map("satisfaction_commentaire") // retour libre optionnel du demandeur
+  satisfactionDate        DateTime?    @map("satisfaction_date") // horodatage de l'évaluation
 
   // Solution appliquée, SAISIE PAR LE TECHNICIEN à la résolution (module IA, K1). Facultative :
   // un ticket résolu sans solution reste hors KB. Sa présence (resolution IS NOT NULL) fait
   // entrer le ticket RÉEL dans la base de connaissances du RAG (exclut naturellement le bruit
   // de dev, qui n'en a pas). Le RAG la cite comme « source réelle » (texte du doc, pas la recherche).
-  resolution      String?   @map("resolution")
-  resolutionDate  DateTime? @map("resolution_date")
+  resolution     String?   @map("resolution")
+  resolutionDate DateTime? @map("resolution_date")
 
   // Embedding du ticket pour la recherche de similarité (module IA, phase 5).
   // Dimension 1024 = bge-m3 (modèle retenu J4). L'index HNSW cosinus est créé en
@@ -144,15 +162,15 @@ model Ticket {
   // Colonne tsvector GÉNÉRÉE STORED (titre + description, config 'french') + index GIN,
   // créées en SQL brut dans la migration : Prisma ne sait exprimer ni une colonne
   // générée ni un index GIN sur tsvector. Toujours en phase, jamais écrite par Node.
-  rechercheTexte  Unsupported("tsvector")?     @map("recherche_texte")
+  rechercheTexte Unsupported("tsvector")? @map("recherche_texte")
 
-  categorieId Int? @map("categorie_id")
+  categorieId Int?       @map("categorie_id")
   categorie   Categorie? @relation(fields: [categorieId], references: [id], onDelete: SetNull)
 
-  demandeurId Int @map("demandeur_id")
+  demandeurId Int         @map("demandeur_id")
   demandeur   Utilisateur @relation("TicketsDemandes", fields: [demandeurId], references: [id])
 
-  technicienId Int? @map("technicien_id")
+  technicienId Int?         @map("technicien_id")
   technicien   Utilisateur? @relation("TicketsAssignes", fields: [technicienId], references: [id], onDelete: SetNull)
 
   commentaires  Commentaire[]
@@ -185,15 +203,15 @@ model Commentaire {
 }
 
 model PieceJointe {
-  id           Int     @id @default(autoincrement())
-  nomFichier   String  @map("nom_fichier")
-  url          String                         // URL Cloudinary (secure_url)
-  cloudinaryId String? @map("cloudinary_id")  // public_id Cloudinary (suppression)
-  typeMime     String? @map("type_mime")
-  taille       Int?                           // octets
+  id           Int      @id @default(autoincrement())
+  nomFichier   String   @map("nom_fichier")
+  url          String // URL Cloudinary (secure_url)
+  cloudinaryId String?  @map("cloudinary_id") // public_id Cloudinary (suppression)
+  typeMime     String?  @map("type_mime")
+  taille       Int? // octets
   // Texte extrait par OCR (J8bis, Lot B) — rempli après extraction si confiance suffisante ;
   // JAMAIS injecté dans `description` (augmentation à l'usage). Vide jusqu'au Lot B.
-  texteExtrait String? @map("texte_extrait")
+  texteExtrait String?  @map("texte_extrait")
   dateUpload   DateTime @default(now()) @map("date_upload")
 
   ticketId Int    @map("ticket_id")
@@ -235,8 +253,24 @@ model EvenementTicket {
   ticketId Int    @map("ticket_id")
   ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 
-  auteurId Int         @map("auteur_id")
-  auteur   Utilisateur @relation(fields: [auteurId], references: [id])
+  // Nullable depuis l'affectation automatique : une affectation decidee par le SYSTEME
+  // (mode AUTO, a la creation) n'a pas d'auteur humain -> NULL, affiche « Systeme ».
+  // onDelete: Restrict (et non SET NULL) : NULL doit signifier « Systeme » et RIEN
+  // d'autre. Sans cette garde, supprimer un compte relabelliserait ses actions
+  // passees en actions systeme — une trace d'audit qui ment.
+  auteurId Int?         @map("auteur_id")
+  auteur   Utilisateur? @relation("EvenementAuteur", fields: [auteurId], references: [id], onDelete: Restrict)
+
+  // CIBLE de l'action, quand elle en a une : le technicien vise par une AFFECTATION ou
+  // une DESAFFECTATION. `nouvelleValeur` porte son NOM — le nom D'EPOQUE, celui qu'on
+  // doit continuer d'afficher — mais un nom n'est pas une cle de jointure fiable :
+  // 35 comptes portent 31 noms distincts, et « affectations vers X » etait donc
+  // impossible a repondre. L'id et le nom repondent a deux questions differentes,
+  // aucun ne remplace l'autre.
+  // NULL sur les evenements sans cible, et sur les 4 evenements anterieurs dont le nom
+  // designe deux comptes affectables : on montre ce qu'on sait, on n'invente rien.
+  cibleId Int?         @map("cible_id")
+  cible   Utilisateur? @relation("EvenementCible", fields: [cibleId], references: [id], onDelete: SetNull)
 
   @@index([ticketId])
   @@map("evenements_ticket")
@@ -247,29 +281,203 @@ model EvenementTicket {
 // technicien valide/corrige (via changerCategorie/changerPriorite), ce qui alimente
 // le flywheel J9 (comparaison « suggéré X / choisi Y »).
 model SuggestionIA {
-  id             Int      @id @default(autoincrement())
-  typeSuggestion String   @map("type_suggestion") // CLASSIFICATION | PRIORISATION | SOLUTION | RESUME
+  id                   Int      @id @default(autoincrement())
+  typeSuggestion       String   @map("type_suggestion") // CLASSIFICATION | PRIORISATION | SOLUTION | RESUME
   // Origine (Greffe 3, flywheel) : 'creation' (à la création) | 'apres_ocr' (ré-évaluation
   // après OCR d'une pièce jointe). Colonne dédiée (auparavant dans `details.origine`) pour
   // requêter les métriques « suggéré vs choisi » par origine.
-  origine        String?  @map("origine")
-  contenu        String   // valeur suggérée : nom de catégorie, niveau de priorité, …
+  origine              String?  @map("origine")
+  contenu              String // valeur suggérée : nom de catégorie, niveau de priorité, …
   // Proba top-1 (classification) ; NULL pour la scorecard déterministe (priorité :
   // règle glass-box sans probabilité — on ne fabrique pas de fausse confiance).
-  scoreConfiance Float?   @map("score_confiance")
+  scoreConfiance       Float?   @map("score_confiance")
   // Détail structuré : probabilités par classe (classification) OU décomposition
   // glass-box de la scorecard (priorité) OU sources+similaires (solution RAG).
-  details        Json?
+  details              Json?
   // Cycle de la suggestion. PRETE d'emblée pour les suggestions SYNCHRONES
   // (CLASSIFICATION/PRIORISATION, Greffe 1). Pour la SOLUTION RAG (Greffe 2, générée
   // en ASYNCHRONE 15-30 s) : EN_COURS → PRETE (texte + sources) ou ECHEC.
-  statut         String   @default("PRETE")
+  statut               String   @default("PRETE")
   valideeParTechnicien Boolean? @map("validee_par_technicien")
-  dateCreation   DateTime @default(now()) @map("date_creation")
+  dateCreation         DateTime @default(now()) @map("date_creation")
 
   ticketId Int    @map("ticket_id")
   ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 
   @@index([ticketId])
   @@map("suggestions_ia")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Affectation automatique des tickets (§6.2) — Chantier 1
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Motif d'absence — ÉNUMÉRATION et non texte libre : filtrable, agrégeable, sans
+// variantes orthographiques (le champ `service` en texte libre a déjà montré cette
+// limite : impossible à joindre de façon fiable). Le `commentaire` optionnel de
+// `Absence` récupère l'expressivité perdue (« congé parental », « formation K8s »).
+enum MotifAbsence {
+  CONGE
+  MALADIE
+  FORMATION
+  AUTRE
+}
+
+// Configuration applicative persistante, en CLÉ-VALEUR. Accueille aujourd'hui le mode
+// d'affectation (MANUEL | AUTO) et, plus tard, les seuils IA réglables (§6.5) — un
+// nouveau réglage coûte alors UNE LIGNE, pas une migration.
+// Le typage perdu par le clé-valeur est repris par un REGISTRE côté service (clés
+// connues, défaut, parseur, validation) : clé inconnue rejetée, valeur illisible →
+// défaut. La lecture ne lève jamais et retombe toujours sur le comportement sûr.
+model Parametre {
+  cle         String   @id
+  valeur      String
+  description String?
+  dateMaj     DateTime @updatedAt @map("date_maj")
+
+  // Qui a modifié le réglage en dernier (NULL = valeur posée par défaut/seed).
+  majParId Int?         @map("maj_par_id")
+  majPar   Utilisateur? @relation(fields: [majParId], references: [id])
+
+  @@map("parametres")
+}
+
+// Spécialité d'un technicien : quelles CATÉGORIES de tickets il couvre (N-N).
+// Table de liaison EXPLICITE (et non le N-N implicite de Prisma) : nommable dans le
+// MCD, et extensible (un niveau d'expertise pourrait s'y ajouter sans refonte).
+// Suppression en cascade des deux côtés : un lien de spécialité n'a aucun sens sans
+// son technicien ni sans sa catégorie (la suppression de catégorie est exposée en admin).
+model TechnicienCategorie {
+  technicienId Int         @map("technicien_id")
+  technicien   Utilisateur @relation(fields: [technicienId], references: [id], onDelete: Cascade)
+
+  categorieId Int       @map("categorie_id")
+  categorie   Categorie @relation(fields: [categorieId], references: [id], onDelete: Cascade)
+
+  dateAjout DateTime @default(now()) @map("date_ajout")
+
+  @@id([technicienId, categorieId])
+  @@index([categorieId])
+  @@map("technicien_categories")
+}
+
+// Absence d'un technicien (congé, maladie, formation) — l'exclut des candidats à
+// l'AFFECTATION AUTOMATIQUE, sans jamais toucher à son accès applicatif : `actif`
+// reste un mécanisme DISTINCT (il coupe la connexion, pour un départ, pas un congé).
+// Ses tickets déjà assignés ne bougent pas.
+//
+// `@db.Date` et NON `DateTime` : une absence est un INTERVALLE DE CALENDRIER, pas un
+// instant. En timestamp, `dateFin = 20/08 00:00` ne couvrirait pas le 20 — toute la
+// classe de bugs de bornes disparaît avec une date pure. Bornes INCLUSES des deux côtés.
+//
+// `dateFin` OBLIGATOIRE : une absence ouverte est précisément l'oubli que la table
+// datée sert à éviter (le technicien redevient disponible tout seul à son retour).
+// Une durée inconnue se saisit avec une fin plausible, quitte à la prolonger.
+//
+// Pas de `dateMaj`/`modifieParId` : la traçabilité des modifications relève de la
+// table d'audit du Chantier 2 — ne pas dupliquer un mécanisme sur le point d'exister.
+model Absence {
+  id Int @id @default(autoincrement())
+
+  technicienId Int         @map("technicien_id")
+  technicien   Utilisateur @relation("AbsencesTechnicien", fields: [technicienId], references: [id], onDelete: Cascade)
+
+  dateDebut DateTime @map("date_debut") @db.Date
+  dateFin   DateTime @map("date_fin") @db.Date
+
+  motif       MotifAbsence
+  // Précision libre facultative — jamais exposée hors de l'administration :
+  // MALADIE est une donnée de santé, et le graphique de charge du tableau de bord
+  // est visible par TOUS les techniciens (garde `estSupport`), pas par l'admin seul.
+  commentaire String?
+
+  // Qui a saisi l'absence (administrateur). Pas de cascade : on ne perd pas
+  // silencieusement l'information de saisie si le compte est supprimé.
+  creeParId Int         @map("cree_par_id")
+  creePar   Utilisateur @relation("AbsencesSaisies", fields: [creeParId], references: [id])
+
+  dateCreation DateTime @default(now()) @map("date_creation")
+
+  // Sert la recherche « absent aujourd'hui » ET le contrôle de chevauchement.
+  @@index([technicienId, dateDebut, dateFin])
+  @@map("absences")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Traçabilité (§7) — Chantier 2
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Issue d'une action tracée. Un échec est au moins aussi intéressant qu'un succès :
+// cinq CONNEXION_ECHEC depuis la même IP en une minute est le signal de sécurité que
+// la journalisation actuelle ne peut pas produire.
+enum ResultatAudit {
+  SUCCES
+  ECHEC
+}
+
+// Journal d'audit applicatif — répond à « qui a fait quoi, quand, depuis où, et avec
+// quel résultat ». Table SÉPARÉE de `EvenementTicket`, et non une extension de celui-ci,
+// pour trois raisons établies à l'inventaire :
+//
+//  1. `EvenementTicket.ticket` est en onDelete: Cascade — supprimer un ticket EFFACE sa
+//     trace. Une trace d'audit qui disparaît avec l'objet audité n'en est pas une.
+//  2. Une connexion, une invitation ou un déploiement de modèle n'ont AUCUN ticket à
+//     rattacher : il faudrait rendre `ticketId` nullable et mélanger deux cycles de vie.
+//  3. Les deux ont des publics et des durées de vie différents — la timeline raconte
+//     l'histoire d'un ticket à ses acteurs, l'audit sert l'administration et survit.
+//
+// Le doublonnage des actions ticket entre les deux tables est ASSUMÉ pour cette raison.
+//
+// ⚠️ DONNÉES PERSONNELLES : cette table stocke des adresses IP. Finalité SÉCURITÉ
+// (détection d'accès anormaux), accès réservé à l'administrateur, conservation limitée
+// (voir la purge de rétention). À ne pas détourner en outil de surveillance de l'activité
+// des employés.
+model JournalAudit {
+  id Int @id @default(autoincrement())
+
+  // Nom stable de l'action : CONNEXION, CONNEXION_ECHEC, ROLE_CHANGE, TICKET_AFFECTATION…
+  action String
+
+  // Auteur de l'action. SetNull et non Restrict : une trace doit SURVIVRE à la
+  // suppression du compte — sinon soit on perd l'historique, soit on interdit toute
+  // suppression de compte.
+  acteurId Int?         @map("acteur_id")
+  acteur   Utilisateur? @relation(fields: [acteurId], references: [id], onDelete: SetNull)
+
+  // Nom de l'acteur AU MOMENT DE L'ACTION, toujours rempli. C'est LUI qui désambiguïse,
+  // pas le `null` de `acteurId` : sans cette copie, un `acteurId` nul signifierait à la
+  // fois « action du système » et « compte depuis supprimé ». Ici, « Système » est écrit
+  // en toutes lettres pour les actions automatiques, et le nom réel sinon — y compris
+  // après la disparition du compte.
+  acteurNom String @map("acteur_nom")
+
+  // Objet visé. Volontairement POLYMORPHE et sans clé étrangère : la cible peut être un
+  // ticket, un compte, une catégorie ou un modèle IA. Une contrainte référentielle
+  // supposerait une table unique, et une cascade y ramènerait le problème que cette
+  // table existe précisément pour éviter.
+  cibleType String? @map("cible_type") // TICKET | UTILISATEUR | CATEGORIE | MODELE_IA | PARAMETRE | ABSENCE
+  cibleId   Int?    @map("cible_id")
+
+  resultat ResultatAudit @default(SUCCES)
+
+  // Contexte de la requête, porté par AsyncLocalStorage (les services ne voient jamais
+  // `req`). NULL n'est PAS un repli dégradé : pour une action décidée par le système
+  // — enrichissement IA après réponse, affectation automatique — il n'y a aucune IP
+  // d'utilisateur à enregistrer, et `null` est la valeur JUSTE.
+  ip        String? @db.VarChar(45) // 45 = longueur maximale d'une adresse IPv6 textuelle
+  userAgent String? @map("user_agent")
+
+  // Détail structuré propre à l'action (ancienne et nouvelle valeur, e-mail tenté,
+  // motif de refus…). Jamais de secret : ni mot de passe, ni jeton, ni code OTP.
+  details Json?
+
+  dateCreation DateTime @default(now()) @map("date_creation")
+
+  // Les quatre lectures de la page d'audit : la liste antéchronologique, le filtre par
+  // acteur, le filtre par action, et « tout ce qui concerne cet objet ».
+  @@index([dateCreation])
+  @@index([acteurId, dateCreation])
+  @@index([action, dateCreation])
+  @@index([cibleType, cibleId])
+  @@map("journal_audit")
 }

@@ -29,6 +29,8 @@ export interface MettreAJourUtilisateurInput {
   codeReinitialisationTentatives?: number;
   tokenInvitation?: string | null; // hash SHA-256
   tokenInvitationExpire?: Date | null;
+  photoUrl?: string | null;
+  photoCloudinaryId?: string | null;
 }
 
 export interface FiltresUtilisateurs {
@@ -64,15 +66,39 @@ export const utilisateurRepository = {
     return prisma.utilisateur.update({ where: { id }, data });
   },
 
-  findMany(filtres: FiltresUtilisateurs) {
+  // `jour` (optionnel) : quand il est fourni, chaque utilisateur porte ses specialites et
+  // l'absence qui couvre ce jour. Sert l'administration des comptes (multi-select des
+  // specialites + pastille « absent »). Le predicat d'absence reproduit les bornes
+  // incluses de `estAbsentLe` (services/absence.disponibilite.ts).
+  findMany(filtres: FiltresUtilisateurs & { jour?: Date } = {}) {
     return prisma.utilisateur.findMany({
       where: {
         role: filtres.role,
         service: filtres.service,
         actif: filtres.actif,
       },
+      include: filtres.jour
+        ? {
+            specialites: { select: { categorieId: true } },
+            absences: {
+              where: { dateDebut: { lte: filtres.jour }, dateFin: { gte: filtres.jour } },
+              select: { dateFin: true },
+            },
+          }
+        : undefined,
       orderBy: { dateCreation: 'desc' },
     });
+  },
+
+  // Remplace INTEGRALEMENT les specialites d'un technicien (et non un ajout incremental) :
+  // l'interface envoie l'etat complet des cases cochees, pas un delta.
+  async remplacerSpecialites(technicienId: number, categorieIds: number[]) {
+    await prisma.$transaction([
+      prisma.technicienCategorie.deleteMany({ where: { technicienId } }),
+      prisma.technicienCategorie.createMany({
+        data: categorieIds.map((categorieId) => ({ technicienId, categorieId })),
+      }),
+    ]);
   },
 
   // Nombre d'administrateurs actifs — garde-fou contre la suppression du dernier

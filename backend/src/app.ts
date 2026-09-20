@@ -5,6 +5,7 @@ import morgan from 'morgan';
 import { env } from './config/env';
 import { apiRouter } from './routes';
 import { errorHandler, notFoundHandler } from './middlewares/error.middleware';
+import { contexteRequete } from './middlewares/contexte.middleware';
 
 export const app = express();
 
@@ -41,6 +42,12 @@ morgan.token('url', (req) => {
   return url.replace(/([?&](?:token|code)=)[^&]+/gi, '$1[REDACTED]');
 });
 app.use(morgan(env.NODE_ENV === 'development' ? 'dev' : 'combined'));
+
+// Ouvre le contexte de requête (IP, user-agent) pour toute la chaîne de traitement :
+// c'est lui qui permet au journal d'audit de savoir « depuis où » sans que les services
+// aient à recevoir `req` en paramètre. Monté APRÈS `trust proxy` (sinon `req.ip` serait
+// celui du reverse-proxy) et AVANT les routes.
+app.use(contexteRequete);
 
 app.use('/api', apiRouter);
 

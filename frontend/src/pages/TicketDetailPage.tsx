@@ -61,7 +61,7 @@ function MessageBulle({ commentaire, estDemandeur }: { commentaire: Commentaire;
   const { auteur } = commentaire;
   return (
     <div className="flex gap-3">
-      <Avatar prenom={auteur.prenom} nom={auteur.nom} size="sm" className="mt-1" />
+      <Avatar prenom={auteur.prenom} nom={auteur.nom} photoUrl={auteur.photoUrl} size="sm" className="mt-1" />
       <div
         className={cn(
           'min-w-0 flex-1 rounded-lg px-3.5 py-2.5',
@@ -91,6 +91,13 @@ function labelPriorite(v: string | null): string {
   return v && v in LABEL_PRIORITE ? LABEL_PRIORITE[v as PrioriteTicket] : v ?? '—';
 }
 
+// « 2026-08-20 » -> « 20/08 ». Découpe de chaîne et non `new Date` : un jour seul serait
+// interprété à minuit UTC et pourrait s'afficher la veille selon le fuseau du navigateur.
+function jourCourt(jour: string): string {
+  const [, mois, j] = jour.split('-');
+  return mois && j ? `${j}/${mois}` : jour;
+}
+
 function decrireEvenement(e: EvenementTicket): string {
   switch (e.type) {
     case 'CHANGEMENT_STATUT':
@@ -103,6 +110,8 @@ function decrireEvenement(e: EvenementTicket): string {
       return 'a pris le ticket en charge';
     case 'AFFECTATION':
       return `a assigné le ticket à ${e.nouvelleValeur}`;
+    case 'AFFECTATION_AUTO':
+      return `a assigné automatiquement le ticket à ${e.nouvelleValeur}`;
     case 'DESAFFECTATION':
       return "a retiré l'affectation";
     case 'EVALUATION':
@@ -117,6 +126,7 @@ const ICONE_EVENEMENT: Record<TypeEvenement, LucideIcon> = {
   CHANGEMENT_PRIORITE: Flag,
   CHANGEMENT_CATEGORIE: Tag,
   AFFECTATION: UserPlus,
+  AFFECTATION_AUTO: Sparkles,
   DESAFFECTATION: UserMinus,
   PRISE_EN_CHARGE: Wrench,
   EVALUATION: Star,
@@ -125,13 +135,16 @@ const ICONE_EVENEMENT: Record<TypeEvenement, LucideIcon> = {
 // Ligne d'historique (centrée, discrète) affichée dans le fil, entre les messages.
 function EvenementLigne({ evenement }: { evenement: EvenementTicket }) {
   const Icon = ICONE_EVENEMENT[evenement.type];
+  // Auteur absent = decision du systeme (affectation automatique) : aucun humain n'en est
+  // l'auteur, et attribuer l'action au demandeur serait faux.
+  const auteur = evenement.auteur
+    ? `${evenement.auteur.prenom} ${evenement.auteur.nom}`
+    : 'Système';
   return (
     <div className="flex items-center justify-center gap-2 text-center text-xs text-slate-400">
       <Icon className="size-3.5 shrink-0" aria-hidden />
       <span>
-        <span className="font-medium text-slate-500">
-          {evenement.auteur.prenom} {evenement.auteur.nom}
-        </span>{' '}
+        <span className="font-medium text-slate-500">{auteur}</span>{' '}
         {decrireEvenement(evenement)} · {tempsRelatif(evenement.dateCreation)}
       </span>
     </div>
@@ -1026,15 +1039,21 @@ export function TicketDetailPage() {
                     aria-label="Technicien assigné"
                   >
                     <option value="">Non assigné</option>
+                    {/* Un technicien absent reste SÉLECTIONNABLE : l'administrateur peut
+                        sciemment lui assigner un ticket pour son retour, et l'affectation
+                        manuelle doit rester possible en toutes circonstances. La mention
+                        évite seulement de choisir à l'aveugle. Dates uniquement — le motif
+                        n'apparaît que sur la page Absences. */}
                     {techniciens.map((t) => (
                       <option key={t.id} value={t.id}>
                         {t.prenom} {t.nom}
+                        {t.absenceJusquau ? ` — absent jusqu'au ${jourCourt(t.absenceJusquau)}` : ''}
                       </option>
                     ))}
                   </Select>
                 ) : ticket.technicien ? (
                   <div className="flex items-center gap-2">
-                    <Avatar prenom={ticket.technicien.prenom} nom={ticket.technicien.nom} size="sm" />
+                    <Avatar prenom={ticket.technicien.prenom} nom={ticket.technicien.nom} photoUrl={ticket.technicien.photoUrl} size="sm" />
                     <span className="truncate text-sm text-slate-700">
                       {ticket.technicien.prenom} {ticket.technicien.nom}
                     </span>
@@ -1084,7 +1103,7 @@ export function TicketDetailPage() {
           <Card>
             <CardHeader title="Demandeur" />
             <CardContent className="flex items-center gap-3">
-              <Avatar prenom={ticket.demandeur.prenom} nom={ticket.demandeur.nom} />
+              <Avatar prenom={ticket.demandeur.prenom} nom={ticket.demandeur.nom} photoUrl={ticket.demandeur.photoUrl} />
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium text-slate-900">
                   {ticket.demandeur.prenom} {ticket.demandeur.nom}

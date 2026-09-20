@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { env } from '../config/env';
 import { utilisateurRepository } from '../repositories/utilisateur.repository';
 import { ForbiddenError, UnauthorizedError } from '../utils/AppError';
+import { enrichirContexte } from '../utils/contexteRequete';
 import type { Role } from '../generated/prisma/enums';
 
 export interface JwtPayload {
@@ -36,6 +37,15 @@ export async function authentifierToken(token: string): Promise<JwtPayload> {
   if (!utilisateur || !utilisateur.actif) {
     throw new UnauthorizedError('Session invalide — reconnectez-vous', 'TOKEN_INVALIDE');
   }
+
+  // Complète le contexte de requête : l'IP y est depuis l'entrée, l'identité ne peut
+  // l'être qu'ici — le jeton n'est vérifié qu'à ce moment. Le NOM est copié en plus de
+  // l'id parce que le journal d'audit conserve le nom d'époque : il doit rester lisible
+  // même après la suppression du compte.
+  enrichirContexte({
+    acteurId: utilisateur.id,
+    acteurNom: `${utilisateur.prenom} ${utilisateur.nom}`,
+  });
 
   // Rôle FRAIS issu de la base, jamais celui (potentiellement périmé) du jeton.
   return { sub: utilisateur.id, role: utilisateur.role };

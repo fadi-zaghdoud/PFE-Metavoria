@@ -249,7 +249,7 @@ export function TicketsListPage() {
                   {estSupport && (
                     <Td className="hidden lg:table-cell">
                       <div className="flex items-center gap-2">
-                        <Avatar prenom={t.demandeur.prenom} nom={t.demandeur.nom} size="sm" />
+                        <Avatar prenom={t.demandeur.prenom} nom={t.demandeur.nom} photoUrl={t.demandeur.photoUrl} size="sm" />
                         <div className="min-w-0">
                           <p className="truncate text-sm text-slate-700">
                             {t.demandeur.prenom} {t.demandeur.nom}
@@ -268,7 +268,7 @@ export function TicketsListPage() {
                   <Td className="hidden lg:table-cell">
                     {t.technicien ? (
                       <div className="flex items-center gap-2">
-                        <Avatar prenom={t.technicien.prenom} nom={t.technicien.nom} size="sm" />
+                        <Avatar prenom={t.technicien.prenom} nom={t.technicien.nom} photoUrl={t.technicien.photoUrl} size="sm" />
                         <span className="truncate text-sm text-slate-700">
                           {t.technicien.prenom} {t.technicien.nom}
                         </span>

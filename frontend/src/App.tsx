@@ -10,6 +10,9 @@ import { ProfilePage } from './pages/ProfilePage';
 import { UsersManagementPage } from './pages/UsersManagementPage';
 import { CategoriesManagementPage } from './pages/CategoriesManagementPage';
 import { FlywheelPage } from './pages/FlywheelPage';
+import { AbsencesPage } from './pages/AbsencesPage';
+import { ParametresPage } from './pages/ParametresPage';
+import { JournalAuditPage } from './pages/JournalAuditPage';
 import { TicketsListPage } from './pages/TicketsListPage';
 import { CreateTicketPage } from './pages/CreateTicketPage';
 import { TicketDetailPage } from './pages/TicketDetailPage';
@@ -78,6 +81,9 @@ function App() {
             <Route path="/administration/utilisateurs" element={<UsersManagementPage />} />
             <Route path="/administration/categories" element={<CategoriesManagementPage />} />
             <Route path="/administration/ia" element={<FlywheelPage />} />
+            <Route path="/administration/absences" element={<AbsencesPage />} />
+            <Route path="/administration/parametres" element={<ParametresPage />} />
+            <Route path="/administration/journal" element={<JournalAuditPage />} />
           </Route>
         </Route>
       </Route>

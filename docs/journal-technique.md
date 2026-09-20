@@ -713,6 +713,19 @@ demande explicite.
      l'ablation (voir « en cours ») : l'ordre fin du rerank aide le synthétique mais nuit au
      réel — à confirmer sur le tableau final.
 
+     > ⚠️ **RECTIFIÉ LE 19/09/2026.** Le découplage ORDRE/SCORE décrit ici était l'**intention**
+     > de conception ; il n'a jamais été le comportement livré. Deux erreurs dans ce point.
+     > **(a)** `RERANK_ACTIF_DEFAUT` n'était **lue par aucune ligne de code** — une constante
+     > morte présentée comme la décision de production. Supprimée le 19/09/2026, remplacée par
+     > un commentaire qui décrit l'état réel. **(b)** « Il ne sert qu'à scorer la porte
+     > d'abstention » : en pratique il ne sert à **rien** dans l'application, la porte étant
+     > fermée par `SEUIL_ABSTENTION_DEFAUT = None` — que rien ne règle, ni variable
+     > d'environnement, ni paramètre admin (le registre backend ignore encore
+     > `SEUIL_CONFIANCE_IA`, §6.5). Vérifié à l'exécution : `confiance = None` sur 3 puis 6
+     > appels `/suggest`. Le reranker ne s'exécute que via `POST /rerank` et le harnais
+     > d'évaluation. **Le recâbler suppose de modifier `suggestion.py`**, pas de régler un
+     > paramètre. Cf. la section « Correctif — le reranker retiré du préchauffage ».
+
 - **Mesures — dimensionnement production (reranker)** : leçon « **mesurer deux fois,
   système au repos** ». Une 1ʳᵉ mesure donnait **17 s** à K=10/max_length 256 → **artefact**
   (contention CPU juste après chargement du modèle) ; deux runs propres concordent :
@@ -781,6 +794,18 @@ demande explicite.
     disponible pour le **score d'abstention** (top-1). **Corrige l'hypothèse J6a antérieure
     (« rerank nuit sur réel »)**, qui était basée sur moins de données (commentaire
     `retrieval/config.py` mis à jour en conséquence).
+
+    > ⚠️ **RECTIFIÉ LE 19/09/2026.** Le raisonnement bénéfice/coût reste valable et les chiffres
+    > d'ablation sont intacts ; c'est sa **traduction en code** qui n'a jamais eu lieu. La
+    > « décision `RERANK_ACTIF_DEFAUT=False` » portait sur une constante que personne ne lisait,
+    > et « le rerank reste disponible pour le score d'abstention » décrit une porte qu'aucune
+    > configuration n'ouvre. Formulation exacte à retenir pour le rapport : **le reranker est
+    > livré et fonctionnel, mais hors du chemin par défaut** — non câblé dans la chaîne de
+    > suggestion. Deux nuances à ne pas perdre en soutenance : l'échantillon réel utile de
+    > l'ablation est **n=25**, pas 46 (21 requêtes sans analogue dans la KB) ; et le coût
+    > « ~8 s/requête » était de la prose, sans artefact — **mesuré depuis** à **6,86 s** à
+    > chaud (K=20, `max_length=512`, 20 documents réels), cf. « Le coût du reranker, enfin
+    > mesuré ». L'ordre de grandeur était bon ; le chiffre exact ne l'était pas.
   - **Ce que l'ablation confirme fortement, c'est le fil rouge** (sémantique vs surface,
     cf. J7) : le **lexical (surface) s'effondre sur le réel** (nDCG@5 **0,885 → 0,196**,
     MRR 0,277) tandis que le **dense (sémantique) porte le réel** (0,518). La **fusion RRF**
@@ -1597,6 +1622,29 @@ demande explicite.
   du backend, qui l'aurait abandonné. Le préchauffage couvre donc bge-m3, le classifieur **et**
   le reranker. *Note d'honnêteté : le raisonnement initial (« /suggest a 60 s, inutile de
   préchauffer le reranker ») a été **invalidé par la mesure**.*
+
+  > ⚠️ **RECTIFIÉ LE 19/09/2026 — l'attribution ci-dessus est FAUSSE, le chiffre est juste.**
+  > Les 71,1 s ont bien été mesurées ; ce n'est pas le reranker qui les causait. Il ne pouvait
+  > pas les causer : la garde `if seuil is not None` de `suggestion.py` existe **depuis J6**
+  > (`631c36c`), soit **avant** cette mesure, et avec `SEUIL_ABSTENTION_DEFAUT = None` le chemin
+  > `/suggest` n'appelle jamais le reranker. L'entrée attribuait le coût au seul modèle qu'elle
+  > venait d'ajouter au préchauffage, sans l'isoler.
+  >
+  > **Ce que la mesure de contrôle a montré** (19/09/2026, cf. la section « Correctif — le
+  > reranker retiré du préchauffage » en fin de journal) : avec **tout** préchauffé — bge-m3,
+  > classifieur **et** reranker — le premier `/suggest` coûtait **encore 40,9 s** contre 15,1 s
+  > et 13,7 s ensuite. Le surcoût de premier appel survivait donc au préchauffage : il ne venait
+  > pas d'un modèle du service `ml`.
+  >
+  > **Cause réelle, isolée par expérience à variable unique** : le chargement de `qwen2.5:7b`
+  > par **Ollama** à la première génération. Service `ml` laissé intact (bge-m3 chargé, reranker
+  > **non** chargé), seul le LLM déchargé puis rechargé — `/suggest` : **13,0 s** (LLM résident)
+  > → **39,8 s** (LLM déchargé) → **11,3 s** (LLM rechargé). Le surcoût suit l'état d'Ollama,
+  > pas celui du reranker. `OLLAMA_KEEP_ALIVE=-1` est ce qui le rend non récurrent ensuite.
+  >
+  > **Conséquence** : le préchauffage du reranker ne protégeait rien. Retiré — les ~2,3 Go de RAM
+  > qu'il immobilisait sont rendus. Le préchauffage de bge-m3 et du classifieur, lui, reste
+  > justifié : il protège le budget de 4 s de `/classify` à la création d'un ticket.
 - **Compose** : services **`ml`** et **`ml-prefetch`** (one-shot qui **charge** les deux modèles
   — un cache corrompu échoue au démarrage de la pile, pas en pleine démonstration), volume
   `hf-cache`, bind-mount `./ml/artifacts` (le candidat de `/reentrainer` apparaît côté hôte).
@@ -2337,3 +2385,174 @@ chaînes de classes sur 42 fichiers.
 - **Trou d'affichage dans la grille de graphiques** : un employé voit 3 cartes dans une
   grille à 2 colonnes, la troisième occupe donc seule sa rangée. Le trou préexistait ; il
   est devenu la fin de page depuis le retrait de la feuille de route. Non traité.
+
+---
+
+# Correctif — le reranker retiré du préchauffage (mémoire rendue, attribution corrigée)
+
+> Séance du **19/09/2026**, branche `audit-et-HR`. Point de départ : une vérification
+> d'annexe avant rédaction du rapport — « le reranker est-il vraiment désactivé par
+> défaut ? ». La lecture du code a montré autre chose qu'un composant désactivé : un
+> composant **jamais câblé**, dont on préchauffait quand même les **~2,3 Go** à chaque
+> démarrage. La séance a mesuré, corrigé, remesuré — et au passage **réfuté une
+> attribution de cause inscrite en Phase 7**. C'est ce second point qui compte le plus
+> pour la soutenance : une mesure qui corrige une mesure antérieure.
+
+## Le constat, établi par lecture puis confirmé à l'exécution
+
+Trois faits, chacun vérifiable indépendamment :
+
+| Fait | Preuve |
+| --- | --- |
+| `RERANK_ACTIF_DEFAUT` n'était lue par aucune ligne de code | `grep` sur le dépôt : sa définition, plus quatre mentions en documentation. Zéro lecture. |
+| La porte qui seule appellerait le reranker ne s'ouvre jamais | `if seuil is not None` avec `SEUIL_ABSTENTION_DEFAUT = None`, que rien ne règle (aucune variable d'environnement ; `SEUIL_CONFIANCE_IA` absent du registre backend, §6.5) |
+| `POST /rerank` n'a aucun appelant dans le projet | le backend n'appelle que `/classify` et `/suggest` ; aucune occurrence de `rerank` dans `backend/src` ni `frontend/src` |
+
+Confirmation à l'exécution, et c'est elle qui tranche : **`confiance = None` sur les trois
+appels `/suggest` de la mesure de référence**, puis sur les six de la mesure d'après. Le
+champ `confiance` n'est renseigné que si la porte s'ouvre. Elle ne s'est jamais ouverte.
+
+## Les mesures — avant, après
+
+Protocole identique de part et d'autre : `docker compose down`, puis `up -d`, attente de
+`/sante`, attente de la fin du préchauffage, relevés `docker stats` au repos, série de
+`POST /suggest` sur une requête unique. Cache HF déjà peuplé dans les deux cas.
+
+| Mesure | Avant | Après |
+| --- | --- | --- |
+| Lignes `[warmup]` | 3 — `embeddings 4,9 s` · `classifieur 0,0 s` · `reranker 2,3 s` | 2 — `embeddings 4,7 s` · `classifieur 0,0 s` |
+| **RAM du conteneur `ml` au repos** | **5,104 GiB** (32,95 %) | **2,737 GiB** (17,67 %) |
+| RAM, conteneur recréé (contrôle) | — | 2,799 GiB (18,07 %) |
+| `/sante` → `reranker.modele_charge` | `true` | `false` (clé conservée) |
+| `/suggest` #1 | **40,9 s** | **33,3 s** |
+| `/suggest` suivants | 15,1 · 13,7 s | 10,7 · 11,2 · 10,9 · 10,7 · 10,8 s |
+| `confiance` rapportée | `None` ×3 | `None` ×6 |
+| `/rerank` à chaud | 0,53 s | 0,45 · 0,42 s |
+| `/rerank` premier appel | 0,53 s (préchauffé) | **3,45 s** (chargement paresseux) |
+| Suite de tests ML | — | **56 passed** |
+
+**Gain net : −2,3 Go de RAM résidente** (5,104 → 2,799 GiB sur conteneur neuf).
+
+Deux contrôles d'équivalence, parce qu'une baisse de RAM ne vaut rien si le comportement
+change :
+
+- `/rerank` rend des scores **identiques au bit près** avant et après —
+  `[0.0007941364892758429, 1.6183814295800403e-05, 0.4577465355396271]`.
+- `modele_charge` bascule `false → true` au premier `/rerank`, la RAM passant de 2,82 à
+  **5,27 GiB**. Ce **+2,45 GiB** mesure l'empreinte du reranker par une seconde voie,
+  indépendante de la première, et confirme que c'est bien lui qu'on a cessé de charger.
+
+**Ce que l'on ne prétend PAS.** Le gain de latence sur `/suggest` (40,9 → 33,3 s, puis
+~14 → ~11 s) **n'est pas attribué au correctif** : le reranker n'a jamais été dans ce
+chemin, en retirer le préchauffage ne peut pas l'accélérer directement. L'explication
+plausible est indirecte — 2,3 Go rendus sur un hôte de 15,49 GiB qui fait aussi tourner
+Ollama. À retenir comme « aucune dégradation », pas comme une accélération.
+
+## Le coût du reranker, enfin mesuré — la mesure qui manquait au dossier
+
+Jusqu'ici, la décision de ne pas câbler le reranker s'appuyait sur **un bénéfice mesuré**
+(l'ablation) et **un coût de prose** : le « ~8 s/requête » inscrit au journal ne venait
+d'aucun artefact — le JSON d'ablation ne contient aucun champ de latence, et les deux
+chiffres par paire en circulation (368 ms dans la docstring du module, 410 ms au
+dimensionnement J6) ne concordaient pas. Mesure faite le 19/09/2026 pour clore ce trou.
+
+**Protocole.** `POST /rerank` sur **20 documents réels de la base de connaissances**
+(K = `K_CANDIDATS` livré), extraits par la requête exacte du harnais — `_FILTRE_KB` plus
+le `COALESCE(t.resolution, 1er commentaire)` de `_charger_docs`, au format reranké
+`titre / description / résolution`. Longueur des documents : min 228, médiane 330, max 426
+caractères. Requête = un ticket VPN entrant de 255 caractères. `max_length = 512`, le
+défaut **réellement livré** (et non le 256 du dimensionnement annoncé). Trois mesures à
+froid, chacune sur un conteneur `ml` recréé.
+
+| Série | Médiane | Étendue |
+| --- | --- | --- |
+| **À froid, K=20** (chargement du modèle inclus) | **9,98 s** | 9,24 – 10,04 |
+| **À chaud, K=20** | **6,86 s** | 6,63 – 7,08 → **343 ms/paire** |
+| **À chaud, K=1** (coût qu'aurait la porte d'abstention) | **0,379 s** | 0,349 – 0,405 |
+
+**Ce que le chiffre change, et ce qu'il ne change pas.**
+
+- **L'argument de latence tient, et devient vérifiable.** 6,86 s à chaud dépasse le budget
+  CDC de < 5 s. Le « ~8 s » de la prose était donc du bon ordre de grandeur, légèrement
+  surestimé ; il est remplacé partout par **6,86 s mesuré**. Les 343 ms/paire mesurés se
+  situent entre les deux chiffres qui circulaient, sans les départager rétroactivement —
+  ils ont été relevés sur une autre configuration (`max_length=512`, corpus réel).
+- **Mais il ne justifie que le non-réordonnancement.** La **porte d'abstention** ne
+  rerank qu'une seule paire : **0,379 s**, soit ~3 % d'un `/suggest` qui coûte déjà 11 à
+  33 s à cause de la génération. **La latence n'est donc pas ce qui tient la porte
+  fermée** — c'est l'absence de seuil calibré (posture J5 : aucun seuil figé sur du
+  synthétique). Distinction à tenir en soutenance : un jury qui entend « trop lent »
+  demandera pourquoi la porte, elle, n'est pas branchée.
+
+La décision repose désormais sur **un bénéfice mesuré** (nDCG@5 +0,01, MRR −0,06 sur le
+réel, n=25) et **un coût mesuré** (6,86 s à K=20), sans rien d'invérifiable.
+
+## L'attribution des 71,1 s, réfutée par expérience
+
+L'entrée de Phase 7 attribuait un premier `/suggest` à 71,1 s au chargement du reranker
+dans la requête. La mesure de référence l'a contredite : **tout étant préchauffé,
+reranker compris, le premier `/suggest` coûtait encore 40,9 s.** Le surcoût survivait donc
+au préchauffage.
+
+Expérience à **variable unique** pour isoler la cause — service `ml` laissé intact,
+bge-m3 chargé, reranker **non** chargé (`modele_charge: false` vérifié à chaque étape),
+seul le LLM déchargé puis rechargé côté Ollama :
+
+| Étape | État Ollama | `/suggest` |
+| --- | --- | --- |
+| A — témoin | `qwen2.5:7b` résident | **13,0 s** |
+| B — `ollama stop qwen2.5:7b` | vide | **39,8 s** |
+| C — rechargé par l'appel B | `qwen2.5:7b` résident | **11,3 s** |
+
+Le surcoût suit l'état d'Ollama, pas celui du reranker, et l'étape B reproduit les 40,9 s
+du premier appel. **Cause réelle : le chargement de `qwen2.5:7b` par Ollama à la première
+génération** — non récurrent ensuite grâce à `OLLAMA_KEEP_ALIVE=-1`.
+
+*Enseignement de méthode, à réutiliser :* l'entrée de Phase 7 a attribué un coût au seul
+composant qu'elle venait d'ajouter au préchauffage, sans l'isoler. Le correctif n'a pas
+consisté à mieux raisonner, mais à **ne changer qu'une variable à la fois**.
+
+## Ce qui a été livré
+
+| Fichier | Changement |
+| --- | --- |
+| `service/app.py` | `reranker.charger_modele` retiré de `_prechauffer()` — **suppression sèche, pas de drapeau**. Un `IA_WARMUP_RERANKER` aurait recréé la confusion de `RERANK_ACTIF_DEFAUT` : il aurait laissé croire qu'on *active* le reranker alors qu'on ne ferait que le *charger en RAM*. Commentaire remplacé par l'état réel, avec la consigne de **remettre le préchauffage ici** si `suggestion.py` est recâblé. |
+| `retrieval/config.py` | `RERANK_ACTIF_DEFAUT` **supprimée**. Un drapeau qui ne commande rien est pire qu'une absence de drapeau. Remplacée par un commentaire disant les trois vérités : constante morte, porte fermée, ordre `"rrf"` en dur. |
+| `eval/run_retrieval.py` | Le harnais **imprimait `RERANK_ACTIF_DEFAUT=False` dans le pied de chaque rapport d'ablation généré**. Sans retouche, toute régénération future aurait cité une constante disparue. |
+
+Les deux rapports d'ablation archivés (`ml/eval/reports/j6/` et `ml/artifacts/eval/`)
+**n'ont pas été touchés** : artefacts datés du 27/07/2026, les réécrire falsifierait la
+trace de ce qui avait été décidé alors. La rectification vit ici, pas dans l'archive.
+
+## Ce qui a été prouvé, et comment
+
+- **Le reranker ne s'exécutait pas** — `confiance = None` sur neuf appels `/suggest` au
+  total, avant comme après.
+- **Il coûtait ~2,3 Go** — deux mesures indépendantes : la différence avant/après au repos
+  (5,104 → 2,799 GiB) et le saut au chargement paresseux (2,82 → 5,27 GiB).
+- **Le correctif ne casse rien** — scores `/rerank` identiques au bit près, `/classify`
+  dans son budget (3,55 s au premier appel, puis 0,19 et 0,25 s), **56 tests au vert**.
+- **Les 71,1 s ne venaient pas du reranker** — expérience à variable unique, trois points.
+
+## Dettes assumées et documentées
+
+- **Le dimensionnement annoncé n'est pas celui qui tourne.** Le journal J6 inscrit comme
+  décision NFR `K_prod=10, max_length=256` (mesuré : 4,08 s, sous le budget CDC < 5 s,
+  contre 10,6 s à K=20). Le code livré porte `K_CANDIDATS = 20` (`retrieval/config.py`) et
+  `RERANK_MAX_LENGTH` par défaut **512** (`service/config.py`) ; ni le `docker-compose.yml`
+  ni `.env.example` ne les surchargent. Vérifié à l'exécution : `/sante` rapporte
+  `"max_length": 512`. **Écart signalé, délibérément non corrigé dans cette séance** — il
+  ne change rien tant que le reranker reste hors du chemin, mais il devra être tranché
+  *avant* tout recâblage, sinon le premier usage réel partirait sur un dimensionnement
+  explicitement écarté à la mesure. À ne pas présenter en soutenance comme « dimensionné
+  pour la production » : le dimensionnement a été *mesuré*, pas *appliqué*.
+- **`POST /rerank` reste un endpoint sans appelant.** Conservé volontairement : il est le
+  point d'entrée qui rend le composant démontrable en soutenance, et le seul moyen de
+  l'exercer sans modifier le code. Son premier appel paie désormais 3,45 s de chargement.
+- **La porte d'abstention reste un mécanisme sans réglage.** `SEUIL_ABSTENTION_DEFAUT =
+  None` est cohérent avec la posture J5 (aucun seuil figé sur du synthétique), mais tant
+  que `SEUIL_CONFIANCE_IA` n'entre pas au registre des paramètres (§6.5), le mécanisme
+  n'est pas atteignable en exploitation.
+- **La comparaison de latence est bruitée.** À requête identique, le premier appel a rendu
+  une suggestion citée et les suivants se sont abstenus par grounding, dans les deux
+  séries. Les écarts de quelques secondes entre séries ne sont pas interprétables.

@@ -2448,6 +2448,24 @@ chemin, en retirer le préchauffage ne peut pas l'accélérer directement. L'exp
 plausible est indirecte — 2,3 Go rendus sur un hôte de 15,49 GiB qui fait aussi tourner
 Ollama. À retenir comme « aucune dégradation », pas comme une accélération.
 
+> ⚠️ **RECTIFIÉ LE 21/09/2026 — les lignes `/suggest` de ce tableau comparent deux
+> régimes différents et ne doivent pas être lues comme un avant/après.** Les appels
+> « suivants » à ~10,8 s étaient des **abstentions** (`abstenu=True`), dont la réponse
+> générée est courte ; l'appel #1, lui, produisait une suggestion citée. Or la génération
+> coûte ~135 ms par jeton de sortie : un chemin court et un chemin long ne se comparent
+> pas. Mesuré ensuite à requêtes toutes non abstenues, le régime réel est de **19 à 27 s**
+> sur CPU, jamais ~11 s. **La prudence affichée ci-dessus (« aucune dégradation, pas une
+> accélération ») reste donc juste, mais pour une raison plus forte que celle écrite :
+> les deux séries n'étaient pas comparables.**
+>
+> **Le correctif lui-même n'est en rien remis en cause** — il ne portait pas sur la
+> latence : RAM 5,104 → 2,799 GiB, `/rerank` identique au bit près, `/classify` dans son
+> budget, 56 tests au vert. Ces lignes-là sont mesurées à protocole constant.
+>
+> Leçon de méthode, à retenir pour le mémoire : **une médiane n'a de sens que sur une
+> population homogène.** Il fallait séparer les appels abstenus des autres avant de
+> comparer quoi que ce soit. Cf. la section « Latence de la suggestion » en fin de journal.
+
 ## Le coût du reranker, enfin mesuré — la mesure qui manquait au dossier
 
 Jusqu'ici, la décision de ne pas câbler le reranker s'appuyait sur **un bénéfice mesuré**
@@ -2556,3 +2574,311 @@ trace de ce qui avait été décidé alors. La rectification vit ici, pas dans l
 - **La comparaison de latence est bruitée.** À requête identique, le premier appel a rendu
   une suggestion citée et les suivants se sont abstenus par grounding, dans les deux
   séries. Les écarts de quelques secondes entre séries ne sont pas interprétables.
+
+---
+
+# Latence de la suggestion — où passe réellement le temps, et ce que la mesure a corrigé
+
+> Séance des **20–21/09/2026**, branche `audit-et-HR`. Point de départ : un premier
+> `/suggest` à 33 s, qu'on croyait dû au chargement du LLM. La séance a **réfuté
+> successivement trois hypothèses** — le cache d'invite, le chargement du modèle, le
+> préchauffage du chemin de génération — avant d'établir la vraie cause dominante :
+> **l'inférence tourne à 100 % sur processeur**. Elle a aussi invalidé une comparaison
+> antérieure et mis au jour une limite de la garde d'ancrage. Plusieurs des résultats
+> ci-dessous sont des *réfutations* : c'est leur intérêt.
+
+## Ce qui a été réfuté, et par quoi
+
+| Hypothèse | Verdict | Ce qui l'a tranchée |
+| --- | --- | --- |
+| Le cache d'invite gonflait nos mesures « à chaud » | **Réfutée** | Série de 6 tickets **différents** (médiane 23,85 s) contre le **même** ticket ×6 (25,36 s) : répéter ne va pas plus vite |
+| Le premier appel paie le chargement de `qwen2.5:7b` | **Réfutée** | Journal Ollama : **1 seul** chargement depuis le boot, celui d'`ollama-prefetch`, et **0 éviction** ; le modèle était résident |
+| Le surcoût vient du chemin de génération non préchauffé | **Réfutée** | Un `/api/chat` de production joué *avant* le premier `/suggest` ne change rien : 43,55 s → 44,28 s |
+
+## L'inférence tourne à 100 % sur processeur — **deux causes distinctes**
+
+C'est le facteur dominant de **toutes** nos latences, et il faut nommer les deux causes
+séparément, car on les confond volontiers :
+
+1. **Le compose de base ne passe pas le GPU au conteneur.** `docker inspect` →
+   `DeviceRequests: []` ; le journal Ollama annonce `inference compute id=cpu library=cpu`
+   et `vram-based default context total_vram="0 B"`. Ollama **ignore jusqu'à l'existence**
+   de la carte. C'est un choix documenté : `deploy.resources.devices` ne dégrade pas sur
+   une machine sans GPU, il **empêche le conteneur de démarrer** — le compose de base est
+   la voie de livraison, il doit rester portable.
+2. **Et même avec le GPU passé, les 4 Go de VRAM ne suffisent pas.** `qwen2.5:7b` pèse
+   ~5 Go chargé : le déport ne peut être que **partiel**.
+
+La première cause est une décision d'architecture, la seconde une contrainte matérielle.
+La lever ne suffit pas à lever l'autre.
+
+## Où passe le temps — plan 2×2 (CPU)
+
+Sonde directe sur `/api/chat`, compteurs internes d'Ollama (qui séparent le traitement de
+l'invite de la génération), **12 invites distinctes, une par appel**, variantes
+entrelacées. *Un premier jet rejouait les mêmes invites d'une variante à l'autre et
+mesurait en réalité le cache de préfixe (`prompt_eval` tombait à 0,16 s) — refait.*
+
+| Variante | Invite | `prompt_eval` | Sortie | **ms/jeton** | Mur |
+| --- | --- | --- | --- | --- | --- |
+| RAG longue + schéma *(production)* | 509 j | 9,64 s | 71 j | **138,3** | 22,75 s |
+| RAG longue, sans schéma | 522 j | 8,18 s | 64 j | **133,2** | 16,80 s |
+| Courte + schéma | 269 j | 1,97 s | 86 j | **136,8** | 12,47 s |
+| Courte, sans schéma *(témoin)* | 256 j | 2,51 s | 74 j | **136,7** | 13,23 s |
+
+Trois lectures, de la plus solide à la plus fragile :
+
+1. **La vitesse de génération est constante : ~135 ms/jeton (~7,4 jetons/s) dans les
+   quatre cases.** C'est la signature d'une inférence CPU, et le signal le plus net.
+2. **Le traitement de l'invite croît fortement avec sa longueur** — ~260 jetons → ~2,0–2,5 s,
+   ~510 jetons → ~8,2–9,6 s. Le coût *par jeton* double aussi (7–10 → 16–19 ms), cohérent
+   avec une attention quadratique.
+3. **L'effet du décodage contraint (`format=schema`) est dans le bruit.** Il n'est pas le
+   coupable. Prudence assumée : les valeurs individuelles sont dispersées.
+
+Le chemin de production se décompose donc en **~9,6 s d'invite + ~9,8 s de génération**,
+moitié-moitié, le reste étant de l'enveloppe.
+
+## Le GPU — le levier principal, déjà présent au dépôt
+
+Surcouche `docker-compose.gpu.yml`, qui ne vise que le service `ollama` : **`ml` n'a pas
+accès au GPU**, bge-m3 et le classifieur restent sur CPU et ne disputent pas les 4 Go.
+Déport mesuré : `load_tensors: offloaded 12/29 layers to GPU`, `ollama ps` →
+`55%/45% CPU/GPU`, **~2,3 Go de VRAM occupés sur 4**.
+
+| Mesure | CPU seul | Avec la surcouche | Facteur |
+| --- | --- | --- | --- |
+| `/suggest`, médiane (6 tickets, hors 1ᵉʳ) | **23,85 s** | **8,54 s** | **2,8×** |
+| Traitement de l'invite (509 jetons) | 18,9 ms/jeton | **1,4 ms/jeton** | **13,8×** |
+| Génération | 138,3 ms/jeton | **91,5 ms/jeton** | 1,5× |
+| Mur, chemin de production | 22,75 s | **6,15 s** | 3,7× |
+
+L'écart se loge presque entièrement dans le **traitement de l'invite**, parallélisable donc
+porté par les couches déportées. La génération ne gagne que 1,5×, limitée par la bande
+passante mémoire et par les **17 couches sur 29 restées au processeur**.
+
+> ⚠️ **Réserve à ne jamais omettre en soutenance : ce gain est propre à CETTE machine.**
+> Il ne se transpose pas à un serveur de livraison sans GPU, où les latences CPU
+> ci-dessus restent la référence. Le compose de base demeure le défaut portable ; la
+> surcouche est la **configuration de démonstration**, documentée comme telle au README.
+
+## Le surcoût du premier appel — reproductible, **non attribué**
+
+| Configuration | 1ᵉʳ `/suggest` | Régime du même boot | Excédent |
+| --- | --- | --- | --- |
+| CPU | 43,55 s | 26,55 / 25,60 s | **+17,5 s** |
+| CPU, avec préchauffage du chemin de production | 44,28 s | 30,15 / 29,47 s | **+14,5 s** |
+| GPU | 16,18 s | 8,54 s | **+7,6 s** |
+
+Reproductible (42,73 puis 43,55 s sur deux boots), payé **une fois par redémarrage du
+service `ml`**, donc **sans effet en exploitation** : un service qui tourne ne le paie
+plus. Recherche de cause **arrêtée** par décision.
+
+**Hypothèse testée et réfutée** : le préchauffage d'`ollama-prefetch` n'emprunte pas le
+chemin de production (`/api/generate`, invite courte, sans schéma) alors que `/suggest`
+utilise `/api/chat` avec ~510 jetons et `format=schema`. Un appel manuel reproduisant
+exactement le chemin de production, joué **avant** le premier `/suggest`, n'a rien changé
+(43,55 → 44,28 s, excédent +17,5 → +14,5 s, écart noyé dans la variance entre boots).
+
+**Observation ouverte, non expliquée** : l'excédent **diminue nettement en configuration
+GPU** (+17,5 → +7,6 s) alors que `ml` — bge-m3, classifieur, Postgres — reste intégralement
+sur CPU dans les deux cas. C'est ce qui avait motivé l'hypothèse « le surcoût est dans
+Ollama », laquelle a pourtant été réfutée. La contradiction est consignée telle quelle,
+sans explication de complaisance.
+
+## Variance entre démarrages — règle de lecture
+
+Deux boots CPU, même protocole, ont donné des régimes de **~26 s** et **~30 s**. Soit
+~15 % d'écart imputable à la machine (thermique, charge de fond) et non au code.
+
+> **Règle : aucune mesure de latence prise sur un seul démarrage ne doit être lue à mieux
+> que ~15 % près.** Les comparaisons de cette séance qui portent sur moins que cela — le
+> +17,5 contre +14,5 s ci-dessus — ne concluent rien, et c'est écrit.
+
+## Déterminisme — pourquoi deux clics peuvent différer
+
+Constat de départ : la même requête a rendu `abstenu=False` puis `abstenu=True`. Deux
+explications ont été écartées **par le code** :
+
+- **Effet d'état** (le ticket deviendrait son propre candidat) : impossible. Aucun
+  `INSERT`/`UPDATE`/`DELETE` dans `retrieval/` ni `service/app.py` — `/suggest` lit, Node
+  reste seul écrivain — et le filtre KB n'admet que `RESOLU`/`CLOTURE`.
+- **Température** : `generation.py` passe explicitement `temperature=0.0`, écrasant le
+  défaut 0,8 du client. Le décodage est **glouton**, il n'y a pas de tirage aléatoire.
+
+Le mécanisme réel est ailleurs. L'abstention observée est celle **d'ANCRAGE**, décidée
+**après** génération (`if not sources`), selon que le modèle a cité ou non des `#id`
+valides. Or un décodage glouton n'est reproductible que si le **chemin numérique** est
+identique ; il ne l'est pas nécessairement d'un appel à l'autre (état du cache KV,
+découpage des lots). Près d'une frontière de décision, un quasi-ex æquo bascule.
+
+**Corroboration** : à invites et température identiques, la passe GPU a produit des
+citations différentes de la passe CPU (#168 : 3 sources → 2 ; #170 : 2 → 3).
+
+> **Conséquence pour l'interprétation de TOUTES nos mesures de qualité** : elles ont été
+> prises **sur CPU**. La configuration GPU **diffère sur les citations limites**. Les
+> chiffres d'ablation, de κ et de macro-F1 du journal restent ceux du CPU ; ne pas les
+> présenter comme valables à l'identique en configuration de démonstration.
+
+Ce n'est pas systématique : six appels sur un même ticket ont donné 6/6 le même résultat.
+Seuls les cas limites basculent.
+
+## Tickets de démonstration — critère 5/5
+
+22 tickets réels testés, **5 appels consécutifs chacun**, en configuration GPU. Critère de
+sélection : **même décision d'abstention ET mêmes sources citées sur les 5 appels**.
+
+| Ticket | Catégorie | Cas | Sources | Médiane |
+| --- | --- | --- | --- | --- |
+| **#282** Provisionnement VPN prestataire | Accès | multi-sources (3) | `[38, 124, 644]` | 9,54 s |
+| **#151** Station d'accueil ne charge pas | Matériel | multi-sources (2) | `[28, 678]` | 6,36 s |
+| **#323** DNS ne résout plus les internes | Réseau | **source unique** | `[606]` | 6,63 s |
+| **#108** Élévation droits admin | Accès | multi-sources (3) | `[70, 691, 760]` | 8,71 s |
+| *(réserve)* **#330** Besoin logiciel notes | Autre | source unique | `[209]` | 7,76 s |
+
+**Exclus** : #289, #290, #154, #267, #339 — **instables**, la variation portant toujours
+sur **une** source à la marge, jamais sur la décision d'abstention. Exclu aussi **#168**,
+stable mais à 23,41 s de médiane contre 6–13 s pour les autres.
+
+**Abstention : aucune dans les 22 tickets réels.** La KB de 723 documents couvre tout ce
+vivier. Pour la démontrer, il faut un ticket **hors périmètre**, créé en direct et annoncé
+comme tel. Retenus, 5/5 en version **accentuée** (celle qui sera tapée — les accents
+déplacent les valeurs : 0,77 → 0,7496) :
+
+- **Écran Dell qui clignote** — classifieur `Matériel` **0,7496**, abstention 5/5, 17,26 s.
+  Cas principal : le classifieur a raison **et** le RAG reconnaît qu'aucun ticket passé ne
+  couvre le problème. Deux briques indépendantes, deux formes d'honnêteté.
+- **Fuite d'eau dans les sanitaires** — classifieur `Matériel` **0,4296**, abstention 5/5,
+  7,31 s. En secours.
+
+Fidélité vérifiée : Node envoie `{titre, description}` **bruts**, sans prétraitement ni
+ajout du texte OCR — l'appel direct est identique au chemin de l'interface. *Contrainte de
+mise en scène : `demanderSuggestion` exige un ticket **`EN_COURS`** et un demandeur
+**technicien assigné ou administrateur**.*
+
+## Le classifieur n'est pas calibré — et cela se verra
+
+Il attribue **toujours** l'une des cinq catégories : il n'a pas de classe « hors
+périmètre ». Sur nos candidats hors domaine, la confiance tombe à **0,29–0,49** contre
+**0,7496** pour un cas du domaine — le modèle exprime son doute par une confiance basse,
+pas en changeant de classe. À dire au jury plutôt qu'à masquer.
+
+L'interface le traduit par un **seuil d'affichage** : `SEUIL_CONFIANCE_AFFICHAGE = 0.5`
+(`frontend/src/pages/TicketDetailPage.tsx`). Sous ce seuil la catégorie **n'est pas
+masquée** — elle est grisée (`opacity-60`) et accompagnée de « ⚠ Faible confiance — à
+préciser ». Le pourcentage est toujours affiché. Écran Dell → « confiance 75 % », sans
+avertissement ; plomberie → « confiance 43 % » **avec** l'avertissement.
+
+> **Dette** : c'est une **constante en dur dans le frontend**, distincte du seuil
+> d'abstention du modèle. Elle rejoint la liste des seuils à rendre réglables par
+> l'Administration (§6.5), aux côtés de `SEUIL_CONFIANCE_IA`, absent du registre backend.
+
+## La garde d'ancrage ne vérifie pas la pertinence — le résultat le plus important
+
+L'entrée **J6b** rapportait deux abstentions de démonstration : « imprimante HP » et
+« écran Dell ». **Une seule tient encore** avec la KB actuelle de 723 documents.
+
+Le cas imprimante (stries d'impression) cite désormais le **ticket #735**. Lecture faite :
+#735 s'intitule **« Imprimante HP bourrage papier »**, sa résolution est « un morceau de
+papier coincé… retiré les débris du mécanisme d'alimentation ». **Aucun rapport de fond
+avec des stries — un défaut de toner ou de tambour.** Le seul point commun est
+« imprimante HP », et le ticket est par surcroît `synthetique`.
+
+**Ce n'est donc pas une amélioration par croissance de la base : c'est un FAUX ANCRAGE.**
+
+La limite, énoncée sans ménagement : le contrôle dit « anti-hallucination » de
+`generation.py` **ne vérifie que la validité des identifiants cités** — que le `#id`
+figure parmi les documents fournis. **Il ne vérifie pas la pertinence.** Un modèle qui
+cite un document fourni mais hors sujet passe le contrôle sans être inquiété. La garde
+protège contre l'**invention** d'une source, pas contre un **mauvais appariement**.
+
+### Le reranker aurait-il séparé ce cas ? Non.
+
+Le composant conçu pour juger la pertinence d'un couple requête-document existe — c'est le
+reranker, et la porte d'abstention fermée ferait exactement ce contrôle. Mesure faite sur
+16 couples, aux formats exacts de `score_abstention` :
+
+| Score | Couple |
+| --- | --- |
+| 0,99723 | #151 → #28 *(légitime)* |
+| 0,99640 | #323 → #606 *(légitime)* |
+| 0,99555 | #151 → #678 *(légitime)* |
+| 0,98917 | #108 → #760 *(légitime)* |
+| 0,98305 | #108 → #70 *(légitime)* |
+| **0,95973** | **imprimante → #735 — FAUX ANCRAGE** |
+| 0,92328 | #282 → #38 *(légitime)* |
+| 0,91168 | #282 → #124 *(légitime)* |
+| 0,89262 | #282 → #644 *(légitime)* |
+| 0,82486 | #108 → #691 *(légitime)* |
+| 0,09502 | écran Dell → #465 *(abstention)* |
+| ≤ 0,00506 | 5 autres candidats des cas d'abstention |
+
+**Le faux ancrage obtient 0,96 — au-dessus des trois couples VPN du #282, pourtant
+parfaitement pertinents. Aucun seuil ne peut l'écarter sans détruire des suggestions
+légitimes.** Le reranker juge une **parenté thématique** (« deux pannes d'imprimante HP
+avec résolution »), pas si la résolution traite le **symptôme**. La limite est donc plus
+profonde qu'un réglage : elle ne se corrige pas en ouvrant la porte d'abstention.
+
+Ce que la mesure montre en revanche, c'est que cette porte remplirait bien **sa fonction
+d'origine** : les six candidats des cas d'abstention plafonnent à **0,095**, deux ordres de
+grandeur sous les couples légitimes. Elle sépare « aucun document pertinent » de « un
+document pertinent » ; elle ne sépare pas « pertinent » de « thématiquement voisin ».
+
+> **Illustration, PAS calibration.** Seize couples ne fixent pas un seuil. Ce tableau
+> montre une propriété qualitative, il ne fonde aucune valeur opérationnelle.
+
+### Ce que ferait la porte d'abstention si on l'ouvrait
+
+Vérifié dans `retrieval/suggestion.py` : la porte est évaluée **avant** la génération —
+elle retourne (ligne 65) en amont de l'appel à `generation.generer` (ligne 69). L'ouvrir
+aurait donc un effet réel, mais pas celui qu'on pourrait espérer :
+
+- **Elle écarterait tôt les absences nettes de correspondance.** Sur ces seize couples,
+  les candidats des cas d'abstention plafonnent à **0,095** quand les couples légitimes
+  démarrent à **0,82** : un seuil intermédiaire les trancherait sans hésitation, et
+  **économiserait la génération** — 10 à 25 s selon la configuration.
+- **Mais elle ne changerait RIEN au faux ancrage**, qui score 0,96 et passerait toute
+  porte laissant vivre les suggestions légitimes.
+- **Et ces cas sont déjà rattrapés** en aval par l'abstention d'ancrage : le résultat
+  rendu à l'utilisateur serait identique, seulement obtenu plus vite.
+
+**Conclusion : l'intérêt d'ouvrir la porte est la LATENCE, pas la PERTINENCE.** C'est un
+argument honnête pour le flywheel J9, et il ne faut pas le présenter comme un gain de
+qualité. *Illustration sur seize couples, pas une calibration.*
+
+### Pourquoi la décision finale reste au technicien — la raison est désormais mesurée
+
+Le faux ancrage du #735 relie ce chapitre au choix d'architecture le plus structurant du
+module : **la validation humaine**.
+
+**Aucune garde automatique de la chaîne ne distingue une résolution thématiquement proche
+mais fausse.** Ni le contrôle des identifiants cités — il vérifie qu'un `#id` figure parmi
+les documents fournis, rien de plus. Ni le cross-encoder — il note 0,96 un couple jugé
+faux à la lecture, au-dessus de couples parfaitement pertinents. Les deux gardes sont
+efficaces contre ce pour quoi elles ont été conçues, l'invention d'une source et l'absence
+de correspondance ; **aucune ne couvre le mauvais appariement**.
+
+Le système est donc structurellement capable de produire une suggestion **bien formée,
+correctement citée, traçable jusqu'à un ticket réel de la base — et fausse**. Un
+technicien qui lirait #735 verrait immédiatement qu'un bourrage papier ne répond pas à des
+stries d'impression ; aucun composant de la chaîne ne le voit.
+
+**C'est ce qui fait passer la validation humaine du statut de principe de conception à
+celui de garde-fou mesuré.** Elle n'est pas dans l'architecture par prudence de façade ni
+par conformité : elle y est parce qu'**il existe une classe d'erreurs que rien d'autre,
+dans cette chaîne, ne peut attraper** — et nous en tenons un exemple reproductible. Le
+module *suggère* ; il ne décide pas. À présenter en soutenance avec ce cas à l'appui,
+plutôt qu'avec une déclaration d'intention.
+
+## Dettes assumées et documentées
+
+- **Surcoût du premier appel non attribué** (~15–18 s sur CPU), recherche arrêtée par
+  décision. Sans effet en exploitation, mais visible lors d'une démonstration juste après
+  un redémarrage : **lancer un `/suggest` à blanc avant de présenter**.
+- **Faux ancrage possible, et non détectable par les gardes en place** — ni le contrôle
+  d'identifiants, ni le reranker. C'est la limite de fond du module de suggestion.
+- **L'entrée J6b n'est plus reproductible** sur le cas imprimante. Conservée, rectifiée
+  ci-dessus.
+- **`SEUIL_CONFIANCE_AFFICHAGE = 0.5` en dur dans le frontend** — à rendre réglable.
+- **Mesures de qualité prises sur CPU** ; la configuration GPU diffère sur les citations
+  limites. Aucune n'a été rejouée sur GPU.

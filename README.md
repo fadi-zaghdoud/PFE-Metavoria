@@ -190,7 +190,7 @@ ML_OLLAMA_HOST=http://host.docker.internal:11434
 un serveur Linux sans `extra_hosts: host-gateway`. La pile échouerait précisément
 là où elle est censée être déployée.
 
-### 6. Accélération GPU (optionnelle)
+### 6. Accélération GPU — **configuration de démonstration**
 
 Sur une machine dotée d'un GPU NVIDIA et du NVIDIA Container Toolkit :
 
@@ -198,9 +198,33 @@ Sur une machine dotée d'un GPU NVIDIA et du NVIDIA Container Toolkit :
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 ```
 
+**C'est la commande à utiliser pour une démonstration ou une soutenance.** Le
+compose de base, lui, reste le défaut **portable** : c'est la voie de livraison,
+qui doit fonctionner sur un serveur nu.
+
 Fichier **séparé** à dessein : un bloc `deploy.resources.devices` ne se dégrade
 pas sur une machine sans GPU — il **empêche le conteneur de démarrer**. Le compose
 de base reste donc portable, le GPU est un accélérateur, pas un prérequis.
+
+**Ce que la surcouche change, mesuré** (RTX 3050 Ti Laptop 4 Go, `qwen2.5:7b`,
+mêmes 6 tickets, même ordre — cf. journal technique) :
+
+| | CPU seul | Avec la surcouche |
+| --- | --- | --- |
+| `POST /suggest`, médiane | **23,9 s** | **8,5 s** |
+| Traitement de l'invite (509 jetons) | 18,9 ms/jeton | **1,4 ms/jeton** |
+| Génération | 138 ms/jeton | **92 ms/jeton** |
+
+Le GPU ne reçoit que **12 couches sur 29** (`55%/45% CPU/GPU`, ~2,3 Go de VRAM
+occupés sur 4) : 4 Go ne suffisent pas à loger les ~5 Go du modèle. Le gain vient
+donc surtout du **traitement de l'invite**, parallélisable ; la génération, limitée
+par la bande passante mémoire, ne gagne que ~1,5×.
+
+> ⚠️ Ce gain est **propre à cette machine**. Il ne se transpose pas à un serveur de
+> livraison sans GPU, où les latences CPU ci-dessus restent la référence.
+
+Le service `ml` **n'a pas accès au GPU** (la surcouche ne vise que `ollama`) :
+bge-m3 et le classifieur restent sur CPU et ne disputent pas les 4 Go.
 
 ### 7. Arrêt et remise à zéro
 

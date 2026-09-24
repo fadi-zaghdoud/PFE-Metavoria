@@ -83,7 +83,7 @@ function CarteBarres({
       style={{ animationDelay: `${index * 80}ms` }}
     >
       <CardHeader title={titre} description={description} />
-      <CardContent className="space-y-0.5">
+      <CardContent className="@container space-y-0.5">
         {vide ? (
           <p className="py-6 text-center text-sm text-slate-400">Aucune donnée sur la période.</p>
         ) : (
@@ -92,8 +92,15 @@ function CarteBarres({
               key={d.cle ?? d.label}
               className="group -mx-2 flex items-center gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-slate-50"
             >
+              {/* La colonne de libellés s'élargit avec LA CARTE, pas avec l'écran : en
+                  bandeau pleine largeur, « Youssef Mansour » et « Nadia Khelifi » tenaient
+                  dans 96 px fixes pendant que la barre disposait de toute la place. Le
+                  seuil (56 rem de conteneur) ne se déclenche que sur la carte pleine
+                  largeur — en deux colonnes, la carte fait ~35 rem et garde 96 px, pour ne
+                  pas rogner les barres. `truncate` reste le filet pour les noms extrêmes,
+                  avec le nom complet en infobulle. */}
               <span
-                className="flex w-24 shrink-0 items-center gap-1 text-xs font-medium text-slate-500"
+                className="flex w-24 shrink-0 items-center gap-1 text-xs font-medium text-slate-500 @4xl:w-44"
                 title={d.annotation ? `${d.label} — ${d.annotation}` : d.label}
               >
                 <span className="truncate">{d.label}</span>
@@ -439,7 +446,7 @@ export function TableauDeBord() {
                 « 185 évaluations » qualifie la satisfaction deux cartes plus loin : le
                 lecteur juge lui-même du poids de la moyenne. */}
             <StatCard
-              label="Temps de résolution moyen"
+              label="Résolution moyenne"
               value={fmtHeures(stats.tempsResolutionMoyenHeures)}
               hint={
                 stats.delaiPriseEnChargeMoyenHeures != null

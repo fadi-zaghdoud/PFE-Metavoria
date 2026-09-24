@@ -4,6 +4,7 @@ import { ChevronDown, Plus, RefreshCw, Search, Ticket } from 'lucide-react';
 import { ticketsApi } from '../features/tickets/ticketsApi';
 import { utilisateursApi } from '../features/utilisateurs/utilisateursApi';
 import {
+  BadgeAnciennete,
   LABEL_PRIORITE,
   LABEL_STATUT,
   PRIORITE_OPTIONS,
@@ -339,12 +340,17 @@ export function TicketsListPage() {
                         <span className="font-mono text-xs text-slate-400">#{t.id}</span>
                         <p className="truncate font-medium text-slate-900">{t.titre}</p>
                       </div>
-                      <div className="mt-0.5 flex items-center gap-2">
+                      {/* L'ancienneté est posée ICI, dans la première colonne, et non à
+                          côté de « Créé » : cette dernière disparaît sous md, et c'est
+                          justement sur petit écran qu'un ticket oublié doit rester
+                          visible. */}
+                      <div className="mt-0.5 flex flex-wrap items-center gap-2">
                         {t.categorie ? (
                           <Badge variant="neutral">{t.categorie.nom}</Badge>
                         ) : (
                           <span className="text-xs text-slate-300">Non classé</span>
                         )}
+                        <BadgeAnciennete statut={t.statut} dateCreation={t.dateCreation} />
                         {t._count.commentaires > 0 && (
                           <span className="text-xs text-slate-400">
                             {t._count.commentaires} message{t._count.commentaires > 1 ? 's' : ''}

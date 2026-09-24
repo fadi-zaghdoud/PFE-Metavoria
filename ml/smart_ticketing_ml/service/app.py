@@ -30,17 +30,22 @@ from ..summarize import resumer
 # perdrait son enrichissement IA. On charge donc le chemin de CLASSIFICATION en
 # tâche de fond — l'écoute HTTP et /sante restent disponibles immédiatement.
 #
-# Le RERANKER n'est PAS préchauffé — il n'est pas câblé dans la chaîne de suggestion.
-# `/suggest` ne l'atteint que derrière la garde `if seuil is not None` de
-# `retrieval/suggestion.py`, or le seuil d'abstention vaut `None` par défaut
-# (`retrieval/config.py:SEUIL_ABSTENTION_DEFAUT`) et aucune variable d'environnement
-# ni paramètre admin ne le règle : la garde n'est jamais franchie. Le préchauffer
-# immobilisait donc ~2,3 Go de RAM pour un modèle qui ne s'exécutait jamais.
-# Il reste chargé PARESSEUSEMENT, au premier appel, par ses deux vrais appelants :
-# `POST /rerank` et le harnais d'évaluation (`eval/run_retrieval.py`, variante
-# `rrf_rerank`). Le recâbler dans la suggestion suppose de modifier `suggestion.py`
-# (régler un seuil, ou demander la variante `rrf_rerank`) — il faudra alors remettre
-# son préchauffage ICI, sans quoi le premier appel repaiera le chargement en ligne.
+# Le RERANKER n'est PAS préchauffé. `/suggest` ne l'atteint que derrière la garde
+# `if seuil is not None` de `retrieval/suggestion.py`. Jusqu'au 24/09/2026 cette garde
+# n'était JAMAIS franchie — aucun réglage n'existait — et le préchauffage immobilisait
+# ~2,3 Go pour un modèle qui ne s'exécutait jamais (correctif du 19/09). Depuis, la porte
+# est RÉGLABLE (§6.5) : elle peut être ouverte, mais reste FERMÉE par défaut.
+# Il reste chargé PARESSEUSEMENT, au premier appel, par ses appelants : `POST /rerank`,
+# le harnais d'évaluation (`eval/run_retrieval.py`, variante `rrf_rerank`) et — depuis le
+# 24/09/2026 — la PORTE D'ABSTENTION quand un administrateur l'ouvre (§6.5, seuil reçu
+# dans la charge utile de `/suggest`).
+#
+# ON NE LE PRÉCHAUFFE TOUJOURS PAS, et c'est un choix : ce service est SANS ÉTAT, il ne
+# lit pas le registre de paramètres et ne peut donc pas savoir si la porte est ouverte.
+# Le préchauffer « au cas où » rendrait les ~2,3 Gio inconditionnels — exactement ce que
+# le correctif du 19/09 a supprimé. Le chargement paresseux coûte ~3,5 s au premier
+# `/suggest` suivant l'ouverture ; ce chemin est asynchrone côté Node (budget 60 s), donc
+# aucune réponse HTTP ne le paie.
 #
 # Piloté par IA_WARMUP (défaut false — cf. service/config.py).
 def _prechauffer() -> None:
@@ -231,6 +236,15 @@ def priority(req: RequetePriority) -> ReponsePriority:
 class RequeteSuggest(BaseModel):
     titre: str = Field(..., description="Titre du ticket entrant (requête RAG).")
     description: str = Field(..., description="Description du ticket entrant.")
+    # Porte d'abstention (§6.5) — RÉGLÉE CÔTÉ NODE, qui détient le registre de paramètres.
+    # Ce service reste SANS ÉTAT : il reçoit le seuil, il ne le lit ni ne le mémorise.
+    # `None` (défaut) = porte fermée, comportement livré jusqu'ici. Bornes alignées sur
+    # celles du registre backend : 0 et 1 sont exclus, ce sont des réglages dégénérés
+    # (à 0 on n'abstient jamais tout en payant un rerank ; à 1 on abstient toujours).
+    seuil: float | None = Field(
+        None, ge=0.05, le=0.95,
+        description="Seuil d'abstention ; None = porte fermée (défaut).",
+    )
 
 
 class SourceCitee(BaseModel):
@@ -263,7 +277,13 @@ def suggest(req: RequeteSuggest) -> ReponseSuggest:
         raise HTTPException(status_code=422, detail="Titre et description vides.")
     requete = f"{req.titre}\n{req.description}"  # même unité que les embeddings (titre + description)
     with hybrid.connexion() as conn, conn.cursor() as cur:
-        sugg = suggestion.suggerer(cur, requete)
+        # `seuil=None` → `suggerer` garde la porte fermée (son propre défaut). Quand un seuil
+        # arrive, la porte s'ouvre et le reranker est chargé PARESSEUSEMENT au premier appel
+        # (~3,5 s, +2,45 Gio jusqu'au prochain redémarrage de ce service) — délibérément non
+        # préchauffé : préchauffer supposerait que ce service connaisse un réglage qu'il ne
+        # détient pas. Ce chemin est asynchrone côté Node, le coût n'est payé par aucune
+        # réponse HTTP.
+        sugg = suggestion.suggerer(cur, requete, seuil=req.seuil)
     titres = {d["id"]: d["titre"] for d in sugg.similaires}
     # Provenance (K3) : les sources citées sont un sous-ensemble des similaires → on y retrouve
     # le drapeau `synthetique` pour badger « source réelle » ce sur quoi la réponse s'ancre.

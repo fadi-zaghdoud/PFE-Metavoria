@@ -1,4 +1,3 @@
--- Active: 1783546015353@@127.0.0.1@5432@postgres
 # Smart Ticketing & Support Assistant
 
 Application web de gestion intelligente de tickets support, assistée par IA.
@@ -404,11 +403,28 @@ indisponible, confiance insuffisante, ou aucun spécialiste disponible pour cett
 - `PUT /api/utilisateurs/:id/specialites` — définit les catégories couvertes par un
   technicien (Administrateur ; la liste envoyée **remplace** l'existante)
 
-### Limite connue
+### Seuils de confiance IA — réglables (§6.5)
 
-Le **seuil de confiance** (0,5) utilisé pour retenir une catégorie suggérée est fixé dans le
-code et **n'est pas encore réglable** depuis l'interface. La table de paramètres est prête à
-l'accueillir (CDC §6.5).
+Depuis **Administration → Paramètres**, deux réglages distincts :
+
+| Réglage | Effet | Défaut |
+|---|---|---|
+| **Seuil d'affichage** | sous ce seuil, la catégorie suggérée est grisée et marquée « à préciser ». **N'affecte que l'affichage.** | 0,5 |
+| **Porte d'abstention** | le système s'abstient **avant de générer** quand aucun ticket passé n'est assez proche. | désactivée |
+
+Les deux sont bornés et revalidés côté serveur, et chaque modification est inscrite au
+**journal d'audit** (auteur, ancienne valeur, nouvelle valeur).
+
+**Découplage à connaître** : l'**affectation automatique** conserve son propre seuil, fixé à
+0,5 dans le code (`SEUIL_CONFIANCE_AFFECTATION`). Abaisser le seuil d'affichage ne fera donc
+pas affecter davantage de tickets. Rendre cette clé réglable est une perspective identifiée.
+
+**Coût d'ouverture de la porte** : le cross-encoder est chargé au premier usage — environ
+3,5 s une fois, puis +2,4 Gio sur le service IA **jusqu'à son prochain redémarrage**. Le
+chargement a lieu hors du temps de réponse (la suggestion est générée en asynchrone).
+
+Aucune valeur n'est recommandée pour la porte : le projet n'a pas de calibration
+transférable (cf. journal technique, J5).
 
 ## Journal d'audit
 

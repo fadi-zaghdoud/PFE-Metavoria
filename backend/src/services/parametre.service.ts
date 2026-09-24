@@ -1,7 +1,10 @@
 import { parametreRepository } from '../repositories/parametre.repository';
 import {
+  ABSTENTION_DESACTIVEE,
   CLES_CONNUES,
   CLE_MODE_AFFECTATION,
+  CLE_SEUIL_ABSTENTION,
+  CLE_SEUIL_AFFICHAGE,
   definitionDe,
   interpreter,
   validerEcriture,
@@ -42,9 +45,29 @@ export const parametreService = {
     return valeur;
   },
 
-  // Raccourci typé du seul paramètre exploité aujourd'hui (§6.2).
+  // Raccourcis typés des paramètres exploités (§6.2, §6.5).
   modeAffectation(): Promise<ModeAffectation> {
     return parametreService.lire(CLE_MODE_AFFECTATION);
+  },
+
+  seuilAffichage(): Promise<number> {
+    return parametreService.lire(CLE_SEUIL_AFFICHAGE);
+  },
+
+  // Porte d'abstention du RAG. Traduit l'état métier `DESACTIVE` en `null`, qui est ce que
+  // le service IA comprend comme « pas de porte » — il retombe alors sur son propre défaut.
+  // Le service IA reste SANS ÉTAT : il reçoit ce seuil, il ne le lit jamais.
+  async seuilAbstention(): Promise<number | null> {
+    const valeur = await parametreService.lire(CLE_SEUIL_ABSTENTION);
+    return valeur === ABSTENTION_DESACTIVEE ? null : valeur;
+  },
+
+  // Sous-ensemble LISIBLE PAR TOUT UTILISATEUR AUTHENTIFIÉ : uniquement ce dont l'interface
+  // a besoin pour rendre un ticket. Le panneau de suggestion est visible du technicien
+  // assigné, qui n'a pas accès au registre complet (réservé à l'administrateur) — d'où ce
+  // point d'entrée étroit plutôt qu'un élargissement des droits sur `/parametres`.
+  async lireAffichage(): Promise<{ seuilAffichage: number }> {
+    return { seuilAffichage: await parametreService.seuilAffichage() };
   },
 
   // Vue d'administration : TOUTES les clés du registre, y compris celles qui n'ont pas

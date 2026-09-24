@@ -725,6 +725,13 @@ demande explicite.
      > appels `/suggest`. Le reranker ne s'exécute que via `POST /rerank` et le harnais
      > d'évaluation. **Le recâbler suppose de modifier `suggestion.py`**, pas de régler un
      > paramètre. Cf. la section « Correctif — le reranker retiré du préchauffage ».
+     >
+     > 🔁 **CADUQUE DEPUIS LE 24/09/2026.** La porte est devenue **réglable** (§6.5) : un
+     > administrateur l'ouvre depuis l'écran Paramètres, Node transmet le seuil dans la
+     > charge utile de `/suggest`, et le reranker s'exécute alors — **pour le SCORE du
+     > top-1 seulement**. L'ORDRE d'affichage reste `"rrf"` en dur : le réordonnancement,
+     > lui, exige toujours de modifier `suggestion.py`. Cf. « Seuils de confiance IA
+     > réglables » en fin de journal.
 
 - **Mesures — dimensionnement production (reranker)** : leçon « **mesurer deux fois,
   système au repos** ». Une 1ʳᵉ mesure donnait **17 s** à K=10/max_length 256 → **artefact**
@@ -1991,6 +1998,11 @@ demande explicite.
   (`SEUIL_CONFIANCE_AFFECTATION`). La table `parametres` est **prête à les accueillir** —
   un nouveau réglage y coûte une ligne, pas une migration — mais **rien n'est livré**.
   ⚠️ Ne pas l'affirmer en soutenance.
+  > ✅ **DETTE LEVÉE LE 24/09/2026** — partiellement, et la nuance compte. Le seuil
+  > d'**affichage** est réglable (registre, §6.5), la **porte d'abstention** du RAG aussi.
+  > En revanche `SEUIL_CONFIANCE_AFFECTATION` **reste en dur** : les deux sont désormais
+  > **découplés**, ce qui est assumé et énoncé dans l'aide de l'écran. La prédiction « une
+  > ligne, pas une migration » s'est vérifiée. Cf. « Seuils de confiance IA réglables ».
 - **Stock existant non traité à la bascule** : passer en AUTO n'affecte que les tickets
   **créés ensuite**. Les tickets déjà en attente restent non assignés. Le trou est **nommé à
   l'écran** (« N tickets non assignés — ce changement ne les affecte pas ») ; son traitement
@@ -2534,7 +2546,7 @@ consisté à mieux raisonner, mais à **ne changer qu'une variable à la fois**.
 
 | Fichier | Changement |
 | --- | --- |
-| `service/app.py` | `reranker.charger_modele` retiré de `_prechauffer()` — **suppression sèche, pas de drapeau**. Un `IA_WARMUP_RERANKER` aurait recréé la confusion de `RERANK_ACTIF_DEFAUT` : il aurait laissé croire qu'on *active* le reranker alors qu'on ne ferait que le *charger en RAM*. Commentaire remplacé par l'état réel, avec la consigne de **remettre le préchauffage ici** si `suggestion.py` est recâblé. |
+| `service/app.py` | `reranker.charger_modele` retiré de `_prechauffer()` — **suppression sèche, pas de drapeau**. Un `IA_WARMUP_RERANKER` aurait recréé la confusion de `RERANK_ACTIF_DEFAUT` : il aurait laissé croire qu'on *active* le reranker alors qu'on ne ferait que le *charger en RAM*. Commentaire remplacé par l'état réel, avec la consigne de **remettre le préchauffage ici** si `suggestion.py` est recâblé. *(24/09/2026 : la porte est devenue réglable et le préchauffage n'a PAS été remis — ce service est sans état, il ignore si la porte est ouverte ; le chargement paresseux coûte ~3,5 s hors temps de réponse.)* |
 | `retrieval/config.py` | `RERANK_ACTIF_DEFAUT` **supprimée**. Un drapeau qui ne commande rien est pire qu'une absence de drapeau. Remplacée par un commentaire disant les trois vérités : constante morte, porte fermée, ordre `"rrf"` en dur. |
 | `eval/run_retrieval.py` | Le harnais **imprimait `RERANK_ACTIF_DEFAUT=False` dans le pied de chaque rapport d'ablation généré**. Sans retouche, toute régénération future aurait cité une constante disparue. |
 
@@ -2562,7 +2574,11 @@ trace de ce qui avait été décidé alors. La rectification vit ici, pas dans l
   `"max_length": 512`. **Écart signalé, délibérément non corrigé dans cette séance** — il
   ne change rien tant que le reranker reste hors du chemin, mais il devra être tranché
   *avant* tout recâblage, sinon le premier usage réel partirait sur un dimensionnement
-  explicitement écarté à la mesure. À ne pas présenter en soutenance comme « dimensionné
+  explicitement écarté à la mesure. ⚠️ **Renforcé le 24/09/2026** : ce recâblage n'exige
+  plus de toucher au code — **un administrateur peut ouvrir la porte depuis l'écran
+  Paramètres**. L'écart de dimensionnement devient donc atteignable en exploitation, et
+  non plus seulement par un développeur averti. Le coût reste modeste (la porte ne rerank
+  qu'UNE paire, 0,379 s mesurés) mais l'arbitrage `max_length` n'est toujours pas tranché. À ne pas présenter en soutenance comme « dimensionné
   pour la production » : le dimensionnement a été *mesuré*, pas *appliqué*.
 - **`POST /rerank` reste un endpoint sans appelant.** Conservé volontairement : il est le
   point d'entrée qui rend le composant démontrable en soutenance, et le seul moyen de
@@ -2571,6 +2587,10 @@ trace de ce qui avait été décidé alors. La rectification vit ici, pas dans l
   None` est cohérent avec la posture J5 (aucun seuil figé sur du synthétique), mais tant
   que `SEUIL_CONFIANCE_IA` n'entre pas au registre des paramètres (§6.5), le mécanisme
   n'est pas atteignable en exploitation.
+  > ✅ **RÉSOLU LE 24/09/2026** : la porte est réglable depuis l'écran Paramètres
+  > (`IA_SEUIL_ABSTENTION`, bornes 0,05–0,95, fermée par défaut). Le mécanisme est donc
+  > atteignable — mais **aucune valeur n'est recommandée**, faute de calibration
+  > transférable : l'écran le dit, et le réglage reste un choix d'exploitation.
 - **La comparaison de latence est bruitée.** À requête identique, le premier appel a rendu
   une suggestion citée et les suivants se sont abstenus par grounding, dans les deux
   séries. Les écarts de quelques secondes entre séries ne sont pas interprétables.
@@ -2772,6 +2792,10 @@ avertissement ; plomberie → « confiance 43 % » **avec** l'avertissement.
 > **Dette** : c'est une **constante en dur dans le frontend**, distincte du seuil
 > d'abstention du modèle. Elle rejoint la liste des seuils à rendre réglables par
 > l'Administration (§6.5), aux côtés de `SEUIL_CONFIANCE_IA`, absent du registre backend.
+>
+> ✅ **FAIT LE 24/09/2026** : la constante est devenue le simple REPLI du frontend, la
+> valeur venant du registre (`IA_SEUIL_AFFICHAGE`). `SEUIL_CONFIANCE_IA` n'a jamais été
+> retenu comme nom : les clés livrées sont `IA_SEUIL_AFFICHAGE` et `IA_SEUIL_ABSTENTION`.
 
 ## La garde d'ancrage ne vérifie pas la pertinence — le résultat le plus important
 
@@ -2879,6 +2903,196 @@ plutôt qu'avec une déclaration d'intention.
   d'identifiants, ni le reranker. C'est la limite de fond du module de suggestion.
 - **L'entrée J6b n'est plus reproductible** sur le cas imprimante. Conservée, rectifiée
   ci-dessus.
-- **`SEUIL_CONFIANCE_AFFICHAGE = 0.5` en dur dans le frontend** — à rendre réglable.
+- ~~**`SEUIL_CONFIANCE_AFFICHAGE = 0.5` en dur dans le frontend**~~ — **réglable depuis le
+  24/09/2026** ; la constante ne sert plus que de repli si le point d'entrée est indisponible.
 - **Mesures de qualité prises sur CPU** ; la configuration GPU diffère sur les citations
   limites. Aucune n'a été rejouée sur GPU.
+
+---
+
+# Seuils de confiance IA réglables (§6.5) — et le découplage qu'il fallait dire
+
+> Séance du **24/09/2026**, branche `8-seuils-confiance-ia-reglables`. Dernière
+> fonctionnalité du §6.5 restée en dette : les seuils de confiance passent du code à
+> l'écran d'administration. Deux clés, pas plus. Le fait marquant n'est pas la mécanique —
+> le registre avait été conçu pour ça — mais ce que la tâche **oblige à dire** : un
+> troisième seuil existe, il reste en dur, et le taire aurait créé une divergence
+> silencieuse.
+
+## Ce qui est livré
+
+| Clé | Domaine | Défaut | Effet |
+| --- | --- | --- | --- |
+| `IA_SEUIL_AFFICHAGE` | nombre [0 ; 1] | **0,5** | sous ce seuil, la catégorie suggérée est grisée et marquée « à préciser » — **affichage seul** |
+| `IA_SEUIL_ABSTENTION` | `DESACTIVE` ou [0,05 ; 0,95] | **`DESACTIVE`** | le RAG s'abstient **avant de générer** quand le meilleur candidat est sous le seuil |
+
+Le défaut de chaque clé **reproduit exactement le comportement livré jusqu'ici** : 0,5 était
+la valeur en dur du frontend, la porte était fermée. Une base non configurée ne bascule
+donc rien — même règle que `AFFECTATION_MODE` avec `MANUEL`.
+
+## Les décisions, et leurs raisons
+
+### `DESACTIVE` est un état du domaine, pas un nombre magique
+
+La porte fermée aurait pu se coder par un `null`, une chaîne vide, ou un `0`. Les trois ont
+été écartés. `null` et la chaîne vide se confondent avec « valeur illisible », que le
+registre traite déjà comme un repli ; et `0` serait un **piège** : avec `confiance < seuil`,
+un seuil de 0 n'abstient jamais **tout en payant un rerank** — indiscernable de « fermée »
+à l'écran, mais plus lent. D'où un type métier `number | 'DESACTIVE'` et un état explicite,
+réversible d'un clic.
+
+### Bornes 0,05–0,95 : les extrémités sont des pannes déguisées
+
+À 0, on n'abstient jamais en payant le coût ; à 1, on abstient **toujours** et le module ne
+sert plus à rien. Deux réglages qu'un administrateur prendrait pour un dysfonctionnement.
+Ils sont refusés **en écriture** (400) et, en lecture, une valeur hors bornes retombe sur
+la porte fermée — jamais sur un comportement ouvert. Test dédié : *« AUCUNE entrée illisible
+ne peut OUVRIR la porte »*, pendant exact du fail-safe « jamais AUTO » du Chantier 1.
+
+### Aucune valeur n'est recommandée, et l'écran le dit
+
+Nous n'avons **pas de calibration transférable** : la posture J5 vaut toujours, et
+l'illustration sur seize couples (cf. « Latence de la suggestion ») ne fonde aucun seuil.
+Conséquence dans l'interface : activer la porte **ne pré-remplit rien**. Le curseur naît
+sans valeur, affiche « — », et l'enregistrement reste refusé tant que l'administrateur n'a
+pas tranché. Pré-remplir un chiffre, fût-ce la borne basse, aurait été le recommander.
+
+### Le service IA reste sans état
+
+Le seuil **voyage dans la charge utile** de `POST /suggest`. Node lit le registre au moment
+où le technicien clique — et non dans le traitement différé, pour que le réglage appliqué
+soit celui en vigueur à la demande — puis le transmet. Le service Python ne lit jamais le
+registre, ne le met jamais en cache : il reçoit. Les bornes sont **revalidées côté Python**
+(Pydantic `ge=0.05, le=0.95`), pas seulement côté Node : une charge utile forgée ne doit pas
+pouvoir ouvrir la porte sur un réglage dégénéré.
+
+### Pas de préchauffage du reranker, et c'est un choix
+
+Ouvrir la porte fait charger le cross-encoder au premier usage : **~3,5 s une fois**, puis
+**+2,4 Gio** sur le service IA **jusqu'à son prochain redémarrage** — il n'existe pas de
+mécanisme de déchargement. On ne le préchauffe pas pour autant : le service est sans état et
+**ignore si la porte est ouverte**. Le préchauffer « au cas où » rendrait ces 2,3 Go
+inconditionnels — précisément ce que le correctif du 19/09 avait supprimé. Le chemin
+`/suggest` étant asynchrone côté Node (budget 60 s), ces 3,5 s ne sont payées par **aucune
+réponse HTTP**. Le coût est écrit sous l'interrupteur, avant la bascule, plutôt que
+découvert après.
+
+### Un point d'entrée étroit plutôt qu'un élargissement de droits
+
+Le panneau de suggestion est visible du **technicien assigné**, qui a besoin du seuil
+d'affichage — or `/api/parametres` est réservé à l'administrateur. Plutôt que d'ouvrir le
+registre entier, `GET /api/parametres/affichage` expose **la seule valeur nécessaire au
+rendu**, à tout utilisateur authentifié. Déclaré avant la garde d'administration, qu'il
+n'atteint donc jamais.
+
+## Le découplage qu'il fallait dire
+
+Un **troisième** seuil à 0,5 existe : `SEUIL_CONFIANCE_AFFECTATION`
+(`services/affectation.regle.ts`), qui décide si la catégorie suggérée sert à choisir un
+technicien spécialisé. Son commentaire disait « **aligné sur** le seuil d'affichage du
+frontend » — vrai tant que les deux étaient la même constante écrite deux fois.
+
+Rendre l'un réglable et laisser l'autre en dur **les fait diverger**. Un administrateur
+abaissant l'affichage à 30 % verrait des catégories présentées comme sûres que l'affectation
+continuerait d'ignorer sous 50 %, sans qu'aucun écran ne l'explique.
+
+**Décision : périmètre strict à deux clés, et découplage ÉNONCÉ plutôt que subi.** Le
+commentaire du backend est corrigé, et surtout l'aide de l'écran Paramètres le dit noir sur
+blanc : « Ce réglage ne change que l'affichage. L'affectation automatique décide avec son
+propre seuil, fixé à 50 % dans le code : abaisser celui-ci ne fera pas affecter davantage de
+tickets. »
+
+> **Perspective identifiée** : rendre `SEUIL_CONFIANCE_AFFECTATION` réglable à son tour, en
+> troisième clé du registre. Hors périmètre de ce lot — c'est une décision **métier**
+> (qui reçoit le ticket) et non cosmétique, elle mérite son propre arbitrage.
+
+## Ce qui a été prouvé, et comment
+
+- **118 tests backend** (`node:test`, purs), dont **15 nouveaux** sur les deux clés :
+  défauts, bornes, tolérance en lecture, refus en écriture, et le fail-safe « aucune entrée
+  illisible n'ouvre la porte ».
+- **64 tests ML** (pytest), dont **8 nouveaux** : bornes du champ `seuil` revalidées côté
+  Python (0, 1, −0,5, 1,5, 0,04, 0,96 → 422), champ absent et `null` acceptés.
+- **Typecheck** backend et frontend au vert.
+- **Journal d'audit** : aucune ligne à écrire — `parametreService.ecrire` journalisait déjà
+  `PARAMETRE_MODIFIE` avec auteur, ancienne et nouvelle valeur. Ajouter une clé au registre
+  suffit à la faire tracer. La prédiction du Chantier 1 (« un réglage coûte une ligne, pas
+  une migration ») se vérifie.
+
+## Ce que cette tâche rend caduc ailleurs
+
+Sept affirmations disaient que recâbler le reranker « suppose de modifier `suggestion.py` ».
+C'est désormais faux pour le **score** de la porte, et toujours vrai pour le
+**réordonnancement** (l'ordre reste `"rrf"` en dur). Toutes rectifiées en place, sans
+effacer l'original : `retrieval/config.py`, `service/app.py`, `eval/run_retrieval.py` (qui
+l'imprimait dans chaque rapport généré), l'annexe B, et trois entrées de ce journal.
+
+⚠️ Conséquence à ne pas manquer : **l'écart de dimensionnement** (`K=10, max_length=256`
+décidés au J6, `K=20, 512` livrés) devient atteignable **en exploitation** et non plus
+seulement par un développeur. Il reste non tranché.
+
+## La porte juge sur UN candidat, la rédaction en lit TROIS
+
+Limite **découverte à l'usage**, pendant la recette à l'écran du 24/09/2026 — pas à la
+lecture du code, alors qu'elle y était visible.
+
+`hybrid.score_abstention` ne rerank que **`docs[0]`**, le mieux classé par RRF
+(`hybrid.py`). Or `suggestion.py` passe à la génération les **`K_SUGGESTION = 3`**
+documents. La porte décide donc sur une information **strictement plus pauvre** que celle
+dont dispose l'étape qu'elle autorise ou bloque.
+
+**Cas observé**, requête « Écran Dell qui clignote par intermittence ». Candidats RRF dans
+l'ordre :
+
+| Rang | Ticket |
+| --- | --- |
+| 1 | #582 « Demande second écran » |
+| 2 | #431 « Écran secondaire non détecté » |
+| 3 | #730 « Second écran non reconnu » |
+
+- **Porte ouverte à 20 %** → **abstention**. Le premier candidat est une *demande
+  d'équipement*, sans rapport avec une panne : son score est bas, et la porte ferme.
+- **Porte fermée** → la génération va au bout et **s'ancre sur #730**, le troisième.
+
+**Conséquence : si le ticket utile n'est pas en première position, la porte bloque une
+suggestion qui aurait abouti.** Le coût n'est donc pas seulement la latence économisée ;
+c'est aussi un risque de faux négatif que le réglage du seuil aggrave à mesure qu'il monte.
+
+> ⚠️ **Portée exacte de ce constat.** Nous **n'avons pas vérifié** si la résolution de #730
+> règle réellement un clignotement d'écran. Le constat porte sur le **mécanisme** — la porte
+> et la rédaction ne voient pas la même chose — **pas sur la qualité de la réponse
+> produite**. Affirmer que la suggestion bloquée était bonne dépasserait ce qui a été
+> mesuré.
+
+C'est aussi un rappel de méthode : trois séances de mesure n'avaient pas fait apparaître
+cette asymétrie, une recette manuelle l'a montrée en quelques clics. L'asymétrie est
+désormais **écrite dans l'aide de l'écran** — un administrateur ne doit pas avoir à la
+déduire.
+
+### Piste, en perspective seulement
+
+Noter les **trois** premiers candidats et retenir le **meilleur score** alignerait la porte
+sur ce que lit la rédaction. Coût estimé à partir des mesures du 19/09 (343 ms/paire sur
+CPU) : environ **1,1 s** au lieu de **0,4 s** — négligeable devant les 11 à 33 s d'un
+`/suggest`.
+
+**Non implémenté, et délibérément.** Cela change la sémantique de la porte (« le meilleur
+candidat est-il pertinent ? » devient « au moins un des trois l'est-il ? »), donc la
+signification du seuil que l'administrateur règle — et nous n'avons toujours aucune
+calibration pour l'un ni pour l'autre. À arbitrer avec le flywheel J9, pas en passant.
+
+## Dettes assumées et documentées
+
+- **La porte juge sur un seul candidat** quand la génération en lit trois — voir ci-dessus.
+  Piste chiffrée, non implémentée. L'asymétrie est énoncée dans l'aide de l'écran.
+- **`SEUIL_CONFIANCE_AFFECTATION` reste en dur** — découplage assumé, énoncé à l'écran.
+  Perspective ci-dessus.
+- **Aucune valeur de porte n'est recommandée** : le mécanisme est livré, son réglage reste
+  un choix d'exploitation sans appui chiffré. Ce n'est pas une omission, c'est la posture J5
+  tenue jusqu'au bout.
+- **Le coût mémoire de la porte n'est pas réversible sans redémarrage** du service IA :
+  fermer la porte ne décharge pas le modèle.
+- **Écart conception / implémentation** : le §6.3 prévoyait `/api/ia/parametres` ; les
+  seuils vivent sur le registre générique (`/api/parametres`). Noté dans le document de
+  conception, implémentation inchangée — réutiliser le registre a évité une table, une
+  migration et un second mécanisme d'audit.

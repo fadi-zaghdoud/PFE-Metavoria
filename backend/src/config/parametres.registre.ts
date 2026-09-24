@@ -29,6 +29,48 @@ export type ModeAffectation = (typeof MODES_AFFECTATION)[number];
 export const CLE_MODE_AFFECTATION = 'AFFECTATION_MODE';
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Seuils de confiance du module IA (§6.5)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// 1) SEUIL D'AFFICHAGE de la catégorie suggérée. N'influence QUE l'affichage : sous ce
+//    seuil, l'interface grise le badge et ajoute « à préciser ». La catégorie top-1 reste
+//    la même — le modèle exprime son doute par une confiance basse, pas en changeant de
+//    classe. Ne touche NI à la classification NI à l'affectation automatique, qui conserve
+//    son propre seuil (`SEUIL_CONFIANCE_AFFECTATION`, en dur côté backend) : découplage
+//    ASSUMÉ, énoncé dans l'aide de l'écran d'administration plutôt que laissé à deviner.
+export const CLE_SEUIL_AFFICHAGE = 'IA_SEUIL_AFFICHAGE';
+
+// 2) SEUIL DE LA PORTE D'ABSTENTION du RAG. Transmis au service IA dans la charge utile de
+//    `/suggest` ; celui-ci reste SANS ÉTAT et ne lit jamais ce registre.
+//    `DESACTIVE` est un état du domaine, PAS un nombre magique ni un `null` déguisé : la
+//    porte est fermée, le reranker n'est jamais sollicité. C'est le défaut, et il reproduit
+//    exactement le comportement livré jusqu'ici.
+export const CLE_SEUIL_ABSTENTION = 'IA_SEUIL_ABSTENTION';
+
+export const ABSTENTION_DESACTIVEE = 'DESACTIVE';
+export type SeuilAbstention = number | typeof ABSTENTION_DESACTIVEE;
+
+// Bornes de la porte, volontairement EXCLUSIVES de 0 et 1 — deux réglages qui
+// ressembleraient à des pannes : à 0 elle n'abstient jamais tout en payant un rerank
+// (indiscernable de « désactivée », mais plus lent) ; à 1 elle abstient toujours et le
+// module ne sert plus à rien. L'état `DESACTIVE` couvre déjà proprement le cas « 0 ».
+export const BORNE_ABSTENTION_MIN = 0.05;
+export const BORNE_ABSTENTION_MAX = 0.95;
+
+// Analyse un nombre borné. Renvoie null — donc « illisible, repli sur le défaut » — pour
+// toute entrée hors domaine. Tolérant à la virgule décimale et aux espaces en LECTURE ;
+// c'est `validerEcriture` qui refusera en écriture. Arrondi à 2 décimales : un seuil se
+// règle au centième, et cela évite de stocker les bavures du binaire flottant.
+function analyserNombreBorne(brut: string, min: number, max: number): number | null {
+  const normalise = brut.trim().replace(',', '.');
+  if (normalise === '') return null; // `Number('')` vaut 0 : à écarter explicitement
+  const valeur = Number(normalise);
+  if (!Number.isFinite(valeur)) return null;
+  if (valeur < min || valeur > max) return null;
+  return Math.round(valeur * 100) / 100;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Définition d'un paramètre
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -57,6 +99,30 @@ const REGISTRE = {
     },
     serialiser: (valeur) => valeur,
   } satisfies DefinitionParametre<ModeAffectation>,
+
+  [CLE_SEUIL_AFFICHAGE]: {
+    // 0,5 = la valeur qui était en dur dans le frontend : régler devient possible sans
+    // que le comportement change pour qui ne règle rien.
+    defaut: 0.5,
+    description:
+      "Seuil de confiance sous lequel la catégorie suggérée par l'IA est présentée comme incertaine (badge grisé, « à préciser »). N'affecte que l'affichage : ni la classification, ni l'affectation automatique.",
+    analyser: (brut) => analyserNombreBorne(brut, 0, 1),
+    serialiser: (valeur) => String(valeur),
+  } satisfies DefinitionParametre<number>,
+
+  [CLE_SEUIL_ABSTENTION]: {
+    // Porte FERMÉE par défaut : l'absence de configuration doit reproduire le
+    // comportement actuel, jamais faire basculer l'application (même règle que MANUEL).
+    defaut: ABSTENTION_DESACTIVEE as SeuilAbstention,
+    description:
+      "Seuil de la porte d'abstention du RAG : sous ce score de proximité, le système s'abstient AVANT de générer. « DESACTIVE » ferme la porte (défaut). Aucune valeur n'est recommandée : nous n'avons pas de calibration transférable.",
+    analyser: (brut) => {
+      const normalise = brut.trim();
+      if (normalise.toUpperCase() === ABSTENTION_DESACTIVEE) return ABSTENTION_DESACTIVEE;
+      return analyserNombreBorne(normalise, BORNE_ABSTENTION_MIN, BORNE_ABSTENTION_MAX);
+    },
+    serialiser: (valeur) => String(valeur),
+  } satisfies DefinitionParametre<SeuilAbstention>,
 } as const;
 
 export type CleParametre = keyof typeof REGISTRE;

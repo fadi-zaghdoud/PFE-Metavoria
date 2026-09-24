@@ -7,13 +7,13 @@ import {
   UserCircle,
   Users,
   Wrench,
+  type LucideIcon,
 } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { utilisateursApi } from '../features/utilisateurs/utilisateursApi';
 import { TableauDeBord } from '../features/statistiques/TableauDeBord';
 import type { Utilisateur } from '../types/auth';
 import { dateLongue, LABELS_ROLE, tempsRelatif } from '../lib/format';
-import { StatCard } from '../components/ui/StatCard';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
 import { Avatar } from '../components/ui/Avatar';
 import { Badge } from '../components/ui/Badge';
@@ -45,20 +45,46 @@ function StatsAdmin() {
 
   if (erreur) return null;
 
+  // Chiffres de composition de l'annuaire : quasi statiques, et aucun n'appelle d'action.
+  // Ils occupaient quatre StatCard identiques à celles des indicateurs de tickets, et cette
+  // seconde rangée de quatre entrait en concurrence avec la première — celle qui, elle,
+  // porte « À affecter ». Même information, une seule carte, chrome neutre : pas de
+  // dégradé ni d'aura, pour qu'elle se lise comme un sous-titre et non comme un indicateur.
+  const COMPOSITION: { label: string; valeur: number; icon: LucideIcon }[] = stats
+    ? [
+        { label: 'Comptes', valeur: stats.total, icon: Users },
+        { label: 'Actifs', valeur: stats.actifs, icon: UserCheck },
+        { label: 'Techniciens', valeur: stats.techniciens, icon: Wrench },
+        { label: 'Administrateurs', valeur: stats.admins, icon: ShieldCheck },
+      ]
+    : [];
+
   return (
     <>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {stats ? (
-          <>
-            <StatCard label="Utilisateurs" value={stats.total} icon={Users} tone="primary" index={0} />
-            <StatCard label="Comptes actifs" value={stats.actifs} icon={UserCheck} tone="success" index={1} />
-            <StatCard label="Techniciens" value={stats.techniciens} icon={Wrench} tone="warning" index={2} />
-            <StatCard label="Administrateurs" value={stats.admins} icon={ShieldCheck} tone="neutral" index={3} />
-          </>
-        ) : (
-          Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-[116px] rounded-2xl" />)
-        )}
-      </div>
+      {stats ? (
+        <Card className="animate-fade-up p-4">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            {COMPOSITION.map(({ label, valeur, icon: Icon }) => (
+              <div key={label} className="flex items-center gap-2.5">
+                <span
+                  className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500"
+                  aria-hidden
+                >
+                  <Icon className="size-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-lg font-semibold leading-tight tabular-nums text-slate-900">
+                    {valeur}
+                  </p>
+                  <p className="truncate text-xs text-slate-500">{label}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : (
+        <Skeleton className="h-[76px] rounded-2xl" />
+      )}
 
       <Card className="mt-6">
         <CardHeader

@@ -245,13 +245,26 @@ export function TableauDeBord() {
     value: r.count,
     couleur: 'from-primary-400 to-primary-600',
   }));
-  const dataCharge = (stats?.chargeParTechnicien ?? []).map((r) => ({
+  const chargeComplete = (stats?.chargeParTechnicien ?? []).map((r) => ({
     cle: String(r.technicienId),
     label: r.technicien,
     value: r.count,
     couleur: 'from-violet-400 to-violet-500',
     annotation: r.absenceJusquau ? `absent jusqu'au ${jourCourt(r.absenceJusquau)}` : undefined,
   }));
+
+  // Un technicien à 0 ne veut pas dire la même chose selon qu'un filtre est actif ou non.
+  // SANS FILTRE, c'est une information utile : de la capacité disponible, et précisément
+  // celui qu'une affectation automatique doit préférer (§6.2). AVEC UN FILTRE, le même 0
+  // ne dit plus « disponible » mais « aucun ticket correspondant » — filtrer sur un
+  // technicien donnait 10 barres dont 9 vides. On les masque alors, en annonçant combien.
+  //
+  // Le tri se fait ICI et non côté serveur, volontairement : `chargeCourante` renvoie la
+  // liste de TOUS les techniciens actifs par un findMany non filtré, parce que la même
+  // fonction alimente l'affectation automatique, qui a besoin des techniciens à 0. Les
+  // COMPTES, eux, respectent bien le filtre. Y toucher casserait le §6.2.
+  const chargeMasquees = filtresActifs ? chargeComplete.filter((d) => d.value === 0).length : 0;
+  const dataCharge = chargeMasquees > 0 ? chargeComplete.filter((d) => d.value > 0) : chargeComplete;
   const dataSatisfaction = [...(stats?.repartitionSatisfaction ?? [])].reverse().map((r) => ({
     label: `${r.note} étoile${r.note > 1 ? 's' : ''}`,
     value: r.count,
@@ -444,7 +457,13 @@ export function TableauDeBord() {
           {estSupport && (
             <CarteBarres
               titre="Charge par technicien"
-              description="Tickets ouverts assignés"
+              description={
+                chargeMasquees > 0
+                  ? `Tickets ouverts assignés · ${chargeMasquees} technicien${
+                      chargeMasquees > 1 ? 's' : ''
+                    } sans ticket sur ce filtre`
+                  : 'Tickets ouverts assignés'
+              }
               donnees={dataCharge}
               index={3}
             />

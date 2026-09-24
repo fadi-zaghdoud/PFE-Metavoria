@@ -391,9 +391,13 @@ export function TableauDeBord() {
                 (ticket.service.affecter refuse tout autre rôle). Montrer ce chiffre à un
                 technicien lui désignerait une tâche qu'il ne peut pas accomplir. */}
             {estAdmin && (
+              // `h-full` des DEUX côtés : la grille étire le lien, pas la carte qu'il
+              // enveloppe. Sans cela, « À affecter » était visiblement plus courte que
+              // ses trois voisines — celle dont la mention tient sur deux lignes impose
+              // la hauteur de la rangée.
               <Link
                 to="/tickets?vue=non-assignes"
-                className="block"
+                className="block h-full"
                 title="Ouvrir la liste des tickets non assignés"
               >
                 <StatCard
@@ -403,6 +407,7 @@ export function TableauDeBord() {
                   icon={UserPlus}
                   tone={aAffecter > 0 ? 'danger' : 'success'}
                   index={0}
+                  className="h-full"
                 />
               </Link>
             )}

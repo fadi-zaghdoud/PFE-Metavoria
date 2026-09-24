@@ -111,6 +111,39 @@ export interface MettreAJourTicketData {
 }
 
 // Couche repository : seule couche à parler directement à Prisma.
+// Construit les clauses du champ de recherche. Le paramètre `q` existait déjà mais ne
+// couvrait que le titre et la description, alors que l'interface annonce « Rechercher par
+// titre, demandeur, catégorie… » et que la recherche côté client — celle que la pagination
+// vient de rendre partielle — couvrait bien ces champs. S'en tenir au titre et à la
+// description aurait donc fait MENTIR le champ et retiré au support la recherche par
+// demandeur.
+//
+// Les mots sont traités séparément pour le nom : « Fadi Zaghdoud » cherche un demandeur
+// dont chaque mot apparaît dans le prénom OU dans le nom, sans quoi une recherche par nom
+// complet ne trouverait rien (aucune colonne ne contient les deux).
+//
+// Un `q` purement numérique cherche AUSSI le numéro de ticket exact : « 412 » doit
+// ramener le ticket #412, comportement de l'ancienne recherche côté client.
+function clausesRecherche(q: string): Prisma.TicketWhereInput[] {
+  const contient = (valeur: string) => ({ contains: valeur, mode: 'insensitive' as const });
+  const mots = q.split(/\s+/).filter(Boolean);
+
+  const clauses: Prisma.TicketWhereInput[] = [
+    { titre: contient(q) },
+    { description: contient(q) },
+    { categorie: { nom: contient(q) } },
+    {
+      demandeur: {
+        AND: mots.map((mot) => ({ OR: [{ prenom: contient(mot) }, { nom: contient(mot) }] })),
+      },
+    },
+  ];
+
+  const numero = Number(q);
+  if (Number.isInteger(numero) && numero > 0) clauses.push({ id: numero });
+  return clauses;
+}
+
 export const ticketRepository = {
   findMany(filtres: FiltresTickets) {
     return prisma.ticket.findMany({
@@ -120,14 +153,7 @@ export const ticketRepository = {
         categorieId: filtres.categorieId,
         technicienId: filtres.nonAssignes ? null : filtres.technicienId,
         demandeurId: filtres.demandeurId,
-        ...(filtres.q
-          ? {
-              OR: [
-                { titre: { contains: filtres.q, mode: 'insensitive' } },
-                { description: { contains: filtres.q, mode: 'insensitive' } },
-              ],
-            }
-          : {}),
+        ...(filtres.q ? { OR: clausesRecherche(filtres.q) } : {}),
       },
       include: ticketListeInclude,
       // ORDRE TOTAL, et pas seulement la date : l'identifiant departage les ex aequo.

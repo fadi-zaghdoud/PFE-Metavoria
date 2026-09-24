@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronDown, Plus, RefreshCw, Search, Ticket } from 'lucide-react';
 import { ticketsApi } from '../features/tickets/ticketsApi';
@@ -56,8 +56,16 @@ export function TicketsListPage() {
     searchParams.get('vue') === 'non-assignes' && estSupport ? 'NON_ASSIGNES' : 'TOUS',
   );
   const [recherche, setRecherche] = useState('');
+  // Terme réellement envoyé au serveur, temporisé : sans cela chaque frappe déclencherait
+  // une requête paginée. 300 ms est en dessous du seuil de perception d'une saisie fluide.
+  const [rechercheEnvoyee, setRechercheEnvoyee] = useState('');
   const [filtreStatut, setFiltreStatut] = useState<StatutTicket | ''>('');
   const [filtrePriorite, setFiltrePriorite] = useState<PrioriteTicket | ''>('');
+
+  useEffect(() => {
+    const minuteur = setTimeout(() => setRechercheEnvoyee(recherche.trim()), 300);
+    return () => clearTimeout(minuteur);
+  }, [recherche]);
 
   async function chargerTickets() {
     if (!token) return;
@@ -67,6 +75,7 @@ export function TicketsListPage() {
       const filtres: FiltresTickets = {
         statut: filtreStatut || undefined,
         priorite: filtrePriorite || undefined,
+        q: rechercheEnvoyee || undefined,
         limite: PAR_PAGE,
       };
       if (estSupport && vue === 'MES_TICKETS' && utilisateur) filtres.technicienId = utilisateur.id;
@@ -93,6 +102,7 @@ export function TicketsListPage() {
       const filtres: FiltresTickets = {
         statut: filtreStatut || undefined,
         priorite: filtrePriorite || undefined,
+        q: rechercheEnvoyee || undefined,
         limite: PAR_PAGE,
         avantId: curseurSuivant,
       };
@@ -112,19 +122,11 @@ export function TicketsListPage() {
   useEffect(() => {
     chargerTickets();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vue, filtreStatut, filtrePriorite, token]);
+  }, [vue, filtreStatut, filtrePriorite, rechercheEnvoyee, token]);
 
-  // Recherche instantanée côté client (id, titre, demandeur, catégorie).
-  const resultats = useMemo(() => {
-    const q = recherche.trim().toLowerCase();
-    if (!q) return tickets;
-    return tickets.filter((t) =>
-      `${t.id} ${t.titre} ${t.demandeur.prenom} ${t.demandeur.nom} ${t.categorie?.nom ?? ''}`
-        .toLowerCase()
-        .includes(q),
-    );
-  }, [tickets, recherche]);
-
+  // La recherche est passée CÔTÉ SERVEUR. Filtrer ici ne portait que sur les pages déjà
+  // chargées : exhaustif tant que la liste entière tenait en mémoire, faux dès qu'elle est
+  // paginée — « aucun résultat » aurait pu signifier « pas dans les 50 premières lignes ».
   return (
     <div>
       <PageHeader
@@ -180,7 +182,7 @@ export function TicketsListPage() {
           <Input
             value={recherche}
             onChange={(e) => setRecherche(e.target.value)}
-            placeholder="Rechercher par titre, demandeur, catégorie…"
+            placeholder="Rechercher par n°, titre, description, demandeur, catégorie…"
             aria-label="Rechercher un ticket"
             className="pl-9"
           />
@@ -217,8 +219,8 @@ export function TicketsListPage() {
         <p className="ml-auto text-xs tabular-nums text-slate-400">
           {chargement
             ? '…'
-            : `${resultats.length} ticket${resultats.length > 1 ? 's' : ''} chargé${
-                resultats.length > 1 ? 's' : ''
+            : `${tickets.length} ticket${tickets.length > 1 ? 's' : ''} chargé${
+                tickets.length > 1 ? 's' : ''
               }${curseurSuivant !== null ? ' — il en reste' : ''}`}
         </p>
       </div>
@@ -251,7 +253,7 @@ export function TicketsListPage() {
                 </tr>
               ))}
 
-            {!chargement && resultats.length === 0 && (
+            {!chargement && tickets.length === 0 && (
               <tr>
                 <Td colSpan={6} className="p-0">
                   <EmptyState
@@ -268,7 +270,7 @@ export function TicketsListPage() {
             )}
 
             {!chargement &&
-              resultats.map((t) => (
+              tickets.map((t) => (
                 <tr
                   key={t.id}
                   onClick={() => navigate(`/tickets/${t.id}`)}

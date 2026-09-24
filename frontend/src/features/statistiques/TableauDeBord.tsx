@@ -418,25 +418,19 @@ export function TableauDeBord() {
                 index={1}
               />
             )}
-            {/* Le délai de prise en charge est porté par une poignée de tickets : il se
-                calcule sur les événements PRISE_EN_CHARGE, dont il n'existe que 6 pour
-                870 tickets — la traçabilité a démarré après le chargement du corpus.
-                Présenté sans réserve, il empruntait l'autorité de la carte qui l'héberge
-                et se lisait comme un indicateur consolidé.
-                « échantillon partiel » est le plus honnête qu'on puisse écrire SANS
-                TOUCHER AU BACKEND : l'effectif exact n'est pas dans la réponse de l'API.
-                Il existe pourtant côté serveur — c'est `premierePriseEnCharge.size` dans
-                ticket.service.statistiques, calculé puis jeté. L'exposer comme
-                `nombrePrisesEnCharge` permettrait d'écrire « sur 6 tickets », à l'image
-                de « 185 évaluations » sous la satisfaction. Une ligne, hors périmètre. */}
+            {/* Le délai ne se calcule que sur les tickets portant un événement
+                PRISE_EN_CHARGE — 6 sur 870 tant que la traçabilité reste plus récente que
+                le corpus. La mention annonce donc son effectif, exactement comme
+                « 185 évaluations » qualifie la satisfaction deux cartes plus loin : le
+                lecteur juge lui-même du poids de la moyenne. */}
             <StatCard
               label="Temps de résolution moyen"
               value={fmtHeures(stats.tempsResolutionMoyenHeures)}
               hint={
                 stats.delaiPriseEnChargeMoyenHeures != null
-                  ? `1re prise en charge : ${fmtHeures(
-                      stats.delaiPriseEnChargeMoyenHeures,
-                    )} (échantillon partiel)`
+                  ? `1re prise en charge : ${fmtHeures(stats.delaiPriseEnChargeMoyenHeures)} sur ${
+                      stats.nombrePrisesEnCharge
+                    } ticket${stats.nombrePrisesEnCharge > 1 ? 's' : ''}`
                   : undefined
               }
               icon={Clock}

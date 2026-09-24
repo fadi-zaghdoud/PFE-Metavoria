@@ -893,6 +893,11 @@ export const ticketService = {
       ticketsClotures: compter('CLOTURE'),
       tempsResolutionMoyenHeures,
       delaiPriseEnChargeMoyenHeures,
+      // Effectif sur lequel porte la moyenne ci-dessus. Exposé pour que l'interface
+      // puisse l'annoncer, comme `nombreEvaluations` qualifie la satisfaction : le délai
+      // ne se calcule que sur les tickets ayant un événement PRISE_EN_CHARGE, soit une
+      // fraction du total tant que la traçabilité est plus récente que les tickets.
+      nombrePrisesEnCharge: premierePriseEnCharge.size,
       satisfactionMoyenne:
         satisfaction._avg.satisfactionNote != null
           ? arrondi(satisfaction._avg.satisfactionNote)

@@ -20,6 +20,11 @@ function buildQueryString(filtres: FiltresTickets): string {
   if (filtres.technicienId) params.set('technicienId', String(filtres.technicienId));
   if (filtres.nonAssignes) params.set('nonAssignes', 'true');
   if (filtres.q) params.set('q', filtres.q);
+  // Cette fonction est une LISTE BLANCHE : un champ absent d'ici est jete en silence,
+  // sans que le typage ne bronche. C'est ce qui est arrive a la pagination — `limite` et
+  // `avantId` etaient types, transmis par la page, et perdus ici.
+  if (filtres.limite) params.set('limite', String(filtres.limite));
+  if (filtres.avantId) params.set('avantId', String(filtres.avantId));
   const query = params.toString();
   return query ? `?${query}` : '';
 }

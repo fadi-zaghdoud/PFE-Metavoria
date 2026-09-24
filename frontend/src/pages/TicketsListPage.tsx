@@ -229,7 +229,9 @@ export function TicketsListPage() {
 
       {/* Barre d'outils */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <div className="relative min-w-56 flex-1 sm:max-w-sm">
+        {/* Un peu plus large qu'avant : le champ annonce desormais cinq cibles de
+            recherche, et « sm:max-w-sm » tronquait l'indication. */}
+        <div className="relative min-w-56 flex-1 sm:max-w-md">
           <Search
             className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400"
             aria-hidden
@@ -237,7 +239,7 @@ export function TicketsListPage() {
           <Input
             value={recherche}
             onChange={(e) => setRecherche(e.target.value)}
-            placeholder="Rechercher par n°, titre, description, demandeur, catégorie…"
+            placeholder="N°, titre, description, demandeur, catégorie…"
             aria-label="Rechercher un ticket"
             className="pl-9"
           />

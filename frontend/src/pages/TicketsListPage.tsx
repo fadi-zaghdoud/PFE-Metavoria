@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Plus, RefreshCw, Search, Ticket } from 'lucide-react';
+import { ChevronDown, Plus, RefreshCw, Search, Ticket } from 'lucide-react';
 import { ticketsApi } from '../features/tickets/ticketsApi';
 import {
   LABEL_PRIORITE,
@@ -27,6 +27,10 @@ import { cn } from '../lib/cn';
 
 type Vue = 'TOUS' | 'MES_TICKETS' | 'NON_ASSIGNES';
 
+// Taille de page. La liste entière pesait 877 Ko pour 872 tickets, rechargés à chaque
+// changement de filtre ; 50 lignes couvrent un écran et son défilement immédiat.
+const PAR_PAGE = 50;
+
 const VUES: { id: Vue; label: string }[] = [
   { id: 'TOUS', label: 'Tous' },
   { id: 'MES_TICKETS', label: 'Mes tickets' },
@@ -42,6 +46,8 @@ export function TicketsListPage() {
   const [searchParams] = useSearchParams();
   const [tickets, setTickets] = useState<TicketResume[]>([]);
   const [chargement, setChargement] = useState(true);
+  const [chargementSuite, setChargementSuite] = useState(false);
+  const [curseurSuivant, setCurseurSuivant] = useState<number | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   // Ouverture depuis le tableau de bord : « ?vue=non-assignes » pré-sélectionne la vue.
   // Ignoré pour un employé, qui ne dispose pas de cette vue. Lu une seule fois, à
@@ -61,16 +67,45 @@ export function TicketsListPage() {
       const filtres: FiltresTickets = {
         statut: filtreStatut || undefined,
         priorite: filtrePriorite || undefined,
+        limite: PAR_PAGE,
       };
       if (estSupport && vue === 'MES_TICKETS' && utilisateur) filtres.technicienId = utilisateur.id;
       if (estSupport && vue === 'NON_ASSIGNES') filtres.nonAssignes = true;
 
-      const { tickets: liste } = await ticketsApi.lister(filtres, token);
+      const { tickets: liste, curseurSuivant: suite } = await ticketsApi.lister(filtres, token);
       setTickets(liste);
+      setCurseurSuivant(suite);
     } catch (err) {
       setErreur(err instanceof ApiError ? err.message : 'Impossible de charger les tickets');
     } finally {
       setChargement(false);
+    }
+  }
+
+  // « Charger plus » : on repart du dernier identifiant affiché. Le serveur poursuit dans
+  // l'ordre ANTÉCHRONOLOGIQUE, pas dans celui des identifiants — les deux divergent sur
+  // 858 des 872 tickets, le corpus ayant été inséré avec des dates antérieures à son
+  // ordre d'insertion.
+  async function chargerSuite() {
+    if (!token || !curseurSuivant) return;
+    setChargementSuite(true);
+    try {
+      const filtres: FiltresTickets = {
+        statut: filtreStatut || undefined,
+        priorite: filtrePriorite || undefined,
+        limite: PAR_PAGE,
+        avantId: curseurSuivant,
+      };
+      if (estSupport && vue === 'MES_TICKETS' && utilisateur) filtres.technicienId = utilisateur.id;
+      if (estSupport && vue === 'NON_ASSIGNES') filtres.nonAssignes = true;
+
+      const suite = await ticketsApi.lister(filtres, token);
+      setTickets((actuels) => [...actuels, ...suite.tickets]);
+      setCurseurSuivant(suite.curseurSuivant);
+    } catch (err) {
+      setErreur(err instanceof ApiError ? err.message : 'Impossible de charger la suite');
+    } finally {
+      setChargementSuite(false);
     }
   }
 
@@ -176,8 +211,15 @@ export function TicketsListPage() {
             </option>
           ))}
         </Select>
+        {/* « chargés » et non « trouvés » : la liste est paginée, ce nombre est celui des
+            lignes en main, pas celui des tickets correspondant aux filtres. Le dire évite
+            de laisser lire « 50 tickets » comme un total. */}
         <p className="ml-auto text-xs tabular-nums text-slate-400">
-          {chargement ? '…' : `${resultats.length} ticket${resultats.length > 1 ? 's' : ''}`}
+          {chargement
+            ? '…'
+            : `${resultats.length} ticket${resultats.length > 1 ? 's' : ''} chargé${
+                resultats.length > 1 ? 's' : ''
+              }${curseurSuivant !== null ? ' — il en reste' : ''}`}
         </p>
       </div>
 
@@ -291,6 +333,15 @@ export function TicketsListPage() {
           </tbody>
         </Table>
       </TableContainer>
+
+      {!chargement && curseurSuivant !== null && (
+        <div className="mt-4 flex justify-center">
+          <Button variant="secondary" size="sm" onClick={chargerSuite} loading={chargementSuite}>
+            <ChevronDown className="size-3.5" aria-hidden />
+            Charger plus
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

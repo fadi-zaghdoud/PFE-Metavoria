@@ -240,11 +240,24 @@ async function appliquerAffectation(
 }
 
 export const ticketService = {
-  async lister(acteur: Acteur, filtres: FiltresTickets): Promise<TicketListe[]> {
+  async lister(
+    acteur: Acteur,
+    filtres: FiltresTickets,
+  ): Promise<{ tickets: TicketListe[]; curseurSuivant: number | null }> {
     // Un employé ne voit que ses propres tickets, quels que soient les filtres reçus.
     const filtresEffectifs: FiltresTickets =
       acteur.role === 'EMPLOYE' ? { ...filtres, demandeurId: acteur.id } : filtres;
-    return ticketRepository.findMany(filtresEffectifs);
+    const tickets = await ticketRepository.findMany(filtresEffectifs);
+
+    // Moins de lignes que demandé : il n'y a plus rien après — évite un « charger plus »
+    // qui ne chargerait rien. Sans `limite`, la réponse est complète par construction et
+    // le curseur reste null.
+    const curseurSuivant =
+      filtres.limite && tickets.length === filtres.limite
+        ? (tickets[tickets.length - 1]?.id ?? null)
+        : null;
+
+    return { tickets, curseurSuivant };
   },
 
   async detail(acteur: Acteur, id: number): Promise<TicketDetail> {

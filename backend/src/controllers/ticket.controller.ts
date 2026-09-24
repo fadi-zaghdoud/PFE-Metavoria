@@ -30,8 +30,10 @@ function parseIdParam(rawId: string | string[] | undefined): number {
 export const ticketController = {
   async lister(req: Request, res: Response) {
     const filtres = listeTicketsQuerySchema.parse(req.query);
-    const tickets = await ticketService.lister(acteur(req), filtres);
-    res.status(200).json({ tickets });
+    // `curseurSuivant` s'AJOUTE à la réponse : `tickets` garde sa place et sa forme, les
+    // appelants qui l'ignorent ne voient aucune différence.
+    const { tickets, curseurSuivant } = await ticketService.lister(acteur(req), filtres);
+    res.status(200).json({ tickets, curseurSuivant });
   },
 
   async creer(req: Request, res: Response) {

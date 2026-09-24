@@ -25,8 +25,13 @@ function buildQueryString(filtres: FiltresTickets): string {
 }
 
 export const ticketsApi = {
+  // `curseurSuivant` : identifiant à repasser en `avantId` pour la page suivante, ou null
+  // quand il n'y a plus rien. Toujours null si `limite` n'est pas fournie.
   lister: (filtres: FiltresTickets, token: string) =>
-    apiRequest<{ tickets: TicketResume[] }>(`/tickets${buildQueryString(filtres)}`, { token }),
+    apiRequest<{ tickets: TicketResume[]; curseurSuivant: number | null }>(
+      `/tickets${buildQueryString(filtres)}`,
+      { token },
+    ),
 
   detail: (id: number, token: string) =>
     apiRequest<{ ticket: TicketDetail }>(`/tickets/${id}`, { token }),

@@ -333,6 +333,21 @@ export function TicketsListPage() {
                   key={t.id}
                   onClick={() => navigate(`/tickets/${t.id}`)}
                   className="cursor-pointer transition-colors hover:bg-slate-50/70"
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`Ouvrir le ticket ${t.id} : ${t.titre}`}
+                  onKeyDown={(ev) => {
+                    // LA LIGNE NE RÉAGIT QUE SI ELLE EST ELLE-MÊME LA CIBLE. Elle contient
+                    // le menu d'affectation, pour lequel Espace ouvre la liste et Entrée
+                    // valide : sans ce garde, ces touches remonteraient jusqu'ici et
+                    // quitteraient la page au lieu de piloter le menu. La page d'audit n'a
+                    // pas ce garde parce que ses lignes ne contiennent aucun contrôle.
+                    if (ev.target !== ev.currentTarget) return;
+                    if (ev.key === 'Enter' || ev.key === ' ') {
+                      ev.preventDefault();
+                      navigate(`/tickets/${t.id}`);
+                    }
+                  }}
                 >
                   <Td>
                     <div className="min-w-0">

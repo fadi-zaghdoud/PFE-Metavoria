@@ -67,16 +67,21 @@ function CarteBarres({
   description,
   donnees,
   index = 0,
+  className,
 }: {
   titre: string;
   description?: string;
   donnees: DonneeBarre[];
   index?: number;
+  className?: string;
 }) {
   const max = Math.max(1, ...donnees.map((d) => d.value));
   const vide = donnees.every((d) => d.value === 0);
   return (
-    <Card className="animate-fade-up overflow-hidden" style={{ animationDelay: `${index * 80}ms` }}>
+    <Card
+      className={cn('animate-fade-up overflow-hidden', className)}
+      style={{ animationDelay: `${index * 80}ms` }}
+    >
       <CardHeader title={titre} description={description} />
       <CardContent className="space-y-0.5">
         {vide ? (
@@ -136,6 +141,11 @@ const jourCourt = (jour: string) => {
   const [, mois, j] = jour.split('-');
   return mois && j ? `${j}/${mois}` : jour;
 };
+
+// Au-delà de ce nombre de barres, « Charge par technicien » occupe les deux colonnes.
+// Six est la hauteur de la plus grande des autres séries (catégories + « Non classé ») :
+// en dessous, la charge tient dans une colonne sans creuser la carte d'à côté.
+const SEUIL_CHARGE_PLEINE_LARGEUR = 6;
 
 const fmtHeures = (h: number | null) =>
   h == null ? '—' : h < 1 ? `${Math.round(h * 60)} min` : `${h} h`;
@@ -455,12 +465,26 @@ export function TableauDeBord() {
         )}
       </div>
 
-      {/* Graphiques */}
+      {/* Graphiques — l'ordre appaire les hauteurs plutôt que les thèmes. Chaque carte
+          mesure une barre par ligne de données : statut 5 et priorité 4 d'un côté,
+          catégorie 6 et évaluations 5 de l'autre, soit deux rangées presque d'aplomb. La
+          charge, seule série dont la longueur suit l'effectif des techniciens (10 ici),
+          passe en dernier et prend toute la largeur dès qu'elle dépasse le seuil — sinon
+          elle laissait une centaine de pixels de vide sous la carte voisine, et la
+          dernière rangée se terminait sur une cellule creuse. */}
       {stats && (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <CarteBarres titre="Tickets par statut" donnees={dataStatut} index={0} />
           <CarteBarres titre="Tickets par priorité" donnees={dataPriorite} index={1} />
           <CarteBarres titre="Tickets par catégorie" donnees={dataCategorie} index={2} />
+          {stats.nombreEvaluations > 0 && (
+            <CarteBarres
+              titre="Répartition des évaluations"
+              description={`${stats.nombreEvaluations} évaluation${stats.nombreEvaluations > 1 ? 's' : ''}`}
+              donnees={dataSatisfaction}
+              index={3}
+            />
+          )}
           {estSupport && (
             <CarteBarres
               titre="Charge par technicien"
@@ -472,15 +496,11 @@ export function TableauDeBord() {
                   : 'Tickets ouverts assignés'
               }
               donnees={dataCharge}
-              index={3}
-            />
-          )}
-          {stats.nombreEvaluations > 0 && (
-            <CarteBarres
-              titre="Répartition des évaluations"
-              description={`${stats.nombreEvaluations} évaluation${stats.nombreEvaluations > 1 ? 's' : ''}`}
-              donnees={dataSatisfaction}
               index={4}
+              // Bandeau pleine largeur seulement si la série est longue : filtrée sur un
+              // technicien (cf. masquage des zéros), elle n'a qu'une barre et une carte
+              // pleine largeur pour une barre serait aussi déséquilibrée que l'inverse.
+              className={dataCharge.length > SEUIL_CHARGE_PLEINE_LARGEUR ? 'lg:col-span-2' : undefined}
             />
           )}
         </div>

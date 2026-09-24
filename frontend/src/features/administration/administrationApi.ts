@@ -12,9 +12,22 @@ export type ModeAffectation = 'MANUEL' | 'AUTO';
 
 export const CLE_MODE_AFFECTATION = 'AFFECTATION_MODE';
 
+// Seuils de confiance du module IA (§6.5). Clés et bornes MIROIR de
+// `backend/src/config/parametres.registre.ts`, qui reste la source de vérité : le serveur
+// revalide tout. Ces constantes ne servent qu'à construire des contrôles cohérents.
+export const CLE_SEUIL_AFFICHAGE = 'IA_SEUIL_AFFICHAGE';
+export const CLE_SEUIL_ABSTENTION = 'IA_SEUIL_ABSTENTION';
+// État du domaine — la porte est fermée. Ce n'est pas un nombre magique.
+export const ABSTENTION_DESACTIVEE = 'DESACTIVE';
+// 0 et 1 sont exclus : réglages dégénérés (jamais abstenir tout en payant un rerank / toujours abstenir).
+export const BORNE_PORTE_MIN = 0.05;
+export const BORNE_PORTE_MAX = 0.95;
+
 export interface Parametre {
   cle: string;
-  valeur: string;
+  // Valeur MÉTIER, pas la chaîne stockée : le registre l'a déjà interprétée (nombre pour
+  // les seuils, chaîne pour le mode d'affectation et pour « DESACTIVE »).
+  valeur: string | number;
   description: string;
   // 'defaut' = aucune ligne en base (jamais réglé) ; 'stocke' = réglé par un humain ;
   // 'defaut_apres_erreur' = valeur en base illisible, repli appliqué.

@@ -10,7 +10,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  ABSTENTION_DESACTIVEE,
+  BORNE_ABSTENTION_MAX,
+  BORNE_ABSTENTION_MIN,
   CLE_MODE_AFFECTATION,
+  CLE_SEUIL_ABSTENTION,
+  CLE_SEUIL_AFFICHAGE,
   CLES_CONNUES,
   estCleConnue,
   interpreter,
@@ -109,16 +114,22 @@ test('aucune entrée, même absurde, ne lève', () => {
 
 // ── Clés ─────────────────────────────────────────────────────────────────────
 
-test('estCleConnue reconnaît la clé du registre et rejette les autres', () => {
+test('estCleConnue reconnaît les clés du registre et rejette les autres', () => {
   assert.equal(estCleConnue(CLE_MODE_AFFECTATION), true);
-  assert.equal(estCleConnue('SEUIL_CONFIANCE_IA'), false); // §6.5, pas encore au registre
+  assert.equal(estCleConnue(CLE_SEUIL_AFFICHAGE), true); // §6.5 — entré au registre
+  assert.equal(estCleConnue(CLE_SEUIL_ABSTENTION), true); // §6.5 — entré au registre
+  assert.equal(estCleConnue('SEUIL_CONFIANCE_IA'), false); // nom de travail, jamais retenu
   assert.equal(estCleConnue(''), false);
   assert.equal(estCleConnue('__proto__'), false); // n'hérite pas des clés d'Object
   assert.equal(estCleConnue('toString'), false);
 });
 
 test('le registre expose exactement les clés connues', () => {
-  assert.deepEqual(CLES_CONNUES, [CLE_MODE_AFFECTATION]);
+  assert.deepEqual(CLES_CONNUES, [
+    CLE_MODE_AFFECTATION,
+    CLE_SEUIL_AFFICHAGE,
+    CLE_SEUIL_ABSTENTION,
+  ]);
 });
 
 // ── Écriture : stricte, clé inconnue rejetée ─────────────────────────────────
@@ -153,4 +164,120 @@ test('écriture d\'un type non textuel → rejetée', () => {
 test('validerEcriture ne lève sur aucune entrée', () => {
   assert.doesNotThrow(() => validerEcriture('', null));
   assert.doesNotThrow(() => validerEcriture('__proto__', 'AUTO'));
+});
+
+// ── Seuils IA (§6.5) — affichage ─────────────────────────────────────────────
+// Le contrat est le même que pour le mode : une base non configurée doit reproduire le
+// comportement livré (0,5, la valeur qui était en dur dans le frontend).
+
+test('seuil d’affichage : ligne absente → 0,5, sans avertissement', () => {
+  const r = interpreter(CLE_SEUIL_AFFICHAGE, null);
+  assert.equal(r.valeur, 0.5);
+  assert.equal(r.origine, 'defaut');
+  assert.equal(r.avertissement, null);
+});
+
+test('seuil d’affichage : bornes 0 et 1 acceptées', () => {
+  assert.equal(interpreter(CLE_SEUIL_AFFICHAGE, '0').valeur, 0);
+  assert.equal(interpreter(CLE_SEUIL_AFFICHAGE, '1').valeur, 1);
+});
+
+test('seuil d’affichage : hors bornes → repli sur 0,5 + avertissement', () => {
+  for (const brut of ['-0.1', '1.5', '42']) {
+    const r = interpreter(CLE_SEUIL_AFFICHAGE, brut);
+    assert.equal(r.valeur, 0.5, `entrée : ${brut}`);
+    assert.equal(r.origine, 'defaut_apres_erreur');
+    assert.ok(r.avertissement);
+  }
+});
+
+test('seuil d’affichage : virgule décimale et espaces tolérés en LECTURE', () => {
+  assert.equal(interpreter(CLE_SEUIL_AFFICHAGE, ' 0,35 ').valeur, 0.35);
+});
+
+test('seuil d’affichage : chaîne vide → défaut (et non 0)', () => {
+  const r = interpreter(CLE_SEUIL_AFFICHAGE, '');
+  assert.equal(r.valeur, 0.5);
+  assert.equal(r.origine, 'defaut_apres_erreur');
+});
+
+test('seuil d’affichage : arrondi au centième', () => {
+  assert.equal(interpreter(CLE_SEUIL_AFFICHAGE, '0.333333').valeur, 0.33);
+});
+
+// ── Seuils IA (§6.5) — porte d’abstention ────────────────────────────────────
+// Invariant central : une base non configurée laisse la porte FERMÉE. Aucune entrée
+// illisible ne doit pouvoir l’ouvrir — l’équivalent du fail-safe « jamais AUTO ».
+
+test('porte : ligne absente → DESACTIVE (fermée), sans avertissement', () => {
+  const r = interpreter(CLE_SEUIL_ABSTENTION, null);
+  assert.equal(r.valeur, ABSTENTION_DESACTIVEE);
+  assert.equal(r.origine, 'defaut');
+  assert.equal(r.avertissement, null);
+});
+
+test('porte : « DESACTIVE » est un état du domaine, pas une erreur', () => {
+  const r = interpreter(CLE_SEUIL_ABSTENTION, 'DESACTIVE');
+  assert.equal(r.valeur, ABSTENTION_DESACTIVEE);
+  assert.equal(r.origine, 'stocke');
+  assert.equal(r.avertissement, null);
+});
+
+test('porte : lecture tolérante à la casse pour DESACTIVE', () => {
+  assert.equal(interpreter(CLE_SEUIL_ABSTENTION, ' desactive ').valeur, ABSTENTION_DESACTIVEE);
+});
+
+test('porte : valeur dans les bornes → acceptée', () => {
+  assert.equal(interpreter(CLE_SEUIL_ABSTENTION, '0.35').valeur, 0.35);
+  assert.equal(interpreter(CLE_SEUIL_ABSTENTION, String(BORNE_ABSTENTION_MIN)).valeur, 0.05);
+  assert.equal(interpreter(CLE_SEUIL_ABSTENTION, String(BORNE_ABSTENTION_MAX)).valeur, 0.95);
+});
+
+test('porte : 0 et 1 REFUSÉS (réglages dégénérés) → repli sur fermée', () => {
+  for (const brut of ['0', '1']) {
+    const r = interpreter(CLE_SEUIL_ABSTENTION, brut);
+    assert.equal(r.valeur, ABSTENTION_DESACTIVEE, `entrée : ${brut}`);
+    assert.equal(r.origine, 'defaut_apres_erreur');
+  }
+});
+
+test('AUCUNE entrée illisible ne peut OUVRIR la porte (fail-safe)', () => {
+  const entrees = ['', '   ', 'oui', 'true', 'ACTIVE', '-1', '2', 'NaN', 'Infinity', '0x10', '<script>'];
+  for (const brut of entrees) {
+    assert.equal(
+      interpreter(CLE_SEUIL_ABSTENTION, brut).valeur,
+      ABSTENTION_DESACTIVEE,
+      `entrée : « ${brut} »`,
+    );
+  }
+});
+
+test('porte : aucune entrée, même absurde, ne lève', () => {
+  const entrees = [null, undefined, '', '   ', ' ', 'DESACTIVE'.repeat(100), '0.5'];
+  for (const brut of entrees) {
+    assert.doesNotThrow(() => interpreter(CLE_SEUIL_ABSTENTION, brut as string | null));
+  }
+});
+
+// ── Écriture des seuils : stricte ────────────────────────────────────────────
+
+test('écriture : seuils valides acceptés et sérialisés', () => {
+  const a = validerEcriture(CLE_SEUIL_AFFICHAGE, '0.35');
+  assert.equal(a.ok && a.valeurSerialisee, '0.35');
+  const b = validerEcriture(CLE_SEUIL_ABSTENTION, '0.4');
+  assert.equal(b.ok && b.valeurSerialisee, '0.4');
+  const c = validerEcriture(CLE_SEUIL_ABSTENTION, 'DESACTIVE');
+  assert.equal(c.ok && c.valeurSerialisee, ABSTENTION_DESACTIVEE);
+});
+
+test('écriture : seuil hors bornes REJETÉ, pas de repli silencieux', () => {
+  for (const [cle, valeur] of [
+    [CLE_SEUIL_AFFICHAGE, '1.2'],
+    [CLE_SEUIL_ABSTENTION, '0'],
+    [CLE_SEUIL_ABSTENTION, '0.99'],
+    [CLE_SEUIL_ABSTENTION, 'peut-etre'],
+  ] as const) {
+    const r = validerEcriture(cle, valeur);
+    assert.equal(r.ok, false, `${cle} = ${valeur}`);
+  }
 });

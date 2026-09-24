@@ -93,6 +93,12 @@ export interface ReponseDeployer {
 }
 
 export const iaApi = {
+  // Seuil d'AFFICHAGE de la catégorie suggérée (§6.5). Point d'entrée ÉTROIT, ouvert à tout
+  // utilisateur authentifié : le panneau de suggestion est visible du technicien assigné,
+  // qui n'a pas accès au registre complet (`/parametres`, réservé à l'administrateur).
+  seuilAffichage: (token: string) =>
+    apiRequest<{ seuilAffichage: number }>('/parametres/affichage', { token }),
+
   // Compteur + état courant. Appelé au montage ET en polling pendant un réentraînement.
   etatFlywheel: (token: string) => apiRequest<EtatFlywheel>('/ia/flywheel', { token }),
 

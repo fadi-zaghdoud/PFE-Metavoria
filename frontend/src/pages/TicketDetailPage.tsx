@@ -20,6 +20,7 @@ import {
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
+import { iaApi } from '../features/ia/iaApi';
 import { ticketsApi } from '../features/tickets/ticketsApi';
 import { utilisateursApi } from '../features/utilisateurs/utilisateursApi';
 import {
@@ -304,12 +305,15 @@ function TicketsSimilaires({ docs }: { docs: DetailSolutionIA['similaires'] }) {
   );
 }
 
-// Seuil d'AFFICHAGE de confiance (distinct du seuil d'ABSTENTION du modèle, laissé au flywheel
-// J9) : sous ce seuil, la catégorie suggérée est présentée comme INCERTAINE (grisée + « à
-// préciser ») au lieu d'être donnée comme sûre — le modèle exprime son doute par une confiance
-// basse, pas en changeant de classe. Valeur par défaut, destinée à devenir réglable par
-// l'Administration (§6.5).
-const SEUIL_CONFIANCE_AFFICHAGE = 0.5;
+// Seuil d'AFFICHAGE de confiance (distinct du seuil d'ABSTENTION du RAG) : sous ce seuil, la
+// catégorie suggérée est présentée comme INCERTAINE (grisée + « à préciser ») au lieu d'être
+// donnée comme sûre — le modèle exprime son doute par une confiance basse, pas en changeant
+// de classe.
+//
+// RÉGLABLE depuis Administration → Paramètres (§6.5) : la valeur vient du registre serveur.
+// Cette constante n'est plus que le REPLI si le point d'entrée est indisponible — elle vaut
+// le défaut du registre, pour que les deux chemins donnent le même rendu.
+const SEUIL_CONFIANCE_AFFICHAGE_DEFAUT = 0.5;
 
 // Catégorie suggérée par l'IA : badge + confiance, avec deux variations —
 //  - sous le seuil → grisée + « à préciser » (incertaine, mais reste le top-1 RÉEL) ;
@@ -318,13 +322,15 @@ function CategorieIA({
   suggestion,
   avant,
   surligne = false,
+  seuil,
 }: {
   suggestion: SuggestionIA;
   avant?: string;
   surligne?: boolean;
+  seuil: number;
 }) {
   const confiance = suggestion.scoreConfiance;
-  const incertaine = confiance != null && confiance < SEUIL_CONFIANCE_AFFICHAGE;
+  const incertaine = confiance != null && confiance < seuil;
   const different = Boolean(avant && avant !== suggestion.contenu);
   return (
     <>
@@ -529,6 +535,9 @@ export function TicketDetailPage() {
   const [introuvable, setIntrouvable] = useState(false);
   const [techniciens, setTechniciens] = useState<Utilisateur[]>([]);
   const [categories, setCategories] = useState<Categorie[]>([]);
+  // Seuil d'affichage réglable (§6.5). Repli sur le défaut du registre tant que la valeur
+  // n'est pas revenue — la page reste rendue, jamais bloquée par ce réglage.
+  const [seuilAffichage, setSeuilAffichage] = useState(SEUIL_CONFIANCE_AFFICHAGE_DEFAUT);
 
   const [reponse, setReponse] = useState('');
   const [envoiCommentaire, setEnvoiCommentaire] = useState(false);
@@ -562,6 +571,25 @@ export function TicketDetailPage() {
         /* l'affectation reste possible manuellement plus tard */
       });
   }, [token, utilisateur?.role]);
+
+  // Seuil d'affichage de la catégorie suggérée. Point d'entrée ouvert à tout utilisateur
+  // authentifié : un technicien assigné en a besoin sans accéder au registre complet.
+  useEffect(() => {
+    if (!token) return;
+    iaApi
+      .seuilAffichage(token)
+      // `typeof` et non la seule annotation TypeScript : celle-ci ne vérifie rien à
+      // l'exécution, et c'est une frontière réseau. Une réponse 200 mal formée ne lèverait
+      // pas et poserait `undefined` — or `confiance < undefined` est TOUJOURS faux, donc
+      // plus aucune catégorie ne serait marquée « à préciser ». La dégradation irait dans
+      // le mauvais sens : une interface qui paraît plus sûre qu'elle ne l'est.
+      .then(({ seuilAffichage: valeur }) => {
+        if (typeof valeur === 'number' && Number.isFinite(valeur)) setSeuilAffichage(valeur);
+      })
+      .catch(() => {
+        /* repli sur le défaut : un réglage indisponible ne doit pas casser l'affichage */
+      });
+  }, [token]);
 
   // Liste des catégories pour la recatégorisation (technicien assigné ou admin).
   useEffect(() => {
@@ -1195,7 +1223,7 @@ export function TicketDetailPage() {
                   <div>
                     <p className="text-xs text-slate-400">Catégorie suggérée</p>
                     <div className="mt-1">
-                      <CategorieIA suggestion={suggestionCategorie} />
+                      <CategorieIA suggestion={suggestionCategorie} seuil={seuilAffichage} />
                     </div>
                   </div>
                 )}
@@ -1230,6 +1258,7 @@ export function TicketDetailPage() {
                               suggestion={categorieApresOcr}
                               avant={suggestionCategorie?.contenu}
                               surligne
+                              seuil={seuilAffichage}
                             />
                           </div>
                         </div>

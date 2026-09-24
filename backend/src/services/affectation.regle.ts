@@ -50,7 +50,12 @@ import type { JourCalendaire } from './absence.disponibilite';
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Seuil au-dessous duquel une catégorie suggérée n'est PAS jugée exploitable pour
-// affecter. Aligné sur le seuil d'affichage du frontend (`SEUIL_CONFIANCE_AFFICHAGE`
+// affecter. DÉCOUPLÉ du seuil d'affichage depuis le 24/09/2026 : celui-ci est devenu
+// réglable (§6.5, `IA_SEUIL_AFFICHAGE`) tandis que celui-ci reste EN DUR — ce sont deux
+// décisions différentes, l'une cosmétique, l'autre métier. Le découplage est énoncé dans
+// l'aide de l'écran Paramètres plutôt que laissé à deviner. Rendre CETTE clé réglable est
+// une perspective identifiée, hors périmètre de ce lot. Valeur historiquement alignée sur
+// l'ancien seuil d'affichage du frontend (`SEUIL_CONFIANCE_AFFICHAGE`
 // dans TicketDetailPage.tsx) : sous ce seuil l'interface grise déjà la catégorie et la
 // marque « à préciser » — affecter dessus contredirait ce que voit l'utilisateur.
 //

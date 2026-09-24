@@ -32,6 +32,32 @@ def test_titre_et_description_vides_422(chemin):
     assert r.status_code == 422
 
 
+# ── Porte d'abstention (§6.5) — le seuil VOYAGE dans la charge utile ────────────
+# Ce service est SANS ÉTAT : il ne lit aucun registre, il reçoit le seuil de Node. Les
+# bornes sont donc revalidées ICI, pas seulement côté backend — une charge utile forgée
+# ne doit pas pouvoir ouvrir la porte sur un réglage dégénéré.
+
+@pytest.mark.parametrize("seuil", [0, 1, -0.5, 1.5, 0.04, 0.96])
+def test_suggest_seuil_hors_bornes_422(seuil):
+    r = client.post("/suggest", json={"titre": "t", "description": "d", "seuil": seuil})
+    assert r.status_code == 422
+
+
+def test_suggest_seuil_absent_reste_valide():
+    """Champ optionnel : son absence est le cas nominal (porte fermée)."""
+    # 422 viendrait d'un titre/description vides, pas du seuil manquant : on vérifie donc
+    # que la validation du corps passe, sans toucher à la DB (titre/description remplis
+    # iraient jusqu'au retrieval, hors périmètre d'un test offline).
+    r = client.post("/suggest", json={"titre": "   ", "description": ""})
+    assert r.status_code == 422  # rejet dû aux champs vides, le seuil absent n'a pas gêné
+
+
+def test_suggest_seuil_null_accepte_par_le_schema():
+    """`null` = porte fermée — Node l'envoie tel quel quand le réglage est DESACTIVE."""
+    r = client.post("/suggest", json={"titre": "   ", "description": "", "seuil": None})
+    assert r.status_code == 422  # même rejet que ci-dessus : `null` n'ajoute pas d'erreur
+
+
 def test_summarize_fil_vide_422():
     r = client.post("/summarize", json={"titre": "t", "description": "   ", "messages": []})
     assert r.status_code == 422

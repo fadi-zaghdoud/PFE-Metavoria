@@ -38,8 +38,12 @@ TOP_FINAL = 5
 #     (`if seuil is not None`), or `SEUIL_ABSTENTION_DEFAUT` vaut `None` ci-dessous et
 #     rien ne le règle — ni variable d'environnement, ni paramètre admin (le registre
 #     backend ignore encore `SEUIL_CONFIANCE_IA`, §6.5).
-# Le reranker ne s'exécute donc que via `POST /rerank` et le harnais d'évaluation
-# (variante `rrf_rerank`). Le recâbler suppose de MODIFIER `suggestion.py`.
+# DEPUIS LE 24/09/2026, la porte est RÉGLABLE : un administrateur la règle depuis
+# Administration → Paramètres (§6.5), et Node transmet le seuil dans la charge utile de
+# `/suggest`. Ouvrir la porte fait donc EXÉCUTER le reranker — pour le SCORE (top-1)
+# uniquement. L'ORDRE d'affichage reste `"rrf"`, écrit en dur ci-dessous : le
+# réordonnancement, lui, exige toujours de modifier `suggestion.py`.
+# Porte FERMÉE par défaut : sans réglage, le comportement est celui livré jusqu'ici.
 #
 # POURQUOI on ne l'a pas câblé. L'ablation J6a (7cae733) mesure un effet FAIBLE et
 # AMBIGU : gain marginal ~+0,01 nDCG/Recall (même sur réel) mais perte MRR réel

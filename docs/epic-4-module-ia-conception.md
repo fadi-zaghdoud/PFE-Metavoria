@@ -193,7 +193,9 @@ model ParametreIA {
 | `GET` | `/api/tickets/:id/suggestions` | lister les `SuggestionIA` d'un ticket (technicien) | ouverture du ticket |
 | `POST` | `/api/tickets/:id/suggestions/:sid/validation` | technicien valide/rejette → **flywheel** | action technicien |
 | `POST` | `/api/ia/tickets/:id/resume` | résumé du fil long | à la demande |
-| `GET`/`PUT` | `/api/ia/parametres` | seuils de confiance (admin, §6.5) | administration |
+| `GET`/`PUT` | ~~`/api/ia/parametres`~~ | seuils de confiance (admin, §6.5) | administration |
+
+> ⚠️ **Écart conception / implémentation, constaté le 24/09/2026.** Les seuils sont livrés sur le registre de paramètres GÉNÉRIQUE existant — `GET`/`PATCH /api/parametres` (administrateur) et `GET /api/parametres/affichage` (tout utilisateur authentifié, lecture étroite) — et non sur un point d'entrée dédié au module IA. Réutiliser le registre a évité une table, une migration et un second mécanisme de journalisation d'audit. L'implémentation fait foi ; cette ligne est conservée pour la trace.
 | `GET` | `/api/ia/sante` | état du service Python | supervision |
 
 Toutes les écritures IA journalisées (`utils/logger.ts`) ; latence enregistrée dans `SuggestionIA.latenceMs`.

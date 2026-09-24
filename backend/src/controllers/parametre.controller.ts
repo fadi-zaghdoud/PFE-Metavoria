@@ -16,6 +16,11 @@ export const parametreController = {
     res.status(200).json({ parametres });
   },
 
+  // Réglages d'affichage, lisibles par tout utilisateur authentifié (cf. la route).
+  async affichage(_req: Request, res: Response) {
+    res.status(200).json(await parametreService.lireAffichage());
+  },
+
   async mettreAJour(req: Request, res: Response) {
     if (!req.user) throw new UnauthorizedError();
     const { cle, valeur } = majParametreSchema.parse(req.body);

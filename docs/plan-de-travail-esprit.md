@@ -369,7 +369,7 @@ qui est un document prévisionnel, mais rien ne les prouve encore dans le dépô
 
 | Élément | Entrée concernée | État réel |
 |---|---|---|
-| Seuils de confiance IA réglables par l'administrateur (§6.5) | 11 — Administration de la plateforme | `config/parametres.registre.ts` n'expose qu'une seule clé, le mode d'affectation. Les seuils sont aujourd'hui des constantes du code. Le registre est conçu pour les accueillir. |
+| ~~Seuils de confiance IA réglables par l'administrateur (§6.5)~~ — **livré le 24/09/2026** | 11 — Administration de la plateforme | Deux clés au registre : seuil d'**affichage** de la catégorie suggérée (défaut 0,5) et **porte d'abstention** du RAG (désactivée par défaut, bornes 0,05–0,95). Bornées et revalidées côté serveur, journalisées à l'audit. Le seuil de l'**affectation automatique** reste en dur — découplage assumé, énoncé dans l'aide de l'écran. |
 | Intégration continue (§8) | 13 — Tests, qualité et intégration continue | Aucun répertoire `.github` : les tests existent et s'exécutent, mais rien ne les déclenche automatiquement. |
 
 ## Écartés en cours de projet, avec leur raison
@@ -377,7 +377,7 @@ qui est un document prévisionnel, mais rien ne les prouve encore dans le dépô
 | Élément | Raison |
 |---|---|
 | Champs canal, SLA, tags et sentiment présents sur les maquettes | Abandonnés en Epic 2 : absents du modèle de données, sans besoin exprimé. |
-| Reranker par cross-encoder dans la chaîne RAG | Livré et fonctionnel, mais **hors du chemin par défaut** : non câblé dans la chaîne de suggestion, il ne s'exécute que via `POST /rerank` et le harnais d'évaluation ; le recâbler suppose de modifier `suggestion.py`. L'ablation mesurée a montré un effet **faible et ambigu** : **nDCG@5 +0,01** et Recall@5 +0,02, mais **MRR −0,06 sur le jeu réel**, dont l'échantillon utile n'est que de **n=25** requêtes (21 des 46 n'ont aucun analogue dans la base de connaissances). Coût mesuré en regard : **6,86 s** par requête à chaud (20 documents, `max_length=512`), au-delà du budget de 5 s. Décision de rapport bénéfice/coût **entre deux grandeurs mesurées**, pas un échec technique. |
+| Reranker par cross-encoder dans la chaîne RAG | Livré et fonctionnel, mais **hors du chemin par défaut** : non câblé dans la chaîne de suggestion, il ne s'exécute que via `POST /rerank`, le harnais d'évaluation, et — depuis le 24/09/2026 — la **porte d'abstention réglable** (§6.5), qui le sollicite pour le **score** du meilleur candidat. Le **réordonnancement**, lui, reste hors du chemin : l'ordre d'affichage est `"rrf"`, écrit en dur. L'ablation mesurée a montré un effet **faible et ambigu** : **nDCG@5 +0,01** et Recall@5 +0,02, mais **MRR −0,06 sur le jeu réel**, dont l'échantillon utile n'est que de **n=25** requêtes (21 des 46 n'ont aucun analogue dans la base de connaissances). Coût mesuré en regard : **6,86 s** par requête à chaud (20 documents, `max_length=512`), au-delà du budget de 5 s. Décision de rapport bénéfice/coût **entre deux grandeurs mesurées**, pas un échec technique. |
 | Adaptation de domaine du classifieur par ajout de tickets réels à l'entraînement | Expérience menée, résultat négatif, conservée comme telle au journal technique. |
 
 ## Un point de rigueur pour la soutenance

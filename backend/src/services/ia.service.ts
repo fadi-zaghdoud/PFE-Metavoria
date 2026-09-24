@@ -10,6 +10,7 @@ import { prisma } from '../config/prisma';
 import { Prisma } from '../generated/prisma/client';
 import { categorieRepository } from '../repositories/categorie.repository';
 import { ticketRepository } from '../repositories/ticket.repository';
+import { parametreService } from './parametre.service';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Pont Node → microservice IA (Python/FastAPI). Contrats alignés sur `service/app.py`.
@@ -101,8 +102,15 @@ interface ReponseSuggest {
 }
 
 // Timeout LONG (génération 15-30 s) — cet appel est fait en asynchrone, hors réponse HTTP.
-const suggerer = (titre: string, description: string) =>
-  appelerIA<ReponseSuggest>('/suggest', { titre, description }, env.IA_SUGGESTION_TIMEOUT_MS);
+// `seuil` porte la porte d'abstention (§6.5) : `null` = porte fermée, le service IA retombe
+// alors sur son propre défaut. Le seuil VOYAGE dans la charge utile — le service IA reste
+// SANS ÉTAT et ne lit jamais le registre de paramètres.
+const suggerer = (titre: string, description: string, seuil: number | null) =>
+  appelerIA<ReponseSuggest>(
+    '/suggest',
+    { titre, description, seuil },
+    env.IA_SUGGESTION_TIMEOUT_MS,
+  );
 
 // Résumé du fil (J8). Contrat aligné sur /summarize ; même timeout long (génération 21-55 s).
 interface MessageFil {
@@ -285,9 +293,10 @@ async function genererSuggestion(
   ticketId: number,
   titre: string,
   description: string,
+  seuil: number | null,
 ): Promise<void> {
   try {
-    const res = await suggerer(titre, description);
+    const res = await suggerer(titre, description, seuil);
     await prisma.suggestionIA.update({
       where: { id: suggestionId },
       data: {
@@ -408,12 +417,16 @@ export const iaService = {
   // lance la génération en ASYNCHRONE (non attendue) → l'appelant répond 202 immédiatement.
   // Rapide ici (deux écritures DB) ; les 15-30 s de génération vivent dans le fire-and-forget.
   async demarrerSuggestion(ticketId: number, titre: string, description: string): Promise<void> {
+    // Seuil lu ICI, au moment de la demande, et non dans le traitement différé : le réglage
+    // qui s'applique est celui en vigueur quand le technicien clique. `lire` ne lève jamais
+    // — une base indisponible rend le défaut, donc la porte fermée.
+    const seuil = await parametreService.seuilAbstention();
     // Une seule ligne SOLUTION par ticket : on repart propre à chaque demande.
     await prisma.suggestionIA.deleteMany({ where: { ticketId, typeSuggestion: 'SOLUTION' } });
     const ligne = await prisma.suggestionIA.create({
       data: { ticketId, typeSuggestion: 'SOLUTION', contenu: '', statut: 'EN_COURS' },
     });
-    executerSansContexte(() => void genererSuggestion(ligne.id, ticketId, titre, description));
+    executerSansContexte(() => void genererSuggestion(ligne.id, ticketId, titre, description, seuil));
   },
 
   // Démarre un résumé du fil : réinitialise LA ligne RESUME en EN_COURS, puis lance la

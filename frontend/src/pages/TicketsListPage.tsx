@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, RefreshCw, Search, Ticket } from 'lucide-react';
 import { ticketsApi } from '../features/tickets/ticketsApi';
 import {
@@ -39,10 +39,16 @@ export function TicketsListPage() {
   const utilisateur = useAuthStore((state) => state.utilisateur);
   const estSupport = utilisateur?.role === 'TECHNICIEN' || utilisateur?.role === 'ADMINISTRATEUR';
 
+  const [searchParams] = useSearchParams();
   const [tickets, setTickets] = useState<TicketResume[]>([]);
   const [chargement, setChargement] = useState(true);
   const [erreur, setErreur] = useState<string | null>(null);
-  const [vue, setVue] = useState<Vue>('TOUS');
+  // Ouverture depuis le tableau de bord : « ?vue=non-assignes » pré-sélectionne la vue.
+  // Ignoré pour un employé, qui ne dispose pas de cette vue. Lu une seule fois, à
+  // l'initialisation : l'utilisateur reste ensuite libre de changer d'onglet.
+  const [vue, setVue] = useState<Vue>(
+    searchParams.get('vue') === 'non-assignes' && estSupport ? 'NON_ASSIGNES' : 'TOUS',
+  );
   const [recherche, setRecherche] = useState('');
   const [filtreStatut, setFiltreStatut] = useState<StatutTicket | ''>('');
   const [filtrePriorite, setFiltrePriorite] = useState<PrioriteTicket | ''>('');

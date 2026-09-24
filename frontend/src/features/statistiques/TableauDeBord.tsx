@@ -1,6 +1,17 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { CheckCircle2, Clock, Download, FileText, Inbox, SlidersHorizontal, Star, X } from 'lucide-react';
+import {
+  CheckCircle2,
+  Clock,
+  Download,
+  FileText,
+  Inbox,
+  SlidersHorizontal,
+  Star,
+  UserPlus,
+  X,
+} from 'lucide-react';
 import { ticketsApi } from '../tickets/ticketsApi';
 import { utilisateursApi } from '../utilisateurs/utilisateursApi';
 import { LABEL_PRIORITE, LABEL_STATUT } from '../tickets/ticket-ui';
@@ -210,6 +221,17 @@ export function TableauDeBord() {
     }
   }
 
+  // « À affecter » — tickets NOUVEAU. Dans ce cycle de vie, NOUVEAU équivaut à « sans
+  // technicien » : l'assignation fait passer à EN_ATTENTE, la désassignation ramène à
+  // NOUVEAU. Vérifié sur les 870 tickets de la base — aucun NOUVEAU assigné, aucun ticket
+  // ouvert non-NOUVEAU sans technicien. Dérivé ici plutôt que demandé au backend, laissé
+  // hors périmètre de cette passe : si l'invariant devait tomber, c'est un compteur
+  // explicite côté serveur qu'il faudrait, pas un correctif ici.
+  const aAffecter = stats?.repartitionStatut.find((r) => r.statut === 'NOUVEAU')?.count ?? 0;
+  // La carte « À affecter » prend le rang 0 quand elle est là : les suivantes décalent,
+  // pour que l'animation d'entrée reste en cascade et non par paires.
+  const decalageKpi = estAdmin ? 1 : 0;
+
   const dataStatut = (stats?.repartitionStatut ?? []).map((r) => ({
     label: LABEL_STATUT[r.statut],
     value: r.count,
@@ -344,13 +366,38 @@ export function TableauDeBord() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {stats ? (
           <>
-            <StatCard label="Tickets ouverts" value={stats.ticketsOuverts} icon={Inbox} tone="warning" index={0} />
+            {/* Réservée à l'ADMINISTRATEUR : lui seul peut affecter un ticket
+                (ticket.service.affecter refuse tout autre rôle). Montrer ce chiffre à un
+                technicien lui désignerait une tâche qu'il ne peut pas accomplir. */}
+            {estAdmin && (
+              <Link
+                to="/tickets?vue=non-assignes"
+                className="block"
+                title="Ouvrir la liste des tickets non assignés"
+              >
+                <StatCard
+                  label="À affecter"
+                  value={aAffecter}
+                  hint={aAffecter > 0 ? 'Aucun technicien assigné' : 'Rien en attente'}
+                  icon={UserPlus}
+                  tone={aAffecter > 0 ? 'danger' : 'success'}
+                  index={0}
+                />
+              </Link>
+            )}
+            <StatCard
+              label="Tickets ouverts"
+              value={stats.ticketsOuverts}
+              icon={Inbox}
+              tone="warning"
+              index={decalageKpi + 0}
+            />
             <StatCard
               label="Résolus / clôturés"
               value={stats.ticketsResolus + stats.ticketsClotures}
               icon={CheckCircle2}
               tone="success"
-              index={1}
+              index={decalageKpi + 1}
             />
             <StatCard
               label="Temps de résolution moyen"
@@ -362,7 +409,7 @@ export function TableauDeBord() {
               }
               icon={Clock}
               tone="primary"
-              index={2}
+              index={decalageKpi + 2}
             />
             <StatCard
               label="Satisfaction moyenne"
@@ -372,11 +419,13 @@ export function TableauDeBord() {
               hint={`${stats.nombreEvaluations} évaluation${stats.nombreEvaluations > 1 ? 's' : ''}`}
               icon={Star}
               tone="warning"
-              index={3}
+              index={decalageKpi + 3}
             />
           </>
         ) : (
-          ['k1', 'k2', 'k3', 'k4'].map((k) => <Skeleton key={k} className="h-[116px] rounded-2xl" />)
+          Array.from({ length: estAdmin ? 5 : 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-[116px] rounded-2xl" />
+          ))
         )}
       </div>
 

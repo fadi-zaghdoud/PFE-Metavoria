@@ -228,9 +228,7 @@ export function TableauDeBord() {
   // hors périmètre de cette passe : si l'invariant devait tomber, c'est un compteur
   // explicite côté serveur qu'il faudrait, pas un correctif ici.
   const aAffecter = stats?.repartitionStatut.find((r) => r.statut === 'NOUVEAU')?.count ?? 0;
-  // La carte « À affecter » prend le rang 0 quand elle est là : les suivantes décalent,
-  // pour que l'animation d'entrée reste en cascade et non par paires.
-  const decalageKpi = estAdmin ? 1 : 0;
+  const resolusEtClotures = (stats?.ticketsResolus ?? 0) + (stats?.ticketsClotures ?? 0);
 
   const dataStatut = (stats?.repartitionStatut ?? []).map((r) => ({
     label: LABEL_STATUT[r.statut],
@@ -385,20 +383,28 @@ export function TableauDeBord() {
                 />
               </Link>
             )}
+            {/* Chez l'administrateur, le cumul résolus + clôturés descend en mention sous
+                les tickets ouverts : l'information reste à l'écran, et sa carte cède la
+                place au seul chiffre qui appelle une décision. Les autres rôles, qui n'ont
+                pas « À affecter », gardent la carte dédiée — la rangée fait quatre dans
+                les deux cas, sans cellule vide. */}
             <StatCard
               label="Tickets ouverts"
               value={stats.ticketsOuverts}
+              hint={estAdmin ? `${resolusEtClotures} résolus ou clôturés` : undefined}
               icon={Inbox}
               tone="warning"
-              index={decalageKpi + 0}
+              index={estAdmin ? 1 : 0}
             />
-            <StatCard
-              label="Résolus / clôturés"
-              value={stats.ticketsResolus + stats.ticketsClotures}
-              icon={CheckCircle2}
-              tone="success"
-              index={decalageKpi + 1}
-            />
+            {!estAdmin && (
+              <StatCard
+                label="Résolus / clôturés"
+                value={resolusEtClotures}
+                icon={CheckCircle2}
+                tone="success"
+                index={1}
+              />
+            )}
             <StatCard
               label="Temps de résolution moyen"
               value={fmtHeures(stats.tempsResolutionMoyenHeures)}
@@ -409,7 +415,7 @@ export function TableauDeBord() {
               }
               icon={Clock}
               tone="primary"
-              index={decalageKpi + 2}
+              index={2}
             />
             <StatCard
               label="Satisfaction moyenne"
@@ -419,11 +425,11 @@ export function TableauDeBord() {
               hint={`${stats.nombreEvaluations} évaluation${stats.nombreEvaluations > 1 ? 's' : ''}`}
               icon={Star}
               tone="warning"
-              index={decalageKpi + 3}
+              index={3}
             />
           </>
         ) : (
-          Array.from({ length: estAdmin ? 5 : 4 }).map((_, i) => (
+          Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className="h-[116px] rounded-2xl" />
           ))
         )}

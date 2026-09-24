@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronDown, Plus, RefreshCw, Search, Ticket } from 'lucide-react';
 import { ticketsApi } from '../features/tickets/ticketsApi';
+import { utilisateursApi } from '../features/utilisateurs/utilisateursApi';
 import {
   LABEL_PRIORITE,
   LABEL_STATUT,
@@ -14,6 +15,7 @@ import { useAuthStore } from '../store/authStore';
 import { ApiError } from '../lib/apiClient';
 import { tempsRelatif } from '../lib/format';
 import type { FiltresTickets, PrioriteTicket, StatutTicket, TicketResume } from '../types/ticket';
+import type { Utilisateur } from '../types/auth';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Table, TableContainer, Td, Th } from '../components/ui/Table';
 import { Input, Select } from '../components/ui/Input';
@@ -22,10 +24,16 @@ import { Badge } from '../components/ui/Badge';
 import { Avatar } from '../components/ui/Avatar';
 import { Alert } from '../components/ui/Alert';
 import { Skeleton } from '../components/ui/Skeleton';
+import { useToast } from '../components/ui/Toast';
 import { EmptyState } from '../components/ui/EmptyState';
 import { cn } from '../lib/cn';
 
 type Vue = 'TOUS' | 'MES_TICKETS' | 'NON_ASSIGNES';
+
+// Un ticket résolu ou clôturé ne peut plus être (ré)affecté : `ticketService.affecter` le
+// refuse par une 400. Le miroir est ici pour ne pas proposer une action qui échouerait —
+// l'autorité reste au serveur.
+const STATUTS_NON_AFFECTABLES: StatutTicket[] = ['RESOLU', 'CLOTURE'];
 
 // Taille de page. La liste entière pesait 877 Ko pour 872 tickets, rechargés à chaque
 // changement de filtre ; 50 lignes couvrent un écran et son défilement immédiat.
@@ -39,9 +47,11 @@ const VUES: { id: Vue; label: string }[] = [
 
 export function TicketsListPage() {
   const navigate = useNavigate();
+  const toast = useToast();
   const token = useAuthStore((state) => state.token);
   const utilisateur = useAuthStore((state) => state.utilisateur);
   const estSupport = utilisateur?.role === 'TECHNICIEN' || utilisateur?.role === 'ADMINISTRATEUR';
+  const estAdmin = utilisateur?.role === 'ADMINISTRATEUR';
 
   const [searchParams] = useSearchParams();
   const [tickets, setTickets] = useState<TicketResume[]>([]);
@@ -55,6 +65,9 @@ export function TicketsListPage() {
   const [vue, setVue] = useState<Vue>(
     searchParams.get('vue') === 'non-assignes' && estSupport ? 'NON_ASSIGNES' : 'TOUS',
   );
+  const [techniciens, setTechniciens] = useState<Utilisateur[]>([]);
+  // Identifiant du ticket dont l'affectation est en cours, pour ne bloquer QUE sa ligne.
+  const [affectationEnCours, setAffectationEnCours] = useState<number | null>(null);
   const [recherche, setRecherche] = useState('');
   // Terme réellement envoyé au serveur, temporisé : sans cela chaque frappe déclencherait
   // une requête paginée. 300 ms est en dessous du seuil de perception d'une saisie fluide.
@@ -66,6 +79,17 @@ export function TicketsListPage() {
     const minuteur = setTimeout(() => setRechercheEnvoyee(recherche.trim()), 300);
     return () => clearTimeout(minuteur);
   }, [recherche]);
+
+  // Techniciens affectables — chargés une seule fois, et seulement pour l'administrateur :
+  // lui seul peut affecter (`ticketService.affecter` refuse tout autre rôle). Un échec est
+  // silencieux : la colonne retombe alors sur l'affichage simple, la liste reste utilisable.
+  useEffect(() => {
+    if (!token || !estAdmin) return;
+    utilisateursApi
+      .lister({ role: 'TECHNICIEN', actif: true }, token)
+      .then(({ utilisateurs }) => setTechniciens(utilisateurs))
+      .catch(() => {});
+  }, [token, estAdmin]);
 
   async function chargerTickets() {
     if (!token) return;
@@ -116,6 +140,37 @@ export function TicketsListPage() {
       setErreur(err instanceof ApiError ? err.message : 'Impossible de charger la suite');
     } finally {
       setChargementSuite(false);
+    }
+  }
+
+  // Affectation depuis la liste. Le ticket revient complet : on remplace la ligne par ce
+  // que le SERVEUR dit d'elle, plutôt que de deviner — l'affectation change aussi le
+  // statut (NOUVEAU devient EN_ATTENTE), et le recopier à la main aurait fini par diverger.
+  async function affecter(ticket: TicketResume, technicienId: number | null) {
+    if (!token) return;
+    setAffectationEnCours(ticket.id);
+    try {
+      const { ticket: misAJour } = await ticketsApi.affecter(ticket.id, technicienId, token);
+      setTickets((actuels) =>
+        actuels.map((t) =>
+          t.id === ticket.id
+            ? { ...t, technicien: misAJour.technicien, technicienId: misAJour.technicienId, statut: misAJour.statut }
+            : t,
+        ),
+      );
+      toast.success(
+        technicienId ? 'Ticket affecté' : 'Affectation retirée',
+        misAJour.technicien
+          ? `#${ticket.id} confié à ${misAJour.technicien.prenom} ${misAJour.technicien.nom}.`
+          : `#${ticket.id} n'a plus de technicien.`,
+      );
+    } catch (err) {
+      toast.error(
+        'Affectation impossible',
+        err instanceof ApiError ? err.message : 'Réessayez dans un instant.',
+      );
+    } finally {
+      setAffectationEnCours(null);
     }
   }
 
@@ -315,8 +370,31 @@ export function TicketsListPage() {
                   <Td className="hidden md:table-cell">
                     <PrioriteLabel priorite={t.priorite} />
                   </Td>
+                  {/* Affectation SUR PLACE pour l'administrateur : 53 tickets sans
+                      technicien demandaient jusqu'ici 53 allers-retours par la page de
+                      détail. `stopPropagation` est indispensable — la ligne entière est
+                      cliquable et ouvrirait le ticket au premier clic sur le menu. */}
                   <Td className="hidden lg:table-cell">
-                    {t.technicien ? (
+                    {estAdmin && !STATUTS_NON_AFFECTABLES.includes(t.statut) ? (
+                      <Select
+                        value={t.technicienId != null ? String(t.technicienId) : ''}
+                        disabled={affectationEnCours === t.id}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          affecter(t, e.target.value ? Number(e.target.value) : null);
+                        }}
+                        aria-label={`Affecter le ticket ${t.id}`}
+                        className="w-44"
+                      >
+                        <option value="">Non assigné</option>
+                        {techniciens.map((tech) => (
+                          <option key={tech.id} value={tech.id}>
+                            {tech.prenom} {tech.nom}
+                          </option>
+                        ))}
+                      </Select>
+                    ) : t.technicien ? (
                       <div className="flex items-center gap-2">
                         <Avatar prenom={t.technicien.prenom} nom={t.technicien.nom} photoUrl={t.technicien.photoUrl} size="sm" />
                         <span className="truncate text-sm text-slate-700">

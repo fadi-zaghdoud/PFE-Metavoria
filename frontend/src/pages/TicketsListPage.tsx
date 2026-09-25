@@ -3,7 +3,6 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronDown, Plus, RefreshCw, Search, Ticket } from 'lucide-react';
 import { ticketsApi } from '../features/tickets/ticketsApi';
 import { utilisateursApi } from '../features/utilisateurs/utilisateursApi';
-import { SelecteurTechnicien } from '../features/tickets/SelecteurTechnicien';
 import {
   BadgeAnciennete,
   LABEL_PRIORITE,
@@ -68,9 +67,6 @@ export function TicketsListPage() {
     searchParams.get('vue') === 'non-assignes' && estSupport ? 'NON_ASSIGNES' : 'TOUS',
   );
   const [techniciens, setTechniciens] = useState<Utilisateur[]>([]);
-  // Ticket dont on est en train de choisir le technicien. UN SEUL Dialog pour toute la
-  // table : le monter par ligne en ferait cinquante, tous inertes sauf un.
-  const [ticketAAffecter, setTicketAAffecter] = useState<TicketResume | null>(null);
   // Identifiant du ticket dont l'affectation est en cours, pour ne bloquer QUE sa ligne.
   const [affectationEnCours, setAffectationEnCours] = useState<number | null>(null);
   const [recherche, setRecherche] = useState('');
@@ -163,7 +159,6 @@ export function TicketsListPage() {
             : t,
         ),
       );
-      setTicketAAffecter(null);
       toast.success(
         technicienId ? 'Ticket affecté' : 'Affectation retirée',
         misAJour.technicien
@@ -404,43 +399,24 @@ export function TicketsListPage() {
                       cliquable et ouvrirait le ticket au premier clic sur le menu. */}
                   <Td className="hidden lg:table-cell">
                     {estAdmin && !STATUTS_NON_AFFECTABLES.includes(t.statut) ? (
-                      <button
-                        type="button"
+                      <Select
+                        value={t.technicienId != null ? String(t.technicienId) : ''}
                         disabled={affectationEnCours === t.id}
-                        onClick={(e) => {
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => {
                           e.stopPropagation();
-                          setTicketAAffecter(t);
+                          affecter(t, e.target.value ? Number(e.target.value) : null);
                         }}
-                        aria-label={
-                          t.technicien
-                            ? `Changer le technicien du ticket ${t.id} (actuellement ${t.technicien.prenom} ${t.technicien.nom})`
-                            : `Affecter le ticket ${t.id}`
-                        }
-                        className="flex w-44 items-center gap-2 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-left shadow-xs transition-colors hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        aria-label={`Affecter le ticket ${t.id}`}
+                        className="w-44"
                       >
-                        {t.technicien ? (
-                          <>
-                            <Avatar
-                              prenom={t.technicien.prenom}
-                              nom={t.technicien.nom}
-                              photoUrl={t.technicien.photoUrl}
-                              size="sm"
-                            />
-                            <span className="truncate text-sm text-slate-700">
-                              {t.technicien.prenom} {t.technicien.nom}
-                            </span>
-                          </>
-                        ) : (
-                          <>
-                            <span
-                              className="size-6 shrink-0 rounded-full border border-dashed border-slate-300"
-                              aria-hidden
-                            />
-                            <span className="truncate text-sm text-slate-400">Non assigné</span>
-                          </>
-                        )}
-                        <ChevronDown className="ml-auto size-4 shrink-0 text-slate-400" aria-hidden />
-                      </button>
+                        <option value="">Non assigné</option>
+                        {techniciens.map((tech) => (
+                          <option key={tech.id} value={tech.id}>
+                            {tech.prenom} {tech.nom}
+                          </option>
+                        ))}
+                      </Select>
                     ) : t.technicien ? (
                       <div className="flex items-center gap-2">
                         <Avatar prenom={t.technicien.prenom} nom={t.technicien.nom} photoUrl={t.technicien.photoUrl} size="sm" />
@@ -460,16 +436,6 @@ export function TicketsListPage() {
           </tbody>
         </Table>
       </TableContainer>
-
-      <SelecteurTechnicien
-        ticket={ticketAAffecter}
-        techniciens={techniciens}
-        enCours={affectationEnCours !== null}
-        onChoisir={(technicienId) => {
-          if (ticketAAffecter) affecter(ticketAAffecter, technicienId);
-        }}
-        onClose={() => setTicketAAffecter(null)}
-      />
 
       {!chargement && curseurSuivant !== null && (
         <div className="mt-4 flex justify-center">

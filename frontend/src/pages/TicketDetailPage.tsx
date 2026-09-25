@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
   CheckCheck,
+  ChevronDown,
   Clock,
   FileText,
   Flag,
@@ -22,6 +23,7 @@ import {
 } from 'lucide-react';
 import { iaApi } from '../features/ia/iaApi';
 import { ticketsApi } from '../features/tickets/ticketsApi';
+import { SelecteurTechnicien } from '../features/tickets/SelecteurTechnicien';
 import { utilisateursApi } from '../features/utilisateurs/utilisateursApi';
 import {
   LABEL_PRIORITE,
@@ -90,13 +92,6 @@ function labelStatut(v: string | null): string {
 
 function labelPriorite(v: string | null): string {
   return v && v in LABEL_PRIORITE ? LABEL_PRIORITE[v as PrioriteTicket] : v ?? '—';
-}
-
-// « 2026-08-20 » -> « 20/08 ». Découpe de chaîne et non `new Date` : un jour seul serait
-// interprété à minuit UTC et pourrait s'afficher la veille selon le fuseau du navigateur.
-function jourCourt(jour: string): string {
-  const [, mois, j] = jour.split('-');
-  return mois && j ? `${j}/${mois}` : jour;
 }
 
 function decrireEvenement(e: EvenementTicket): string {
@@ -534,6 +529,7 @@ export function TicketDetailPage() {
   const [chargement, setChargement] = useState(true);
   const [introuvable, setIntrouvable] = useState(false);
   const [techniciens, setTechniciens] = useState<Utilisateur[]>([]);
+  const [selecteurOuvert, setSelecteurOuvert] = useState(false);
   const [categories, setCategories] = useState<Categorie[]>([]);
   // Seuil d'affichage réglable (§6.5). Repli sur le défaut du registre tant que la valeur
   // n'est pas revenue — la page reste rendue, jamais bloquée par ce réglage.
@@ -844,13 +840,14 @@ export function TicketDetailPage() {
       () => ticketsApi.affecter(ticket!.id, technicienId, token),
       "L'affectation a échoué",
     );
-    if (res) {
-      setTicket(res.ticket);
-      toast.success(
-        technicienId ? 'Ticket affecté' : 'Ticket désaffecté',
-        technicienId ? 'Le technicien a été notifié.' : 'Le ticket est de nouveau dans la file.',
-      );
-    }
+    if (!res) return false;
+
+    setTicket(res.ticket);
+    toast.success(
+      technicienId ? 'Ticket affecté' : 'Ticket désaffecté',
+      technicienId ? 'Le technicien a été notifié.' : 'Le ticket est de nouveau dans la file.',
+    );
+    return true;
   }
 
   async function handleEnvoyerCommentaire() {
@@ -1060,25 +1057,43 @@ export function TicketDetailPage() {
               <div className="grid grid-cols-[90px_1fr] items-center gap-2">
                 <p className="text-xs text-slate-400">Assigné à</p>
                 {estAdmin ? (
-                  <Select
-                    value={ticket.technicien?.id ?? ''}
+                  /* Bouton plutôt que <select> : un <option> natif ne peut pas porter
+                     d'image, et c'est le visage du technicien qu'on veut reconnaître ici.
+                     Le choix se fait dans une boîte de dialogue — voir SelecteurTechnicien. */
+                  <button
+                    type="button"
                     disabled={action}
-                    onChange={(e) => handleAffecter(e.target.value ? Number(e.target.value) : null)}
-                    aria-label="Technicien assigné"
+                    onClick={() => setSelecteurOuvert(true)}
+                    aria-label={
+                      ticket.technicien
+                        ? `Changer le technicien assigné (actuellement ${ticket.technicien.prenom} ${ticket.technicien.nom})`
+                        : 'Assigner un technicien'
+                    }
+                    className="flex w-full items-center gap-2 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-left shadow-xs transition-colors hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    <option value="">Non assigné</option>
-                    {/* Un technicien absent reste SÉLECTIONNABLE : l'administrateur peut
-                        sciemment lui assigner un ticket pour son retour, et l'affectation
-                        manuelle doit rester possible en toutes circonstances. La mention
-                        évite seulement de choisir à l'aveugle. Dates uniquement — le motif
-                        n'apparaît que sur la page Absences. */}
-                    {techniciens.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.prenom} {t.nom}
-                        {t.absenceJusquau ? ` — absent jusqu'au ${jourCourt(t.absenceJusquau)}` : ''}
-                      </option>
-                    ))}
-                  </Select>
+                    {ticket.technicien ? (
+                      <>
+                        <Avatar
+                          prenom={ticket.technicien.prenom}
+                          nom={ticket.technicien.nom}
+                          photoUrl={ticket.technicien.photoUrl}
+                          size="sm"
+                        />
+                        <span className="truncate text-sm text-slate-700">
+                          {ticket.technicien.prenom} {ticket.technicien.nom}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span
+                          className="size-6 shrink-0 rounded-full border border-dashed border-slate-300"
+                          aria-hidden
+                        />
+                        <span className="truncate text-sm text-slate-400">Non assigné</span>
+                      </>
+                    )}
+                    <ChevronDown className="ml-auto size-4 shrink-0 text-slate-400" aria-hidden />
+                  </button>
                 ) : ticket.technicien ? (
                   <div className="flex items-center gap-2">
                     <Avatar prenom={ticket.technicien.prenom} nom={ticket.technicien.nom} photoUrl={ticket.technicien.photoUrl} size="sm" />
@@ -1339,6 +1354,25 @@ export function TicketDetailPage() {
           />
         </Field>
       </Dialog>
+
+      {/* Choix du technicien — monté à côté du dialog de résolution, hors du panneau
+          Propriétés : un Dialog se rend au-dessus de la page, pas dans la colonne. */}
+      <SelecteurTechnicien
+        ticket={
+          selecteurOuvert
+            ? { id: ticket.id, titre: ticket.titre, technicienId: ticket.technicien?.id ?? null }
+            : null
+        }
+        techniciens={techniciens}
+        enCours={action}
+        onChoisir={async (technicienId) => {
+          const ok = await handleAffecter(technicienId);
+          // On ne referme qu'en cas de succès : sur échec, le toast explique et le choix
+          // reste ouvert pour retenter sans tout rouvrir.
+          if (ok) setSelecteurOuvert(false);
+        }}
+        onClose={() => setSelecteurOuvert(false)}
+      />
     </div>
   );
 }

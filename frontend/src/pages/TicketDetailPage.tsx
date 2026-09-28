@@ -3,7 +3,6 @@ import { Link, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
   CheckCheck,
-  ChevronDown,
   Clock,
   FileText,
   Flag,
@@ -24,11 +23,17 @@ import {
 import { iaApi } from '../features/ia/iaApi';
 import { ticketsApi } from '../features/tickets/ticketsApi';
 import { SelecteurTechnicien } from '../features/tickets/SelecteurTechnicien';
+import {
+  BoutonPropriete,
+  DialogChoix,
+  PastilleVide,
+} from '../features/tickets/ChoixPropriete';
 import { utilisateursApi } from '../features/utilisateurs/utilisateursApi';
 import {
   LABEL_PRIORITE,
   LABEL_STATUT,
   PRIORITE_OPTIONS,
+  PrioriteIcone,
   PrioriteLabel,
   StatutBadge,
 } from '../features/tickets/ticket-ui';
@@ -53,7 +58,7 @@ import { Card, CardContent, CardHeader } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Avatar } from '../components/ui/Avatar';
-import { Field, Select, Textarea } from '../components/ui/Input';
+import { Field, Textarea } from '../components/ui/Input';
 import { Dialog } from '../components/ui/Dialog';
 import { Skeleton } from '../components/ui/Skeleton';
 import { EmptyState } from '../components/ui/EmptyState';
@@ -530,6 +535,8 @@ export function TicketDetailPage() {
   const [introuvable, setIntrouvable] = useState(false);
   const [techniciens, setTechniciens] = useState<Utilisateur[]>([]);
   const [selecteurOuvert, setSelecteurOuvert] = useState(false);
+  const [selecteurPriorite, setSelecteurPriorite] = useState(false);
+  const [selecteurCategorie, setSelecteurCategorie] = useState(false);
   const [categories, setCategories] = useState<Categorie[]>([]);
   // Seuil d'affichage réglable (§6.5). Repli sur le défaut du registre tant que la valeur
   // n'est pas revenue — la page reste rendue, jamais bloquée par ce réglage.
@@ -751,27 +758,33 @@ export function TicketDetailPage() {
   }
 
   async function handleChangerPriorite(priorite: PrioriteTicket) {
-    if (!token || priorite === ticket!.priorite) return;
+    if (!token) return false;
+    // Rechoisir la valeur courante n'appelle rien, mais referme le sélecteur : du point
+    // de vue de l'utilisateur, son choix est bien celui qui s'affiche.
+    if (priorite === ticket!.priorite) return true;
     const res = await withAction(
       () => ticketsApi.changerPriorite(ticket!.id, priorite, token),
       'La priorité n\'a pas pu être modifiée',
     );
-    if (res) {
-      setTicket(res.ticket);
-      toast.success('Priorité mise à jour', `Priorité « ${LABEL_PRIORITE[priorite]} ».`);
-    }
+    if (!res) return false;
+
+    setTicket(res.ticket);
+    toast.success('Priorité mise à jour', `Priorité « ${LABEL_PRIORITE[priorite]} ».`);
+    return true;
   }
 
   async function handleChangerCategorie(categorieId: number) {
-    if (!token || categorieId === ticket!.categorie?.id) return;
+    if (!token) return false;
+    if (categorieId === ticket!.categorie?.id) return true;
     const res = await withAction(
       () => ticketsApi.changerCategorie(ticket!.id, categorieId, token),
       "La catégorie n'a pas pu être modifiée",
     );
-    if (res) {
-      setTicket(res.ticket);
-      toast.success('Catégorie mise à jour', `Catégorie « ${res.ticket.categorie?.nom ?? '—'} ».`);
-    }
+    if (!res) return false;
+
+    setTicket(res.ticket);
+    toast.success('Catégorie mise à jour', `Catégorie « ${res.ticket.categorie?.nom ?? '—'} ».`);
+    return true;
   }
 
   async function handleDemanderSuggestion() {
@@ -1035,18 +1048,13 @@ export function TicketDetailPage() {
               <div className="grid grid-cols-[90px_1fr] items-center gap-2">
                 <p className="text-xs text-slate-400">Priorité</p>
                 {estGestionnaire ? (
-                  <Select
-                    value={ticket.priorite}
+                  <BoutonPropriete
+                    visuel={<PrioriteIcone priorite={ticket.priorite} />}
+                    libelle={LABEL_PRIORITE[ticket.priorite]}
                     disabled={action}
-                    onChange={(e) => handleChangerPriorite(e.target.value as PrioriteTicket)}
-                    aria-label="Priorité du ticket"
-                  >
-                    {PRIORITE_OPTIONS.map((p) => (
-                      <option key={p} value={p}>
-                        {LABEL_PRIORITE[p]}
-                      </option>
-                    ))}
-                  </Select>
+                    ariaLabel={`Changer la priorité (actuellement ${LABEL_PRIORITE[ticket.priorite]})`}
+                    onClick={() => setSelecteurPriorite(true)}
+                  />
                 ) : (
                   <div>
                     <PrioriteLabel priorite={ticket.priorite} />
@@ -1060,40 +1068,32 @@ export function TicketDetailPage() {
                   /* Bouton plutôt que <select> : un <option> natif ne peut pas porter
                      d'image, et c'est le visage du technicien qu'on veut reconnaître ici.
                      Le choix se fait dans une boîte de dialogue — voir SelecteurTechnicien. */
-                  <button
-                    type="button"
-                    disabled={action}
-                    onClick={() => setSelecteurOuvert(true)}
-                    aria-label={
-                      ticket.technicien
-                        ? `Changer le technicien assigné (actuellement ${ticket.technicien.prenom} ${ticket.technicien.nom})`
-                        : 'Assigner un technicien'
-                    }
-                    className="flex w-full items-center gap-2 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-left shadow-xs transition-colors hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {ticket.technicien ? (
-                      <>
+                  <BoutonPropriete
+                    visuel={
+                      ticket.technicien ? (
                         <Avatar
                           prenom={ticket.technicien.prenom}
                           nom={ticket.technicien.nom}
                           photoUrl={ticket.technicien.photoUrl}
-                          size="sm"
                         />
-                        <span className="truncate text-sm text-slate-700">
-                          {ticket.technicien.prenom} {ticket.technicien.nom}
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <span
-                          className="size-6 shrink-0 rounded-full border border-dashed border-slate-300"
-                          aria-hidden
-                        />
-                        <span className="truncate text-sm text-slate-400">Non assigné</span>
-                      </>
-                    )}
-                    <ChevronDown className="ml-auto size-4 shrink-0 text-slate-400" aria-hidden />
-                  </button>
+                      ) : (
+                        <PastilleVide />
+                      )
+                    }
+                    libelle={
+                      ticket.technicien
+                        ? `${ticket.technicien.prenom} ${ticket.technicien.nom}`
+                        : 'Non assigné'
+                    }
+                    vide={!ticket.technicien}
+                    disabled={action}
+                    ariaLabel={
+                      ticket.technicien
+                        ? `Changer le technicien assigné (actuellement ${ticket.technicien.prenom} ${ticket.technicien.nom})`
+                        : 'Assigner un technicien'
+                    }
+                    onClick={() => setSelecteurOuvert(true)}
+                  />
                 ) : ticket.technicien ? (
                   <div className="flex items-center gap-2">
                     <Avatar prenom={ticket.technicien.prenom} nom={ticket.technicien.nom} photoUrl={ticket.technicien.photoUrl} size="sm" />
@@ -1109,23 +1109,29 @@ export function TicketDetailPage() {
               <div className="grid grid-cols-[90px_1fr] items-center gap-2">
                 <p className="text-xs text-slate-400">Catégorie</p>
                 {(estAdmin || estTechnicienAssigne) && !estCloture ? (
-                  <Select
-                    value={ticket.categorie?.id ?? ''}
+                  <BoutonPropriete
+                    visuel={
+                      ticket.categorie ? (
+                        <span
+                          className="flex size-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500"
+                          aria-hidden
+                        >
+                          <Tag className="size-4" />
+                        </span>
+                      ) : (
+                        <PastilleVide />
+                      )
+                    }
+                    libelle={ticket.categorie?.nom ?? 'Choisir une catégorie…'}
+                    vide={!ticket.categorie}
                     disabled={action || categories.length === 0}
-                    onChange={(e) => e.target.value && handleChangerCategorie(Number(e.target.value))}
-                    aria-label="Catégorie du ticket"
-                  >
-                    {!ticket.categorie && (
-                      <option value="" disabled>
-                        Choisir une catégorie…
-                      </option>
-                    )}
-                    {categories.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.nom}
-                      </option>
-                    ))}
-                  </Select>
+                    ariaLabel={
+                      ticket.categorie
+                        ? `Changer la catégorie (actuellement ${ticket.categorie.nom})`
+                        : 'Choisir une catégorie'
+                    }
+                    onClick={() => setSelecteurCategorie(true)}
+                  />
                 ) : ticket.categorie ? (
                   <Badge variant="neutral">{ticket.categorie.nom}</Badge>
                 ) : (
@@ -1372,6 +1378,51 @@ export function TicketDetailPage() {
           if (ok) setSelecteurOuvert(false);
         }}
         onClose={() => setSelecteurOuvert(false)}
+      />
+
+      <DialogChoix
+        ouvert={selecteurPriorite}
+        onClose={() => setSelecteurPriorite(false)}
+        titre={`Priorité du ticket #${ticket.id}`}
+        description={ticket.titre}
+        options={PRIORITE_OPTIONS.map((p) => ({
+          cle: p,
+          visuel: <PrioriteIcone priorite={p} />,
+          libelle: LABEL_PRIORITE[p],
+        }))}
+        cleActuelle={ticket.priorite}
+        enCours={action}
+        onChoisir={async (cle) => {
+          const ok = await handleChangerPriorite(cle as PrioriteTicket);
+          if (ok) setSelecteurPriorite(false);
+        }}
+      />
+
+      <DialogChoix
+        ouvert={selecteurCategorie}
+        onClose={() => setSelecteurCategorie(false)}
+        titre={`Catégorie du ticket #${ticket.id}`}
+        description={ticket.titre}
+        options={categories.map((c) => ({
+          cle: c.id,
+          visuel: (
+            <span
+              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500"
+              aria-hidden
+            >
+              <Tag className="size-4" />
+            </span>
+          ),
+          libelle: c.nom,
+          detail: c.description,
+        }))}
+        cleActuelle={ticket.categorie?.id ?? null}
+        enCours={action}
+        messageVide="Aucune catégorie disponible."
+        onChoisir={async (cle) => {
+          const ok = await handleChangerCategorie(Number(cle));
+          if (ok) setSelecteurCategorie(false);
+        }}
       />
     </div>
   );

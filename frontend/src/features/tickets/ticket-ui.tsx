@@ -90,6 +90,21 @@ export const LABEL_PRIORITE: Record<PrioriteTicket, string> = {
 // Ordonnées de la plus urgente à la moins urgente (utilisées dans les filtres/sélecteurs).
 export const PRIORITE_OPTIONS: PrioriteTicket[] = ['CRITIQUE', 'HAUTE', 'MOYENNE', 'FAIBLE'];
 
+// Pastille d'icone seule, aux dimensions d'un Avatar `md`, pour les listes de choix ou
+// le libelle est rendu a part. La teinte porte l'identite, jamais seule : le libelle est
+// toujours affiche a cote (meme regle que les graphiques du tableau de bord).
+export function PrioriteIcone({ priorite }: { priorite: PrioriteTicket }) {
+  const { icon: Icon, classe } = PRIORITES[priorite];
+  return (
+    <span
+      className={cn('flex size-8 shrink-0 items-center justify-center rounded-full bg-slate-100', classe)}
+      aria-hidden
+    >
+      <Icon className="size-4" />
+    </span>
+  );
+}
+
 export function PrioriteLabel({ priorite }: { priorite: PrioriteTicket }) {
   const { label, icon: Icon, classe } = PRIORITES[priorite];
   return (

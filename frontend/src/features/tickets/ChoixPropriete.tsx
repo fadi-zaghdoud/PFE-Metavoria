@@ -40,16 +40,20 @@ export function BoutonPropriete({
   ariaLabel: string;
   onClick: () => void;
 }) {
+  // `min-w-0` DEUX FOIS, et c'est nécessaire : le bouton est une cellule de grille et le
+  // libellé un élément flex, or les deux ont `min-width: auto` par défaut — « au moins la
+  // largeur de mon contenu ». Sans cela, « Choisir une catégorie… » pousse la piste de
+  // grille et le bouton déborde de la carte au lieu d'être tronqué.
   return (
     <button
       type="button"
       disabled={disabled}
       onClick={onClick}
       aria-label={ariaLabel}
-      className="flex w-full items-center gap-2 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-left shadow-xs transition-colors hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+      className="flex w-full min-w-0 items-center gap-2 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-left shadow-xs transition-colors hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
     >
       {visuel}
-      <span className={cn('truncate text-sm', vide ? 'text-slate-400' : 'text-slate-700')}>
+      <span className={cn('min-w-0 flex-1 truncate text-sm', vide ? 'text-slate-400' : 'text-slate-700')}>
         {libelle}
       </span>
       <ChevronDown className="ml-auto size-4 shrink-0 text-slate-400" aria-hidden />

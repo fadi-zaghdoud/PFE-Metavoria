@@ -1109,6 +1109,11 @@ export function TicketDetailPage() {
               <div className="grid grid-cols-[90px_1fr] items-center gap-2">
                 <p className="text-xs text-slate-400">Catégorie</p>
                 {(estAdmin || estTechnicienAssigne) && !estCloture ? (
+                  /* Le libellé dit « Non classé » et non « Choisir une catégorie… » : ce
+                     bouton affiche une VALEUR COURANTE, comme ses deux voisins (« Moyenne »,
+                     un nom de technicien). C'est aussi le terme employé partout ailleurs
+                     pour un ticket sans catégorie, et il tient dans la largeur sans être
+                     tronqué. */
                   <BoutonPropriete
                     visuel={
                       ticket.categorie ? (
@@ -1122,7 +1127,7 @@ export function TicketDetailPage() {
                         <PastilleVide />
                       )
                     }
-                    libelle={ticket.categorie?.nom ?? 'Choisir une catégorie…'}
+                    libelle={ticket.categorie?.nom ?? 'Non classé'}
                     vide={!ticket.categorie}
                     disabled={action || categories.length === 0}
                     ariaLabel={

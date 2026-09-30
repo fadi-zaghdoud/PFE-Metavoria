@@ -3,6 +3,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronDown, Plus, RefreshCw, Search, Ticket } from 'lucide-react';
 import { ticketsApi } from '../features/tickets/ticketsApi';
 import { utilisateursApi } from '../features/utilisateurs/utilisateursApi';
+import { SelecteurTechnicien } from '../features/tickets/SelecteurTechnicien';
+import { BoutonPropriete, PastilleVide } from '../features/tickets/ChoixPropriete';
 import {
   BadgeAnciennete,
   LABEL_PRIORITE,
@@ -69,6 +71,9 @@ export function TicketsListPage() {
   const [techniciens, setTechniciens] = useState<Utilisateur[]>([]);
   // Identifiant du ticket dont l'affectation est en cours, pour ne bloquer QUE sa ligne.
   const [affectationEnCours, setAffectationEnCours] = useState<number | null>(null);
+  // Ticket dont on choisit le technicien. UN SEUL sélecteur pour toute la table : le
+  // monter par ligne en ferait cinquante, tous inertes sauf un.
+  const [ticketAAffecter, setTicketAAffecter] = useState<TicketResume | null>(null);
   const [recherche, setRecherche] = useState('');
   // Terme réellement envoyé au serveur, temporisé : sans cela chaque frappe déclencherait
   // une requête paginée. 300 ms est en dessous du seuil de perception d'une saisie fluide.
@@ -159,6 +164,7 @@ export function TicketsListPage() {
             : t,
         ),
       );
+      setTicketAAffecter(null);
       toast.success(
         technicienId ? 'Ticket affecté' : 'Affectation retirée',
         misAJour.technicien
@@ -395,28 +401,43 @@ export function TicketsListPage() {
                   </Td>
                   {/* Affectation SUR PLACE pour l'administrateur : 53 tickets sans
                       technicien demandaient jusqu'ici 53 allers-retours par la page de
-                      détail. `stopPropagation` est indispensable — la ligne entière est
-                      cliquable et ouvrirait le ticket au premier clic sur le menu. */}
+                      détail. Même contrôle que le panneau Propriétés du détail — un
+                      <option> natif ne peut pas porter la photo du technicien.
+                      `stopPropagation` est indispensable : la ligne entière est cliquable
+                      et ouvrirait le ticket au premier clic sur le bouton.
+                      Largeur w-52 et non w-44 : avec la pastille de 32 px et le chevron,
+                      44 ne laissait qu'une centaine de pixels au nom et coupait
+                      « Karim Trabelsi ». */}
                   <Td className="hidden lg:table-cell">
                     {estAdmin && !STATUTS_NON_AFFECTABLES.includes(t.statut) ? (
-                      <Select
-                        value={t.technicienId != null ? String(t.technicienId) : ''}
-                        disabled={affectationEnCours === t.id}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={(e) => {
-                          e.stopPropagation();
-                          affecter(t, e.target.value ? Number(e.target.value) : null);
-                        }}
-                        aria-label={`Affecter le ticket ${t.id}`}
-                        className="w-44"
-                      >
-                        <option value="">Non assigné</option>
-                        {techniciens.map((tech) => (
-                          <option key={tech.id} value={tech.id}>
-                            {tech.prenom} {tech.nom}
-                          </option>
-                        ))}
-                      </Select>
+                      <div className="w-52" onClick={(e) => e.stopPropagation()}>
+                        <BoutonPropriete
+                          visuel={
+                            t.technicien ? (
+                              <Avatar
+                                prenom={t.technicien.prenom}
+                                nom={t.technicien.nom}
+                                photoUrl={t.technicien.photoUrl}
+                              />
+                            ) : (
+                              <PastilleVide />
+                            )
+                          }
+                          libelle={
+                            t.technicien
+                              ? `${t.technicien.prenom} ${t.technicien.nom}`
+                              : 'Non assigné'
+                          }
+                          vide={!t.technicien}
+                          disabled={affectationEnCours === t.id}
+                          ariaLabel={
+                            t.technicien
+                              ? `Changer le technicien du ticket ${t.id} (actuellement ${t.technicien.prenom} ${t.technicien.nom})`
+                              : `Affecter le ticket ${t.id}`
+                          }
+                          onClick={() => setTicketAAffecter(t)}
+                        />
+                      </div>
                     ) : t.technicien ? (
                       <div className="flex items-center gap-2">
                         <Avatar prenom={t.technicien.prenom} nom={t.technicien.nom} photoUrl={t.technicien.photoUrl} size="sm" />
@@ -436,6 +457,16 @@ export function TicketsListPage() {
           </tbody>
         </Table>
       </TableContainer>
+
+      <SelecteurTechnicien
+        ticket={ticketAAffecter}
+        techniciens={techniciens}
+        enCours={affectationEnCours !== null}
+        onChoisir={(technicienId) => {
+          if (ticketAAffecter) affecter(ticketAAffecter, technicienId);
+        }}
+        onClose={() => setTicketAAffecter(null)}
+      />
 
       {!chargement && curseurSuivant !== null && (
         <div className="mt-4 flex justify-center">

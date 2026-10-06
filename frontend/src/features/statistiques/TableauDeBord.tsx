@@ -1,6 +1,17 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { CheckCircle2, Clock, Download, FileText, Inbox, SlidersHorizontal, Star, X } from 'lucide-react';
+import {
+  CheckCircle2,
+  Clock,
+  Download,
+  FileText,
+  Inbox,
+  SlidersHorizontal,
+  Star,
+  UserPlus,
+  X,
+} from 'lucide-react';
 import { ticketsApi } from '../tickets/ticketsApi';
 import { utilisateursApi } from '../utilisateurs/utilisateursApi';
 import { LABEL_PRIORITE, LABEL_STATUT } from '../tickets/ticket-ui';
@@ -56,18 +67,23 @@ function CarteBarres({
   description,
   donnees,
   index = 0,
+  className,
 }: {
   titre: string;
   description?: string;
   donnees: DonneeBarre[];
   index?: number;
+  className?: string;
 }) {
   const max = Math.max(1, ...donnees.map((d) => d.value));
   const vide = donnees.every((d) => d.value === 0);
   return (
-    <Card className="animate-fade-up overflow-hidden" style={{ animationDelay: `${index * 80}ms` }}>
+    <Card
+      className={cn('animate-fade-up overflow-hidden', className)}
+      style={{ animationDelay: `${index * 80}ms` }}
+    >
       <CardHeader title={titre} description={description} />
-      <CardContent className="space-y-0.5">
+      <CardContent className="@container space-y-0.5">
         {vide ? (
           <p className="py-6 text-center text-sm text-slate-400">Aucune donnée sur la période.</p>
         ) : (
@@ -76,8 +92,15 @@ function CarteBarres({
               key={d.cle ?? d.label}
               className="group -mx-2 flex items-center gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-slate-50"
             >
+              {/* La colonne de libellés s'élargit avec LA CARTE, pas avec l'écran : en
+                  bandeau pleine largeur, « Youssef Mansour » et « Nadia Khelifi » tenaient
+                  dans 96 px fixes pendant que la barre disposait de toute la place. Le
+                  seuil (56 rem de conteneur) ne se déclenche que sur la carte pleine
+                  largeur — en deux colonnes, la carte fait ~35 rem et garde 96 px, pour ne
+                  pas rogner les barres. `truncate` reste le filet pour les noms extrêmes,
+                  avec le nom complet en infobulle. */}
               <span
-                className="flex w-24 shrink-0 items-center gap-1 text-xs font-medium text-slate-500"
+                className="flex w-24 shrink-0 items-center gap-1 text-xs font-medium text-slate-500 @4xl:w-44"
                 title={d.annotation ? `${d.label} — ${d.annotation}` : d.label}
               >
                 <span className="truncate">{d.label}</span>
@@ -125,6 +148,11 @@ const jourCourt = (jour: string) => {
   const [, mois, j] = jour.split('-');
   return mois && j ? `${j}/${mois}` : jour;
 };
+
+// Au-delà de ce nombre de barres, « Charge par technicien » occupe les deux colonnes.
+// Six est la hauteur de la plus grande des autres séries (catégories + « Non classé ») :
+// en dessous, la charge tient dans une colonne sans creuser la carte d'à côté.
+const SEUIL_CHARGE_PLEINE_LARGEUR = 6;
 
 const fmtHeures = (h: number | null) =>
   h == null ? '—' : h < 1 ? `${Math.round(h * 60)} min` : `${h} h`;
@@ -210,6 +238,15 @@ export function TableauDeBord() {
     }
   }
 
+  // « À affecter » — tickets NOUVEAU. Dans ce cycle de vie, NOUVEAU équivaut à « sans
+  // technicien » : l'assignation fait passer à EN_ATTENTE, la désassignation ramène à
+  // NOUVEAU. Vérifié sur les 870 tickets de la base — aucun NOUVEAU assigné, aucun ticket
+  // ouvert non-NOUVEAU sans technicien. Dérivé ici plutôt que demandé au backend, laissé
+  // hors périmètre de cette passe : si l'invariant devait tomber, c'est un compteur
+  // explicite côté serveur qu'il faudrait, pas un correctif ici.
+  const aAffecter = stats?.repartitionStatut.find((r) => r.statut === 'NOUVEAU')?.count ?? 0;
+  const resolusEtClotures = (stats?.ticketsResolus ?? 0) + (stats?.ticketsClotures ?? 0);
+
   const dataStatut = (stats?.repartitionStatut ?? []).map((r) => ({
     label: LABEL_STATUT[r.statut],
     value: r.count,
@@ -225,13 +262,26 @@ export function TableauDeBord() {
     value: r.count,
     couleur: 'from-primary-400 to-primary-600',
   }));
-  const dataCharge = (stats?.chargeParTechnicien ?? []).map((r) => ({
+  const chargeComplete = (stats?.chargeParTechnicien ?? []).map((r) => ({
     cle: String(r.technicienId),
     label: r.technicien,
     value: r.count,
     couleur: 'from-violet-400 to-violet-500',
     annotation: r.absenceJusquau ? `absent jusqu'au ${jourCourt(r.absenceJusquau)}` : undefined,
   }));
+
+  // Un technicien à 0 ne veut pas dire la même chose selon qu'un filtre est actif ou non.
+  // SANS FILTRE, c'est une information utile : de la capacité disponible, et précisément
+  // celui qu'une affectation automatique doit préférer (§6.2). AVEC UN FILTRE, le même 0
+  // ne dit plus « disponible » mais « aucun ticket correspondant » — filtrer sur un
+  // technicien donnait 10 barres dont 9 vides. On les masque alors, en annonçant combien.
+  //
+  // Le tri se fait ICI et non côté serveur, volontairement : `chargeCourante` renvoie la
+  // liste de TOUS les techniciens actifs par un findMany non filtré, parce que la même
+  // fonction alimente l'affectation automatique, qui a besoin des techniciens à 0. Les
+  // COMPTES, eux, respectent bien le filtre. Y toucher casserait le §6.2.
+  const chargeMasquees = filtresActifs ? chargeComplete.filter((d) => d.value === 0).length : 0;
+  const dataCharge = chargeMasquees > 0 ? chargeComplete.filter((d) => d.value > 0) : chargeComplete;
   const dataSatisfaction = [...(stats?.repartitionSatisfaction ?? [])].reverse().map((r) => ({
     label: `${r.note} étoile${r.note > 1 ? 's' : ''}`,
     value: r.count,
@@ -344,20 +394,65 @@ export function TableauDeBord() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {stats ? (
           <>
-            <StatCard label="Tickets ouverts" value={stats.ticketsOuverts} icon={Inbox} tone="warning" index={0} />
+            {/* Réservée à l'ADMINISTRATEUR : lui seul peut affecter un ticket
+                (ticket.service.affecter refuse tout autre rôle). Montrer ce chiffre à un
+                technicien lui désignerait une tâche qu'il ne peut pas accomplir. */}
+            {estAdmin && (
+              // `h-full` des DEUX côtés : la grille étire le lien, pas la carte qu'il
+              // enveloppe. Sans cela, « À affecter » était visiblement plus courte que
+              // ses trois voisines — celle dont la mention tient sur deux lignes impose
+              // la hauteur de la rangée.
+              <Link
+                to="/tickets?vue=non-assignes"
+                className="block h-full"
+                title="Ouvrir la liste des tickets non assignés"
+              >
+                <StatCard
+                  label="À affecter"
+                  value={aAffecter}
+                  hint={aAffecter > 0 ? 'Aucun technicien assigné' : 'Rien en attente'}
+                  icon={UserPlus}
+                  tone={aAffecter > 0 ? 'danger' : 'success'}
+                  index={0}
+                  className="h-full"
+                />
+              </Link>
+            )}
+            {/* Chez l'administrateur, le cumul résolus + clôturés descend en mention sous
+                les tickets ouverts : l'information reste à l'écran, et sa carte cède la
+                place au seul chiffre qui appelle une décision. Les autres rôles, qui n'ont
+                pas « À affecter », gardent la carte dédiée — la rangée fait quatre dans
+                les deux cas, sans cellule vide. */}
             <StatCard
-              label="Résolus / clôturés"
-              value={stats.ticketsResolus + stats.ticketsClotures}
-              icon={CheckCircle2}
-              tone="success"
-              index={1}
+              label="Tickets ouverts"
+              value={stats.ticketsOuverts}
+              hint={estAdmin ? `${resolusEtClotures} résolus ou clôturés` : undefined}
+              icon={Inbox}
+              tone="warning"
+              index={estAdmin ? 1 : 0}
             />
+            {!estAdmin && (
+              <StatCard
+                label="Résolus / clôturés"
+                value={resolusEtClotures}
+                icon={CheckCircle2}
+                tone="success"
+                index={1}
+              />
+            )}
+            {/* Le délai ne se calcule que sur les tickets portant un événement
+                PRISE_EN_CHARGE — 6 sur 870 tant que la traçabilité reste plus récente que
+                le corpus. La mention annonce donc son effectif, exactement comme
+                « 185 évaluations » qualifie la satisfaction deux cartes plus loin : le
+                lecteur juge lui-même du poids de la moyenne. */}
             <StatCard
-              label="Temps de résolution moyen"
+              label="Résolution moyenne"
               value={fmtHeures(stats.tempsResolutionMoyenHeures)}
               hint={
                 stats.delaiPriseEnChargeMoyenHeures != null
-                  ? `Prise en charge : ${fmtHeures(stats.delaiPriseEnChargeMoyenHeures)}`
+                  ? `1re prise en charge : ${fmtHeures(stats.delaiPriseEnChargeMoyenHeures)} sur ${
+                      stats.nombrePrisesEnCharge
+                    } ticket${stats.nombrePrisesEnCharge > 1 ? 's' : ''}`
                   : undefined
               }
               icon={Clock}
@@ -376,30 +471,48 @@ export function TableauDeBord() {
             />
           </>
         ) : (
-          ['k1', 'k2', 'k3', 'k4'].map((k) => <Skeleton key={k} className="h-[116px] rounded-2xl" />)
+          Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-[116px] rounded-2xl" />
+          ))
         )}
       </div>
 
-      {/* Graphiques */}
+      {/* Graphiques — l'ordre appaire les hauteurs plutôt que les thèmes. Chaque carte
+          mesure une barre par ligne de données : statut 5 et priorité 4 d'un côté,
+          catégorie 6 et évaluations 5 de l'autre, soit deux rangées presque d'aplomb. La
+          charge, seule série dont la longueur suit l'effectif des techniciens (10 ici),
+          passe en dernier et prend toute la largeur dès qu'elle dépasse le seuil — sinon
+          elle laissait une centaine de pixels de vide sous la carte voisine, et la
+          dernière rangée se terminait sur une cellule creuse. */}
       {stats && (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <CarteBarres titre="Tickets par statut" donnees={dataStatut} index={0} />
           <CarteBarres titre="Tickets par priorité" donnees={dataPriorite} index={1} />
           <CarteBarres titre="Tickets par catégorie" donnees={dataCategorie} index={2} />
-          {estSupport && (
-            <CarteBarres
-              titre="Charge par technicien"
-              description="Tickets ouverts assignés"
-              donnees={dataCharge}
-              index={3}
-            />
-          )}
           {stats.nombreEvaluations > 0 && (
             <CarteBarres
               titre="Répartition des évaluations"
               description={`${stats.nombreEvaluations} évaluation${stats.nombreEvaluations > 1 ? 's' : ''}`}
               donnees={dataSatisfaction}
+              index={3}
+            />
+          )}
+          {estSupport && (
+            <CarteBarres
+              titre="Charge par technicien"
+              description={
+                chargeMasquees > 0
+                  ? `Tickets ouverts assignés · ${chargeMasquees} technicien${
+                      chargeMasquees > 1 ? 's' : ''
+                    } sans ticket sur ce filtre`
+                  : 'Tickets ouverts assignés'
+              }
+              donnees={dataCharge}
               index={4}
+              // Bandeau pleine largeur seulement si la série est longue : filtrée sur un
+              // technicien (cf. masquage des zéros), elle n'a qu'une barre et une carte
+              // pleine largeur pour une barre serait aussi déséquilibrée que l'inverse.
+              className={dataCharge.length > SEUIL_CHARGE_PLEINE_LARGEUR ? 'lg:col-span-2' : undefined}
             />
           )}
         </div>

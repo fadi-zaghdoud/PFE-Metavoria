@@ -35,6 +35,7 @@ interface StatCardProps {
   suffix?: string;
   trend?: Trend;
   index?: number;
+  className?: string;
 }
 
 export function StatCard({
@@ -47,13 +48,17 @@ export function StatCard({
   suffix,
   trend,
   index = 0,
+  className,
 }: StatCardProps) {
   const t = TONES[tone];
   const trendStyle = trend ? TREND_STYLE[trend.direction] : null;
 
   return (
     <Card
-      className="group animate-fade-up relative overflow-hidden p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
+      className={cn(
+        'group animate-fade-up relative overflow-hidden p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md',
+        className,
+      )}
       style={{ animationDelay: `${index * 70}ms` }}
     >
       {/* Halo décoratif discret en coin */}

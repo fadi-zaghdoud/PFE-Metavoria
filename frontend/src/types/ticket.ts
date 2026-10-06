@@ -204,6 +204,10 @@ export interface FiltresTickets {
   technicienId?: number;
   nonAssignes?: boolean;
   q?: string;
+  // Pagination par curseur. `limite` omise = réponse complète, comme avant — c'est ce
+  // dont dépend le compteur de tickets non assignés de la page Paramètres.
+  limite?: number;
+  avantId?: number;
 }
 
 export interface StatistiquesTickets {
@@ -213,6 +217,9 @@ export interface StatistiquesTickets {
   ticketsClotures: number;
   tempsResolutionMoyenHeures: number | null;
   delaiPriseEnChargeMoyenHeures: number | null;
+  // Nombre de tickets sur lesquels `delaiPriseEnChargeMoyenHeures` est calculé — pendant
+  // de `nombreEvaluations` pour la satisfaction.
+  nombrePrisesEnCharge: number;
   satisfactionMoyenne: number | null;
   nombreEvaluations: number;
   repartitionSatisfaction: { note: number; count: number }[];

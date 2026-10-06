@@ -1,4 +1,4 @@
-import { Minus, SignalHigh, TriangleAlert, type LucideIcon } from 'lucide-react';
+import { Clock, Minus, SignalHigh, TriangleAlert, type LucideIcon } from 'lucide-react';
 import { Badge, type BadgeVariant } from '../../components/ui/Badge';
 import { cn } from '../../lib/cn';
 import type { PrioriteTicket, StatutTicket } from '../../types/ticket';
@@ -31,6 +31,47 @@ export function StatutBadge({ statut }: { statut: StatutTicket }) {
   );
 }
 
+// ── Ancienneté ───────────────────────────────────────────────────────────────
+// Un ticket ouvert depuis 40 jours est indiscernable d'un ticket du matin : seule la
+// colonne « Créé » le disait, en petit, et elle disparaît sous md.
+//
+// LES SEUILS VIENNENT DU COMPORTEMENT RÉEL DE CE SUPPORT, pas d'une convention. Mesuré
+// sur les tickets clos : la résolution prend 1 jour en médiane, 3 jours au 90e centile,
+// 4 jours au maximum. Un ticket encore ouvert après 7 jours dépasse donc de plus du double
+// le pire cas observé — ce n'est plus de la file d'attente, c'est de l'oubli. 30 jours
+// marque le décrochage franc.
+export const SEUIL_ANCIENNETE_JOURS = 7;
+export const SEUIL_ANCIENNETE_CRITIQUE_JOURS = 30;
+
+const STATUTS_OUVERTS: StatutTicket[] = ['NOUVEAU', 'EN_COURS', 'EN_ATTENTE'];
+
+// Rien sur un ticket clos : son ancienneté est derrière lui, et la signaler reviendrait à
+// reprocher un délai déjà soldé. Rien non plus sous le seuil — un badge qui s'allume
+// partout ne signale plus rien.
+export function BadgeAnciennete({
+  statut,
+  dateCreation,
+}: {
+  statut: StatutTicket;
+  dateCreation: string;
+}) {
+  if (!STATUTS_OUVERTS.includes(statut)) return null;
+
+  const jours = Math.floor((Date.now() - new Date(dateCreation).getTime()) / 86_400_000);
+  if (jours < SEUIL_ANCIENNETE_JOURS) return null;
+
+  const critique = jours >= SEUIL_ANCIENNETE_CRITIQUE_JOURS;
+  return (
+    <Badge
+      variant={critique ? 'danger' : 'warning'}
+      title={`Ouvert depuis ${jours} jours, sans résolution`}
+    >
+      <Clock className="size-3" aria-hidden />
+      {jours} j
+    </Badge>
+  );
+}
+
 // ── Priorité ─────────────────────────────────────────────────────────────────
 const PRIORITES: Record<PrioriteTicket, { label: string; icon: LucideIcon; classe: string }> = {
   CRITIQUE: { label: 'Critique', icon: TriangleAlert, classe: 'text-rose-600' },
@@ -48,6 +89,21 @@ export const LABEL_PRIORITE: Record<PrioriteTicket, string> = {
 
 // Ordonnées de la plus urgente à la moins urgente (utilisées dans les filtres/sélecteurs).
 export const PRIORITE_OPTIONS: PrioriteTicket[] = ['CRITIQUE', 'HAUTE', 'MOYENNE', 'FAIBLE'];
+
+// Pastille d'icone seule, aux dimensions d'un Avatar `md`, pour les listes de choix ou
+// le libelle est rendu a part. La teinte porte l'identite, jamais seule : le libelle est
+// toujours affiche a cote (meme regle que les graphiques du tableau de bord).
+export function PrioriteIcone({ priorite }: { priorite: PrioriteTicket }) {
+  const { icon: Icon, classe } = PRIORITES[priorite];
+  return (
+    <span
+      className={cn('flex size-8 shrink-0 items-center justify-center rounded-full bg-slate-100', classe)}
+      aria-hidden
+    >
+      <Icon className="size-4" />
+    </span>
+  );
+}
 
 export function PrioriteLabel({ priorite }: { priorite: PrioriteTicket }) {
   const { label, icon: Icon, classe } = PRIORITES[priorite];

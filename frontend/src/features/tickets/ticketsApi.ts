@@ -20,13 +20,23 @@ function buildQueryString(filtres: FiltresTickets): string {
   if (filtres.technicienId) params.set('technicienId', String(filtres.technicienId));
   if (filtres.nonAssignes) params.set('nonAssignes', 'true');
   if (filtres.q) params.set('q', filtres.q);
+  // Cette fonction est une LISTE BLANCHE : un champ absent d'ici est jete en silence,
+  // sans que le typage ne bronche. C'est ce qui est arrive a la pagination — `limite` et
+  // `avantId` etaient types, transmis par la page, et perdus ici.
+  if (filtres.limite) params.set('limite', String(filtres.limite));
+  if (filtres.avantId) params.set('avantId', String(filtres.avantId));
   const query = params.toString();
   return query ? `?${query}` : '';
 }
 
 export const ticketsApi = {
+  // `curseurSuivant` : identifiant à repasser en `avantId` pour la page suivante, ou null
+  // quand il n'y a plus rien. Toujours null si `limite` n'est pas fournie.
   lister: (filtres: FiltresTickets, token: string) =>
-    apiRequest<{ tickets: TicketResume[] }>(`/tickets${buildQueryString(filtres)}`, { token }),
+    apiRequest<{ tickets: TicketResume[]; curseurSuivant: number | null }>(
+      `/tickets${buildQueryString(filtres)}`,
+      { token },
+    ),
 
   detail: (id: number, token: string) =>
     apiRequest<{ ticket: TicketDetail }>(`/tickets/${id}`, { token }),

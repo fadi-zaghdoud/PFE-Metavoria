@@ -40,6 +40,13 @@ export const listeTicketsQuerySchema = z.object({
     .transform((v) => v === 'true')
     .optional(),
   q: z.string().trim().max(200).optional(),
+  // Pagination par curseur, calquee sur le journal d'audit. `limite` est OPTIONNELLE ET
+  // SANS VALEUR PAR DEFAUT, deliberement : la page Parametres appelle ce meme point
+  // d'entree sans limite pour COMPTER les tickets non assignes (`tickets.length`). Un
+  // defaut y plafonnerait le compteur en silence. Omettre `limite` = tout renvoyer,
+  // exactement comme avant.
+  limite: z.coerce.number().int().min(1).max(200).optional(),
+  avantId: z.coerce.number().int().positive().optional(),
 });
 
 export const changerPrioriteSchema = z.object({

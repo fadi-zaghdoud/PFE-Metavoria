@@ -1,8 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Plus, RefreshCw, Search, Ticket } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { ChevronDown, Plus, RefreshCw, Search, Ticket } from 'lucide-react';
 import { ticketsApi } from '../features/tickets/ticketsApi';
+import { utilisateursApi } from '../features/utilisateurs/utilisateursApi';
+import { SelecteurTechnicien } from '../features/tickets/SelecteurTechnicien';
+import { BoutonPropriete, PastilleVide } from '../features/tickets/ChoixPropriete';
 import {
+  BadgeAnciennete,
   LABEL_PRIORITE,
   LABEL_STATUT,
   PRIORITE_OPTIONS,
@@ -14,6 +18,7 @@ import { useAuthStore } from '../store/authStore';
 import { ApiError } from '../lib/apiClient';
 import { tempsRelatif } from '../lib/format';
 import type { FiltresTickets, PrioriteTicket, StatutTicket, TicketResume } from '../types/ticket';
+import type { Utilisateur } from '../types/auth';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Table, TableContainer, Td, Th } from '../components/ui/Table';
 import { Input, Select } from '../components/ui/Input';
@@ -22,10 +27,20 @@ import { Badge } from '../components/ui/Badge';
 import { Avatar } from '../components/ui/Avatar';
 import { Alert } from '../components/ui/Alert';
 import { Skeleton } from '../components/ui/Skeleton';
+import { useToast } from '../components/ui/Toast';
 import { EmptyState } from '../components/ui/EmptyState';
 import { cn } from '../lib/cn';
 
 type Vue = 'TOUS' | 'MES_TICKETS' | 'NON_ASSIGNES';
+
+// Un ticket résolu ou clôturé ne peut plus être (ré)affecté : `ticketService.affecter` le
+// refuse par une 400. Le miroir est ici pour ne pas proposer une action qui échouerait —
+// l'autorité reste au serveur.
+const STATUTS_NON_AFFECTABLES: StatutTicket[] = ['RESOLU', 'CLOTURE'];
+
+// Taille de page. La liste entière pesait 877 Ko pour 872 tickets, rechargés à chaque
+// changement de filtre ; 50 lignes couvrent un écran et son défilement immédiat.
+const PAR_PAGE = 50;
 
 const VUES: { id: Vue; label: string }[] = [
   { id: 'TOUS', label: 'Tous' },
@@ -35,17 +50,52 @@ const VUES: { id: Vue; label: string }[] = [
 
 export function TicketsListPage() {
   const navigate = useNavigate();
+  const toast = useToast();
   const token = useAuthStore((state) => state.token);
   const utilisateur = useAuthStore((state) => state.utilisateur);
   const estSupport = utilisateur?.role === 'TECHNICIEN' || utilisateur?.role === 'ADMINISTRATEUR';
+  const estAdmin = utilisateur?.role === 'ADMINISTRATEUR';
 
+  const [searchParams] = useSearchParams();
   const [tickets, setTickets] = useState<TicketResume[]>([]);
   const [chargement, setChargement] = useState(true);
+  const [chargementSuite, setChargementSuite] = useState(false);
+  const [curseurSuivant, setCurseurSuivant] = useState<number | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
-  const [vue, setVue] = useState<Vue>('TOUS');
+  // Ouverture depuis le tableau de bord : « ?vue=non-assignes » pré-sélectionne la vue.
+  // Ignoré pour un employé, qui ne dispose pas de cette vue. Lu une seule fois, à
+  // l'initialisation : l'utilisateur reste ensuite libre de changer d'onglet.
+  const [vue, setVue] = useState<Vue>(
+    searchParams.get('vue') === 'non-assignes' && estSupport ? 'NON_ASSIGNES' : 'TOUS',
+  );
+  const [techniciens, setTechniciens] = useState<Utilisateur[]>([]);
+  // Identifiant du ticket dont l'affectation est en cours, pour ne bloquer QUE sa ligne.
+  const [affectationEnCours, setAffectationEnCours] = useState<number | null>(null);
+  // Ticket dont on choisit le technicien. UN SEUL sélecteur pour toute la table : le
+  // monter par ligne en ferait cinquante, tous inertes sauf un.
+  const [ticketAAffecter, setTicketAAffecter] = useState<TicketResume | null>(null);
   const [recherche, setRecherche] = useState('');
+  // Terme réellement envoyé au serveur, temporisé : sans cela chaque frappe déclencherait
+  // une requête paginée. 300 ms est en dessous du seuil de perception d'une saisie fluide.
+  const [rechercheEnvoyee, setRechercheEnvoyee] = useState('');
   const [filtreStatut, setFiltreStatut] = useState<StatutTicket | ''>('');
   const [filtrePriorite, setFiltrePriorite] = useState<PrioriteTicket | ''>('');
+
+  useEffect(() => {
+    const minuteur = setTimeout(() => setRechercheEnvoyee(recherche.trim()), 300);
+    return () => clearTimeout(minuteur);
+  }, [recherche]);
+
+  // Techniciens affectables — chargés une seule fois, et seulement pour l'administrateur :
+  // lui seul peut affecter (`ticketService.affecter` refuse tout autre rôle). Un échec est
+  // silencieux : la colonne retombe alors sur l'affichage simple, la liste reste utilisable.
+  useEffect(() => {
+    if (!token || !estAdmin) return;
+    utilisateursApi
+      .lister({ role: 'TECHNICIEN', actif: true }, token)
+      .then(({ utilisateurs }) => setTechniciens(utilisateurs))
+      .catch(() => {});
+  }, [token, estAdmin]);
 
   async function chargerTickets() {
     if (!token) return;
@@ -55,12 +105,15 @@ export function TicketsListPage() {
       const filtres: FiltresTickets = {
         statut: filtreStatut || undefined,
         priorite: filtrePriorite || undefined,
+        q: rechercheEnvoyee || undefined,
+        limite: PAR_PAGE,
       };
       if (estSupport && vue === 'MES_TICKETS' && utilisateur) filtres.technicienId = utilisateur.id;
       if (estSupport && vue === 'NON_ASSIGNES') filtres.nonAssignes = true;
 
-      const { tickets: liste } = await ticketsApi.lister(filtres, token);
+      const { tickets: liste, curseurSuivant: suite } = await ticketsApi.lister(filtres, token);
       setTickets(liste);
+      setCurseurSuivant(suite);
     } catch (err) {
       setErreur(err instanceof ApiError ? err.message : 'Impossible de charger les tickets');
     } finally {
@@ -68,22 +121,74 @@ export function TicketsListPage() {
     }
   }
 
+  // « Charger plus » : on repart du dernier identifiant affiché. Le serveur poursuit dans
+  // l'ordre ANTÉCHRONOLOGIQUE, pas dans celui des identifiants — les deux divergent sur
+  // 858 des 872 tickets, le corpus ayant été inséré avec des dates antérieures à son
+  // ordre d'insertion.
+  async function chargerSuite() {
+    if (!token || !curseurSuivant) return;
+    setChargementSuite(true);
+    try {
+      const filtres: FiltresTickets = {
+        statut: filtreStatut || undefined,
+        priorite: filtrePriorite || undefined,
+        q: rechercheEnvoyee || undefined,
+        limite: PAR_PAGE,
+        avantId: curseurSuivant,
+      };
+      if (estSupport && vue === 'MES_TICKETS' && utilisateur) filtres.technicienId = utilisateur.id;
+      if (estSupport && vue === 'NON_ASSIGNES') filtres.nonAssignes = true;
+
+      const suite = await ticketsApi.lister(filtres, token);
+      setTickets((actuels) => [...actuels, ...suite.tickets]);
+      setCurseurSuivant(suite.curseurSuivant);
+    } catch (err) {
+      setErreur(err instanceof ApiError ? err.message : 'Impossible de charger la suite');
+    } finally {
+      setChargementSuite(false);
+    }
+  }
+
+  // Affectation depuis la liste. Le ticket revient complet : on remplace la ligne par ce
+  // que le SERVEUR dit d'elle, plutôt que de deviner — l'affectation change aussi le
+  // statut (NOUVEAU devient EN_ATTENTE), et le recopier à la main aurait fini par diverger.
+  async function affecter(ticket: TicketResume, technicienId: number | null) {
+    if (!token) return;
+    setAffectationEnCours(ticket.id);
+    try {
+      const { ticket: misAJour } = await ticketsApi.affecter(ticket.id, technicienId, token);
+      setTickets((actuels) =>
+        actuels.map((t) =>
+          t.id === ticket.id
+            ? { ...t, technicien: misAJour.technicien, technicienId: misAJour.technicienId, statut: misAJour.statut }
+            : t,
+        ),
+      );
+      setTicketAAffecter(null);
+      toast.success(
+        technicienId ? 'Ticket affecté' : 'Affectation retirée',
+        misAJour.technicien
+          ? `#${ticket.id} confié à ${misAJour.technicien.prenom} ${misAJour.technicien.nom}.`
+          : `#${ticket.id} n'a plus de technicien.`,
+      );
+    } catch (err) {
+      toast.error(
+        'Affectation impossible',
+        err instanceof ApiError ? err.message : 'Réessayez dans un instant.',
+      );
+    } finally {
+      setAffectationEnCours(null);
+    }
+  }
+
   useEffect(() => {
     chargerTickets();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vue, filtreStatut, filtrePriorite, token]);
+  }, [vue, filtreStatut, filtrePriorite, rechercheEnvoyee, token]);
 
-  // Recherche instantanée côté client (id, titre, demandeur, catégorie).
-  const resultats = useMemo(() => {
-    const q = recherche.trim().toLowerCase();
-    if (!q) return tickets;
-    return tickets.filter((t) =>
-      `${t.id} ${t.titre} ${t.demandeur.prenom} ${t.demandeur.nom} ${t.categorie?.nom ?? ''}`
-        .toLowerCase()
-        .includes(q),
-    );
-  }, [tickets, recherche]);
-
+  // La recherche est passée CÔTÉ SERVEUR. Filtrer ici ne portait que sur les pages déjà
+  // chargées : exhaustif tant que la liste entière tenait en mémoire, faux dès qu'elle est
+  // paginée — « aucun résultat » aurait pu signifier « pas dans les 50 premières lignes ».
   return (
     <div>
       <PageHeader
@@ -131,7 +236,9 @@ export function TicketsListPage() {
 
       {/* Barre d'outils */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <div className="relative min-w-56 flex-1 sm:max-w-sm">
+        {/* Un peu plus large qu'avant : le champ annonce desormais cinq cibles de
+            recherche, et « sm:max-w-sm » tronquait l'indication. */}
+        <div className="relative min-w-56 flex-1 sm:max-w-md">
           <Search
             className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400"
             aria-hidden
@@ -139,7 +246,7 @@ export function TicketsListPage() {
           <Input
             value={recherche}
             onChange={(e) => setRecherche(e.target.value)}
-            placeholder="Rechercher par titre, demandeur, catégorie…"
+            placeholder="N°, titre, description, demandeur, catégorie…"
             aria-label="Rechercher un ticket"
             className="pl-9"
           />
@@ -170,8 +277,15 @@ export function TicketsListPage() {
             </option>
           ))}
         </Select>
+        {/* « chargés » et non « trouvés » : la liste est paginée, ce nombre est celui des
+            lignes en main, pas celui des tickets correspondant aux filtres. Le dire évite
+            de laisser lire « 50 tickets » comme un total. */}
         <p className="ml-auto text-xs tabular-nums text-slate-400">
-          {chargement ? '…' : `${resultats.length} ticket${resultats.length > 1 ? 's' : ''}`}
+          {chargement
+            ? '…'
+            : `${tickets.length} ticket${tickets.length > 1 ? 's' : ''} chargé${
+                tickets.length > 1 ? 's' : ''
+              }${curseurSuivant !== null ? ' — il en reste' : ''}`}
         </p>
       </div>
 
@@ -203,7 +317,7 @@ export function TicketsListPage() {
                 </tr>
               ))}
 
-            {!chargement && resultats.length === 0 && (
+            {!chargement && tickets.length === 0 && (
               <tr>
                 <Td colSpan={6} className="p-0">
                   <EmptyState
@@ -220,11 +334,26 @@ export function TicketsListPage() {
             )}
 
             {!chargement &&
-              resultats.map((t) => (
+              tickets.map((t) => (
                 <tr
                   key={t.id}
                   onClick={() => navigate(`/tickets/${t.id}`)}
                   className="cursor-pointer transition-colors hover:bg-slate-50/70"
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`Ouvrir le ticket ${t.id} : ${t.titre}`}
+                  onKeyDown={(ev) => {
+                    // LA LIGNE NE RÉAGIT QUE SI ELLE EST ELLE-MÊME LA CIBLE. Elle contient
+                    // le menu d'affectation, pour lequel Espace ouvre la liste et Entrée
+                    // valide : sans ce garde, ces touches remonteraient jusqu'ici et
+                    // quitteraient la page au lieu de piloter le menu. La page d'audit n'a
+                    // pas ce garde parce que ses lignes ne contiennent aucun contrôle.
+                    if (ev.target !== ev.currentTarget) return;
+                    if (ev.key === 'Enter' || ev.key === ' ') {
+                      ev.preventDefault();
+                      navigate(`/tickets/${t.id}`);
+                    }
+                  }}
                 >
                   <Td>
                     <div className="min-w-0">
@@ -232,12 +361,17 @@ export function TicketsListPage() {
                         <span className="font-mono text-xs text-slate-400">#{t.id}</span>
                         <p className="truncate font-medium text-slate-900">{t.titre}</p>
                       </div>
-                      <div className="mt-0.5 flex items-center gap-2">
+                      {/* L'ancienneté est posée ICI, dans la première colonne, et non à
+                          côté de « Créé » : cette dernière disparaît sous md, et c'est
+                          justement sur petit écran qu'un ticket oublié doit rester
+                          visible. */}
+                      <div className="mt-0.5 flex flex-wrap items-center gap-2">
                         {t.categorie ? (
                           <Badge variant="neutral">{t.categorie.nom}</Badge>
                         ) : (
                           <span className="text-xs text-slate-300">Non classé</span>
                         )}
+                        <BadgeAnciennete statut={t.statut} dateCreation={t.dateCreation} />
                         {t._count.commentaires > 0 && (
                           <span className="text-xs text-slate-400">
                             {t._count.commentaires} message{t._count.commentaires > 1 ? 's' : ''}
@@ -265,8 +399,46 @@ export function TicketsListPage() {
                   <Td className="hidden md:table-cell">
                     <PrioriteLabel priorite={t.priorite} />
                   </Td>
+                  {/* Affectation SUR PLACE pour l'administrateur : 53 tickets sans
+                      technicien demandaient jusqu'ici 53 allers-retours par la page de
+                      détail. Même contrôle que le panneau Propriétés du détail — un
+                      <option> natif ne peut pas porter la photo du technicien.
+                      `stopPropagation` est indispensable : la ligne entière est cliquable
+                      et ouvrirait le ticket au premier clic sur le bouton.
+                      Largeur w-52 et non w-44 : avec la pastille de 32 px et le chevron,
+                      44 ne laissait qu'une centaine de pixels au nom et coupait
+                      « Karim Trabelsi ». */}
                   <Td className="hidden lg:table-cell">
-                    {t.technicien ? (
+                    {estAdmin && !STATUTS_NON_AFFECTABLES.includes(t.statut) ? (
+                      <div className="w-52" onClick={(e) => e.stopPropagation()}>
+                        <BoutonPropriete
+                          visuel={
+                            t.technicien ? (
+                              <Avatar
+                                prenom={t.technicien.prenom}
+                                nom={t.technicien.nom}
+                                photoUrl={t.technicien.photoUrl}
+                              />
+                            ) : (
+                              <PastilleVide />
+                            )
+                          }
+                          libelle={
+                            t.technicien
+                              ? `${t.technicien.prenom} ${t.technicien.nom}`
+                              : 'Non assigné'
+                          }
+                          vide={!t.technicien}
+                          disabled={affectationEnCours === t.id}
+                          ariaLabel={
+                            t.technicien
+                              ? `Changer le technicien du ticket ${t.id} (actuellement ${t.technicien.prenom} ${t.technicien.nom})`
+                              : `Affecter le ticket ${t.id}`
+                          }
+                          onClick={() => setTicketAAffecter(t)}
+                        />
+                      </div>
+                    ) : t.technicien ? (
                       <div className="flex items-center gap-2">
                         <Avatar prenom={t.technicien.prenom} nom={t.technicien.nom} photoUrl={t.technicien.photoUrl} size="sm" />
                         <span className="truncate text-sm text-slate-700">
@@ -285,6 +457,25 @@ export function TicketsListPage() {
           </tbody>
         </Table>
       </TableContainer>
+
+      <SelecteurTechnicien
+        ticket={ticketAAffecter}
+        techniciens={techniciens}
+        enCours={affectationEnCours !== null}
+        onChoisir={(technicienId) => {
+          if (ticketAAffecter) affecter(ticketAAffecter, technicienId);
+        }}
+        onClose={() => setTicketAAffecter(null)}
+      />
+
+      {!chargement && curseurSuivant !== null && (
+        <div className="mt-4 flex justify-center">
+          <Button variant="secondary" size="sm" onClick={chargerSuite} loading={chargementSuite}>
+            <ChevronDown className="size-3.5" aria-hidden />
+            Charger plus
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

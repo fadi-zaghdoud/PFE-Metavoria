@@ -5,7 +5,9 @@
 > référence de commit. Les preuves sont en annexe, pour le rapport et la soutenance.
 >
 > Vérifié contre le code du dépôt le 12/09/2026 (branche `audit-et-HR`, qui contient
-> `main` plus les chantiers 1 et 2). Le diagramme de Gantt est hors périmètre de ce document.
+> `main` plus les chantiers 1 et 2). Annexes mises à jour le 06/10/2026 sur `main`, pour
+> les faits devenus périmés : tests, état des branches, intégration continue. Le diagramme
+> de Gantt est hors périmètre de ce document.
 
 ---
 
@@ -338,18 +340,19 @@ Chaque fonctionnalité inscrite au plan, avec ce qui la prouve dans le dépôt.
 | 9 | Amélioration continue du modèle | `ml/smart_ticketing_ml/flywheel/` (`construire_train_v2`, `exporter_lot`, `reentrainer`, `courbe_apprentissage`, `reconcilier_relecture`), `/reentrainer`, `/reentrainer/etat`, `/deployer` ; `routes/ia.routes.ts` (réservé administrateur), `FlywheelPage.tsx` | `2df6407` (A), `69132d0` (D1), `e6a83f3` (B), `d8c35b4` (C1), `230fce1` (C2) |
 | 10 | Tableau de bord et rapports | `GET /tickets/statistiques`, `services/ticket.service.ts` (fonction `statistiques`), `features/statistiques/TableauDeBord.tsx`, `features/statistiques/exportRapport.ts` (jsPDF + write-excel-file) | `942a0e3` (Epic 3), `525af6d` (PR #7) |
 | 11 | Administration de la plateforme | `routes/utilisateurs.routes.ts`, `routes/categories.routes.ts`, `routes/parametres.routes.ts`, `services/categorie.statut.ts` ; pages `UsersManagementPage`, `CategoriesManagementPage`, `AbsencesPage`, `ParametresPage`, `FlywheelPage` | `e65b3fb`, `eeae756`, `2946efa`, `3332478` |
-| 12 | Journal d'audit | `model JournalAudit`, `services/audit.service.ts`, `repositories/audit.repository.ts`, `routes/audit.routes.ts`, `utils/contexteRequete.ts` (AsyncLocalStorage), `middlewares/contexte.middleware.ts` ; `JournalAuditPage.tsx`Ces deux lignes alimentent la section « perspectives » du rapport.
-
-#, `features/administration/PanneauAudit.tsx` ; migrations `20260910120000` et `20260910180000` | `2be7c32`, `a0615e3`, `03a04ef`, `216c664`, `b425f62`, `12f03f2`, `2c2a780`, `629b471` |
-| 13 | Tests et qualité | 6 fichiers `backend/src/**/*.test.ts` (runtime `node:test`, fonctions pures) ; 8 fichiers `ml/tests/*.py`, 45 cas pytest, exécutables hors ligne | `eef813c` (tests du module IA), tests livrés avec les chantiers 1 et 2 |
+| 12 | Journal d'audit | `model JournalAudit`, `services/audit.service.ts`, `repositories/audit.repository.ts`, `routes/audit.routes.ts`, `utils/contexteRequete.ts` (AsyncLocalStorage), `middlewares/contexte.middleware.ts` ; `JournalAuditPage.tsx`, `features/administration/PanneauAudit.tsx` ; migrations `20260910120000` et `20260910180000` | `2be7c32`, `a0615e3`, `03a04ef`, `216c664`, `b425f62`, `12f03f2`, `2c2a780`, `629b471` |
+| 13 | Tests, qualité et intégration continue | 6 fichiers `backend/src/**/*.test.ts` (runtime `node:test`, fonctions pures), 118 cas ; 8 fichiers `ml/tests/*.py`, 64 cas pytest (62 hors ligne, 2 lents nécessitant bge-m3 ou Tesseract) ; `.github/workflows/ci.yml` (GitHub Actions), qui rejoue typage, lint et tests à chaque push et pull request vers `main` | `eef813c` (tests du module IA), tests livrés avec les chantiers 1 et 2, `51b7dd0` et `dd8465c` (CI, PR #14) |
 | 14 | Conteneurisation et déploiement | `docker-compose.yml` (7 services : postgres, ollama, ollama-prefetch, backend, ml, ml-prefetch, frontend), `docker-compose.gpu.yml`, `backend/Dockerfile`, `frontend/Dockerfile`, `ml/Dockerfile`, `ml/requirements.lock`, `frontend/nginx.conf` | `de15d5a`, `3caa303`, `4a17600`, `6b4a1cd`, `f77f964` (PR #10) |
 
-## État des branches au 12/09/2026
+## État des branches au 06/10/2026
 
-`main` porte les epics 1 à 4 et la conteneurisation. Les fonctionnalités 3 et 12
-(affectation automatique, journal d'audit) vivent sur `audit-et-HR`, **17 commits non
-encore fusionnés dans `main`** — 64 fichiers, environ 6 100 lignes ajoutées. Le seul
-commit de `main` absent de cette branche est un commit de fusion sans contenu propre.
+`main` porte l'ensemble des fonctionnalités du plan : epics 1 à 4, conteneurisation,
+affectation automatique et journal d'audit (PR #11), seuils de confiance IA (PR #13),
+intégration continue (PR #14) et passe d'interface (PR #15).
+
+Au 12/09/2026, date de la vérification initiale, les fonctionnalités 3 et 12 vivaient
+encore sur `audit-et-HR`, 17 commits non fusionnés. La branche a été **fusionnée dans
+`main` le 20/09/2026** (PR #11).
 
 ---
 
@@ -362,15 +365,18 @@ commit de `main` absent de cette branche est un commit de fusion sans contenu pr
 | Intégration avec Slack et Microsoft Teams (notification et création rapide de tickets) | §3.2 objectif 6, §6.5 | Aucune trace dans le code : ni dépendance, ni route, ni configuration. Non retenue au périmètre. |
 | Documentation de l'API au format Swagger / OpenAPI | §8 (outils annexes) | Aucune dépendance ni annotation dans le code. Non retenue au périmètre. |
 
-# Inscrits au plan, non encore implémentés
+Ces deux lignes alimentent la section « perspectives » du rapport.
 
-À traiter avant la soutenance — ils figurent au présent dans les textes du formulaire,
-qui est un document prévisionnel, mais rien ne les prouve encore dans le dépôt.
+## Inscrits au plan, livrés après la vérification initiale
+
+Au 12/09/2026, ces deux éléments figuraient au présent dans les textes du formulaire, qui
+est un document prévisionnel, sans que rien ne les prouve dans le dépôt. Tous deux sont
+désormais livrés.
 
 | Élément | Entrée concernée | État réel |
 |---|---|---|
 | ~~Seuils de confiance IA réglables par l'administrateur (§6.5)~~ — **livré le 24/09/2026** | 11 — Administration de la plateforme | Deux clés au registre : seuil d'**affichage** de la catégorie suggérée (défaut 0,5) et **porte d'abstention** du RAG (désactivée par défaut, bornes 0,05–0,95). Bornées et revalidées côté serveur, journalisées à l'audit. Le seuil de l'**affectation automatique** reste en dur — découplage assumé, énoncé dans l'aide de l'écran. |
-| Intégration continue (§8) | 13 — Tests, qualité et intégration continue | Aucun répertoire `.github` : les tests existent et s'exécutent, mais rien ne les déclenche automatiquement. |
+| ~~Intégration continue (§8)~~ — **livrée le 06/10/2026** (PR #14) | 13 — Tests, qualité et intégration continue | Workflow GitHub Actions (`.github/workflows/ci.yml`), déclenché à chaque push et pull request vers `main`, sans base de données ni modèle lourd : un job backend (typage, lint, 118 tests `node:test`) et un job module IA (suite rapide pytest, 62 tests). **Limites** : le frontend n'est pas dans la CI, et le cycle de vie des tickets comme l'authentification n'ont pas de test unitaire — la formule « règles métier du serveur » de l'entrée 13 est plus large que ce qui est couvert. |
 
 ## Écartés en cours de projet, avec leur raison
 

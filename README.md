@@ -12,44 +12,53 @@ Projet de Fin d'Études (PFE) — Metavoria.
 | Base de données | PostgreSQL 17 + extension **pgvector** (recherche vectorielle : embeddings 1024d, index HNSW) |
 | ORM | Prisma 7 (driver adapter `@prisma/adapter-pg`) |
 | Auth | JWT + bcrypt, RBAC (Employé / Technicien / Administrateur) |
-| Module IA | Python + FastAPI ; `bge-m3` (embeddings, auto-hébergé), `bge-reranker-v2-m3`, scikit-learn (classification), Tesseract (OCR `fra`) |
+| Module IA | Python + FastAPI ; `bge-m3` (embeddings, auto-hébergé), scikit-learn (classification), Tesseract (OCR `fra`) ; `bge-reranker-v2-m3` livré, hors du chemin par défaut |
 | LLM local | Ollama + `qwen2.5:7b` (défaut) / `qwen2.5:14b` — aucun appel d'API externe |
 | Conteneurisation | Docker + Docker Compose (pile autonome : 7 services, dont 2 provisionneurs one-shot) |
+| Intégration continue | GitHub Actions — typage, lint et tests à chaque push et pull request vers `main` |
 
 ## Structure du repo
 
 ```
 .
+├── .github/workflows/   # Intégration continue (GitHub Actions)
 ├── backend/            # API Express + TypeScript
-│   ├── prisma/          # Schéma Prisma + migrations
+│   ├── prisma/          # Schéma, migrations, chargeur du corpus synthétique
 │   └── src/
-│       ├── config/       # Variables d'env, client Prisma
-│       ├── middlewares/  # Auth JWT, RBAC, gestion d'erreurs
+│       ├── config/       # Variables d'env, Prisma, SMTP, Cloudinary, registre des paramètres
+│       ├── middlewares/  # Auth JWT, RBAC, limitation de débit, upload, contexte de requête, erreurs
 │       ├── controllers/  # Contrôleurs HTTP
-│       ├── services/     # Logique métier
+│       ├── services/     # Logique métier : tickets, affectation, absences, audit, IA…
 │       ├── repositories/ # Accès aux données (Prisma)
 │       ├── routes/       # Définition des routes
 │       ├── validators/   # Schémas de validation Zod
+│       ├── utils/        # Flux SSE, contexte asynchrone, cookies, erreurs
 │       └── generated/    # Client Prisma généré (non versionné)
+│                         # Tests : fichiers *.test.ts placés à côté du code testé
 ├── frontend/            # React + TypeScript + Tailwind
 │   └── src/
-│       ├── pages/         # Connexion, Inscription, Tableau de bord
-│       ├── components/    # Layout, composants partagés
-│       ├── routes/        # Garde de routes protégées
+│       ├── pages/         # 15 écrans : authentification, tickets, tableau de bord, administration
+│       ├── features/      # Appels API et composants par domaine (tickets, statistiques, administration…)
+│       ├── components/    # Layout (sidebar, barre supérieure, palette ⌘K) et composants UI partagés
+│       ├── routes/        # Gardes de routes (authentification, rôle)
 │       ├── store/         # État global (Zustand)
-│       ├── features/auth/ # Appels API liés à l'authentification
-│       └── lib/           # Client HTTP générique
+│       ├── types/         # Types partagés
+│       └── lib/           # Client HTTP, utilitaires
 ├── ml/                  # Module IA (Python) — service FastAPI + harnais
 │   ├── smart_ticketing_ml/
 │   │   ├── service/       # API FastAPI, embeddings, reranker, OCR, provisionnement
 │   │   ├── retrieval/     # Recherche hybride (pgvector + full-text), RAG
 │   │   ├── training/      # Classifieur figé (embeddings + LogReg)
 │   │   ├── flywheel/      # Réentraînement et garde de déploiement
+│   │   ├── priority/      # Scorecard de priorité (glass-box)
 │   │   ├── eval/          # Harnais d'évaluation et métriques
-│   │   └── priority/      # Scorecard de priorité (glass-box)
+│   │   └── data/          # Génération du corpus, ingestion des jeux réels et du gold set
+│   ├── tests/             # Tests pytest (suite rapide hors ligne + tests `slow`)
 │   ├── artifacts/         # Classifieur versionné ; le reste est régénérable
 │   ├── gold/              # Jeu de test scellé
+│   ├── real/              # Données réelles relues (lot du flywheel, jeu Kaggle)
 │   └── requirements.lock  # Versions figées (voir ml/README.md)
+├── docs/                # Plan de travail ESPRIT, journal technique, conception du module IA
 ├── docker-compose.yml       # Pile complète
 └── docker-compose.gpu.yml   # Surcouche GPU optionnelle
 ```
@@ -60,7 +69,11 @@ Projet de Fin d'Études (PFE) — Metavoria.
   prérequis de la pile : ni Node, ni Python, ni Ollama à installer sur le serveur.
 - **~35 Go d'espace disque** : 17 Go de modèles (13 Go de LLM + 4,3 Go
   d'embeddings), ~11 Go d'images, le reste pour la base et la marge.
-- Une connexion réseau **au premier démarrage uniquement** (voir plus bas).
+- Une connexion réseau **au premier démarrage** pour télécharger les modèles (voir plus
+  bas) ; ensuite, la pile et le **module IA** fonctionnent hors-ligne. **Exception** : les
+  pièces jointes (et donc l'OCR, qui ne lit que les fichiers envoyés), les photos de
+  profil et les e-mails exigent en permanence l'accès à **Cloudinary** et au **serveur
+  SMTP**.
 - Node.js ≥ 20 seulement pour le développement hors Docker.
 
 ## Déploiement — procédure complète
@@ -76,10 +89,10 @@ Trois blocs à renseigner dans `.env` :
 
 | Variable | Obligatoire | Rôle |
 |---|---|---|
-| `JWT_SECRET` | **oui** | ≥ 32 caractères aléatoires. `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"` |
+| `JWT_SECRET` | **oui** | ≥ 32 caractères aléatoires. `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"` — la valeur d'exemple est volontairement refusée au démarrage |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | fortement conseillé | créent le premier administrateur (voir garde-fous ci-dessous) |
-| `CLOUDINARY_*` | si pièces jointes | sans elles l'application démarre, mais l'upload est désactivé — donc pas d'OCR |
-| `SMTP_*` | si e-mails | réinitialisation de mot de passe |
+| `CLOUDINARY_*` | si pièces jointes | service en ligne, accès Internet requis. Sans ces clés, l'application démarre, mais l'upload est désactivé — donc pas d'OCR — et les photos de profil aussi |
+| `SMTP_*` | si e-mails | invitations, réinitialisation de mot de passe, notifications. Laissés vides, liens et codes s'écrivent dans `docker compose logs backend` |
 
 **Les trois garde-fous de l'amorçage administrateur**, à connaître avant de
 remplir ces variables :
@@ -108,7 +121,7 @@ modèles, applique ses migrations et sème sa base.
 | `ollama-prefetch` — télécharge `qwen2.5:7b` puis `qwen2.5:14b` (13 Go), **puis vérifie** | ~65 min |
 | `ml-prefetch` — télécharge `bge-m3` + `bge-reranker-v2-m3` (4,3 Go), **puis vérifie** | ~80 min (en parallèle) |
 | `backend` — migrations Prisma, puis seed (5 catégories + administrateur) | ~10 s |
-| `ml` — préchauffage des trois modèles | ~15 s |
+| `ml` — préchauffage de deux modèles, bge-m3 et le classifieur (le reranker se charge au premier usage) | ~5 s |
 
 **Comptez ~80 minutes au total**, dominées par les 17 Go de modèles et donc
 dépendantes de la bande passante. **Les démarrages suivants prennent ~30 s** :
@@ -128,9 +141,11 @@ docker compose ps
 # 2. Provisionnement : les deux one-shots doivent être sortis en code 0
 docker compose logs ollama-prefetch ml-prefetch | tail -20
 
-# 3. Service IA : les trois modèles doivent être chargés (préchauffage)
+# 3. Service IA : deux modèles préchauffés
 curl -s http://localhost:8000/sante
-#    -> "modele_charge": true pour embedding, reranker ET classifieur
+#    -> "modele_charge": true pour embedding ET classifieur
+#    -> "modele_charge": false pour le reranker : c'est NORMAL. Il est hors du chemin
+#       par défaut et se charge au premier usage (porte d'abstention, voir ml/README.md)
 #    -> "tesseract_disponible": true, "langue": "fra"
 
 # 4. Base semée : les 5 catégories du CDC
@@ -258,11 +273,16 @@ docker compose up -d postgres
 
 ```bash
 cd backend
-cp .env.example .env
+cp .env.example .env     # puis remplace JWT_SECRET (voir ci-dessous)
 npm install
 npx prisma migrate dev   # applique les migrations (déjà fait si tu as suivi ci-dessus)
 npm run dev               # démarre sur http://localhost:4000
 ```
+
+La valeur d'exemple de `JWT_SECRET` est **volontairement refusée** : le serveur ne démarre
+pas tant qu'elle n'est pas remplacée par au moins 32 caractères aléatoires
+(`openssl rand -hex 48`). Les champs SMTP et Cloudinary peuvent rester vides : les e-mails
+s'écrivent alors dans la console du serveur, et l'envoi de pièces jointes est désactivé.
 
 Scripts utiles :
 
@@ -272,6 +292,7 @@ Scripts utiles :
 | `npm run build` | Génère le client Prisma puis compile en TypeScript |
 | `npm run typecheck` | Vérifie les types sans compiler |
 | `npm run lint` / `lint:fix` | Vérifie / corrige le style de code (ESLint) |
+| `npm test` | Lance les tests unitaires (voir « Lancer les tests ») |
 | `npm run prisma:studio` | Ouvre Prisma Studio (interface de la base de données) |
 | `npm run prisma:migrate` | Crée et applique une nouvelle migration |
 
@@ -285,6 +306,50 @@ npm run dev   # démarre sur http://localhost:5173
 ```
 
 Le serveur de dev Vite proxifie automatiquement les appels `/api` vers `http://localhost:4000` (voir `frontend/vite.config.ts`), donc backend et frontend communiquent sans configuration CORS supplémentaire.
+
+## Lancer les tests
+
+Ce sont les commandes de l'intégration continue (`.github/workflows/ci.yml`), rejouées à
+chaque push et à chaque pull request vers `main`. Aucune ne demande de base de données,
+de modèle lourd ni de Docker.
+
+### Backend — typage, lint, tests unitaires
+
+```bash
+cd backend
+npm ci
+npx prisma generate   # le client Prisma est généré, pas versionné
+npm run typecheck
+npm run lint
+npm test              # node:test, fichiers src/**/*.test.ts
+```
+
+- **Node ≥ 21** pour `npm test` : le motif `src/**/*.test.ts` est développé par Node
+  lui-même. La CI utilise Node 22.
+- **`DATABASE_URL` et `JWT_SECRET` doivent être définis**, bien qu'aucun test n'ouvre de
+  connexion : `config/env.ts` valide l'environnement au chargement. Avec un
+  `backend/.env` rempli, il n'y a rien à faire ; sinon, des valeurs factices suffisent,
+  comme en CI :
+
+```bash
+DATABASE_URL=postgresql://ci:ci@localhost:5432/ci \
+JWT_SECRET=ci-factice-aucun-secret-ci-factice-aucun-secret \
+npm test
+```
+
+### Module IA — pytest
+
+```bash
+cd ml
+pip install -r requirements.lock   # Python 3.12, PyTorch en build CPU
+python -m pytest -m "not slow"     # suite rapide, 100 % hors ligne
+```
+
+- **`python -m pytest`, pas `pytest`** : le paquet `smart_ticketing_ml` n'est pas
+  installé, et `python -m` place `ml/` dans le chemin d'import.
+- Les tests marqués `slow` (`python -m pytest -m slow`) chargent bge-m3 ou Tesseract, et
+  se désactivent proprement si la dépendance manque.
+- Dans la pile Docker : `docker compose run --rm ml pytest -m "not slow" -p no:cacheprovider`.
 
 ## Modèle de données
 
@@ -444,7 +509,7 @@ Les actions sensibles de l'application sont **enregistrées en base**, consultab
 | **Tickets** | Création, affectation (manuelle et automatique), prise en charge, changement de statut / priorité / catégorie, évaluation, pièce jointe, demandes d'IA |
 | **Catégories** | Création, renommage, suppression |
 | **Absences** | Création, modification, suppression |
-| **Paramètres** | Changement du mode d'affectation |
+| **Paramètres** | Changement du mode d'affectation et des seuils de confiance IA (affichage, porte d'abstention) |
 | **Module IA** | Lancement d'un réentraînement, déploiement d'un modèle |
 
 Chaque entrée porte : l'**action**, l'**acteur**, la **cible**, le **résultat**
@@ -548,7 +613,12 @@ alertes automatiques sur échecs répétés · durée de conservation réglable 
 - ✅ Réinitialisation de mot de passe par code OTP, gestion du profil (**photo de profil** comprise), invitation et activation de compte
 - ✅ Administration des utilisateurs (rôles, activation/désactivation) et des **catégories**
 - ✅ Cycle de vie complet des tickets : création, affectation, prise en charge, résolution,
-  satisfaction, clôture, recatégorisation, commentaires, historique d'événements, notifications
+  satisfaction, clôture, recatégorisation, commentaires, historique d'événements, notifications ;
+  liste paginée avec recherche côté serveur (titre, description, catégorie, demandeur, numéro)
+- ✅ **Tableau de bord et rapports** (§6.4) : tickets à affecter, ouverts et résolus, temps
+  moyen de résolution, délai de 1re prise en charge avec son effectif, satisfaction,
+  répartitions par statut, priorité, catégorie et technicien ; filtres par période,
+  technicien, catégorie et service ; export PDF et Excel
 - ✅ **Affectation automatique** (§6.2) : interrupteur manuel/automatique persistant,
   spécialités technicien ↔ catégorie, **gestion des absences** (congé, maladie, formation)
   excluant les techniciens indisponibles, choix par charge et spécialité
@@ -556,21 +626,27 @@ alertes automatiques sur échecs répétés · durée de conservation réglable 
   comptes, tickets, catégories, absences, paramètres, module IA), **échecs de connexion
   tracés avec leur motif**, consultation filtrable réservée à l'administrateur,
   conservation 12 mois
-- ✅ **Pièces jointes** (PDF/PNG/JPG, ≤ 10 Mo) avec **OCR local** (Tesseract, pack `fra`)
+- ✅ **Pièces jointes** (PDF/PNG/JPG, ≤ 10 Mo), stockées sur **Cloudinary**, avec **OCR
+  local** (Tesseract, pack `fra`) sur les fichiers envoyés
 - ✅ **Module IA complet** : classification automatique de catégorie, priorisation par scorecard
-  glass-box, suggestion de solution par **RAG** (recherche hybride pgvector + full-text, reranker,
-  génération citée avec abstention), résumé de fil — le tout **100 % local**, sans appel d'API externe
+  glass-box, suggestion de solution par **RAG** (recherche hybride pgvector + full-text fusionnée
+  par RRF, génération citée avec abstention), résumé de fil — le tout **100 % local**, sans appel
+  d'API externe. Le reranker `bge-reranker-v2-m3` est livré mais **hors du chemin par défaut** :
+  il n'intervient que si un administrateur ouvre la porte d'abstention (§6.5)
 - ✅ **Flywheel** : capture des labels validés, réentraînement supervisé et garde de déploiement
   qui refuse un modèle non meilleur sur le jeu réel
 - ✅ Design system frontend (sidebar, palette ⌘K, toasts, composants réutilisables)
 - ✅ **Conteneurisation Docker autonome et prouvée sur serveur nu** : 7 services, provisionnement
-  vérifié des modèles, fonctionnement hors-ligne après le premier démarrage
+  vérifié des modèles. Après le premier démarrage, le **module IA** fonctionne hors-ligne ; les
+  pièces jointes, l'OCR, les photos de profil et les e-mails exigent Cloudinary et le SMTP
+- ✅ **Intégration continue** (GitHub Actions) : typage, lint et tests du backend, suite rapide
+  pytest du module IA, rejoués à chaque push et pull request vers `main`
 
-**À venir** (voir le cahier des charges) :
+**Non retenu au périmètre** — écarté par écrit, annexe B du
+[plan de travail](docs/plan-de-travail-esprit.md) :
 
-- Tableau de bord analytique approfondi et rapports exportables
-- Intégrations externes (Slack / Teams)
-- Documentation d'API (Swagger)
+- Intégration avec Slack et Microsoft Teams (CDC §3.2 objectif 6, §6.5)
+- Documentation de l'API au format Swagger / OpenAPI (CDC §8)
 
 ## Documentation
 
@@ -580,3 +656,5 @@ alertes automatiques sur échecs répétés · durée de conservation réglable 
   mesures et arbitrages, phase par phase
 - [`docs/epic-4-module-ia-conception.md`](docs/epic-4-module-ia-conception.md) — document de
   conception du module IA
+- [`docs/plan-de-travail-esprit.md`](docs/plan-de-travail-esprit.md) — plan de travail déposé
+  à l'école, avec la table des preuves (annexe A) et les éléments écartés (annexe B)

@@ -3,8 +3,9 @@ J8 — Résumé automatique du fil d'un ticket (description + messages), local-f
 
 Le LLM **CONDENSE**, il **n'AJOUTE JAMAIS** : le prompt lui interdit explicitement
 d'inventer, d'extrapoler ou de proposer une solution absente du fil. Un résumé infidèle
-induirait le technicien en erreur — pire qu'inutile. Génération Ollama (qwen2.5:14b) à
-**température 0** (déterministe, fidèle). Sortie contrainte au schéma JSON `{resume}`.
+induirait le technicien en erreur — pire qu'inutile. Génération Ollama (`qwen2.5:7b`
+par défaut, celui de la livraison) à **température 0** (déterministe, fidèle). Sortie
+contrainte au schéma JSON `{resume}`.
 """
 
 from __future__ import annotations
@@ -54,7 +55,7 @@ def resumer(
     """Résumé fidèle du fil (titre + description + messages). Renvoie le texte seul."""
     gen = OllamaGenerator(
         host=host or os.environ.get("OLLAMA_HOST", "http://localhost:11434"),
-        model=model or os.environ.get("OLLAMA_MODEL", "qwen2.5:14b"),
+        model=model or os.environ.get("OLLAMA_MODEL", "qwen2.5:7b"),
         fallback=None,
         temperature=temperature,  # 0 → déterministe / fidèle (pas de dérive créative)
     )

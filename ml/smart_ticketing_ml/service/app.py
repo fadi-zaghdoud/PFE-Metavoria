@@ -230,8 +230,8 @@ def priority(req: RequetePriority) -> ReponsePriority:
 
 # ── Greffe 2 : suggestion RAG citée (à l'étape EN_COURS) ─────────────────────────
 # Ce endpoint LIT la KB (tickets résolus) mais n'écrit JAMAIS — Node reste seul
-# écrivain. Latence 15-30 s (génération Ollama qwen2.5:14b) → l'appelant Node
-# l'invoque en ASYNCHRONE (fire-and-forget), jamais dans un chemin de réponse.
+# écrivain. Latence mesurée avec qwen2.5:7b : médiane 23,9 s en CPU, 8,5 s avec la
+# surcouche GPU (README, § Accélération GPU) → l'appelant Node l'invoque en ASYNCHRONE (fire-and-forget), jamais dans un chemin de réponse.
 
 class RequeteSuggest(BaseModel):
     titre: str = Field(..., description="Titre du ticket entrant (requête RAG).")

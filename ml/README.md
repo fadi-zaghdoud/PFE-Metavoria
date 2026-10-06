@@ -1,15 +1,25 @@
 # Module IA — Smart Ticketing (Epic 4)
 
 Pipeline IA **100 % local, open-source, sans coût API** (conforme CDC §10).
-Aucune donnée ne sort de la machine (confidentialité).
+Le module IA ne fait sortir aucune donnée de la machine (confidentialité). Cette garantie
+vaut pour lui seul : à l'échelle de l'application, les pièces jointes et les photos de
+profil sont stockées sur Cloudinary, et les e-mails passent par un serveur SMTP (voir le
+README racine).
 
 ## Stack
 
-- **LLM** : Ollama + `qwen2.5:14b` (Q4), fallback `qwen2.5:7b`
+- **LLM** : Ollama + `qwen2.5:7b` par défaut, dans la pile Docker comme hors conteneur
+  (retenu sur mesures en Phase 7). `qwen2.5:14b` reste provisionné : il a généré le corpus
+  J1, et reste le défaut des outils d'évaluation (juge LLM, foil de priorité) pour que
+  leurs mesures consignées restent rejouables.
 - **Embeddings** : `bge-m3` (1024d) — microservice FastAPI (J4)
-- **Reranker** : `bge-reranker-v2-m3` (J6)
-- **Classification** : embeddings + LogisticRegression + calibration (J5)
+- **Classification** : embeddings + LogisticRegression **non calibrée** (J5 — la
+  calibration, apprise sur un dev synthétique, dégradait le réel ; elle reste au harnais)
 - **Recherche** : hybride pgvector + full-text Postgres, fusion RRF (J6)
+- **Reranker** : `bge-reranker-v2-m3` (J6), **hors du chemin par défaut**. L'ordre des
+  suggestions est celui de la fusion RRF ; le reranker n'est sollicité que par
+  `POST /rerank`, le harnais d'évaluation, et la porte d'abstention réglable (§6.5) quand
+  un administrateur l'ouvre.
 
 ## Contrainte transversale — catégories dynamiques
 
@@ -54,8 +64,9 @@ Sortie : `artifacts/corpus/corpus_train_<horodatage>.jsonl` + `manifest_<horodat
 (distributions, modèle, seed, version de prompt — reproductibilité).
 
 **Répartition** : ~85 % résolus (base RAG) / ~15 % ouverts (backlog de démo).
-Chaque ticket porte sa `resolution` dans le JSONL ; le loader (à venir) ne la
-liera **pas** en base pour les tickets ouverts (fermables à la demande en démo).
+Chaque ticket porte sa `resolution` dans le JSONL ; le chargeur
+(`backend/prisma/loadSyntheticCorpus.ts`, `npm run db:load-corpus`) ne la lie **pas** en
+base pour les tickets ouverts (fermables à la demande en démo).
 
 ## J4 — Microservice d'embeddings (`bge-m3`, 1024d)
 
@@ -133,7 +144,7 @@ du dépôt, et un candidat produit par `/reentrainer` apparaît immédiatement d
 ### Fonctionnement hors-ligne
 
 Une fois `hf-cache` peuplé, le service charge ses modèles **sans aucun accès réseau**
-(vérifié : suite complète `56 passed` avec `--network none`). Cela suppose
+(vérifié le 03/09/2026 sur la suite complète d'alors : `56 passed` avec `--network none`). Cela suppose
 `config.source_modele`, qui passe au chargeur le **dossier du cache** plutôt que
 l'identifiant du Hub : `transformers` 4.40.2 (`utils/hub.py`, `has_file`) émet sinon un
 `requests.head` brut vers huggingface.co — appel qui ignore `HF_HUB_OFFLINE`, dont
@@ -141,13 +152,27 @@ l'échec DNS n'est pas rattrapé, et qui rendait le chargement impossible sans r
 alors que tous les poids étaient en cache. L'identifiant `BAAI/bge-m3` reste la
 **provenance** enregistrée en base (`tickets.embedding_modele`).
 
+Ce fonctionnement hors-ligne est celui du **module IA**. À l'échelle de l'application, les
+pièces jointes — et donc l'OCR, qui ne lit que les fichiers envoyés —, les photos de
+profil et les e-mails exigent l'accès à Cloudinary et au serveur SMTP.
+
 ### Préchauffage
 
-`IA_WARMUP=true` (posé par le compose) charge bge-m3, le classifieur **et** le reranker
-au démarrage, en tâche de fond — `/sante` et l'écoute HTTP restent disponibles
-immédiatement. Sans lui, le premier `/classify` dépasserait le budget de 4 s du backend,
-et le premier `/suggest` a été mesuré à **71,1 s** (contre 21-26 s ensuite), au-delà du
-budget de 60 s.
+`IA_WARMUP=true` (posé par le compose) charge **deux** modèles au démarrage, en tâche de
+fond : bge-m3 puis le classifieur — le chemin de la classification. `/sante` et l'écoute
+HTTP restent disponibles immédiatement. Sans lui, le premier `/classify` dépasserait le
+budget de 4 s du backend, et le premier ticket créé perdrait son enrichissement IA.
+
+Le **reranker n'est pas préchauffé** : `/sante` le montre donc à `"modele_charge": false`,
+et c'est l'état normal. Il est hors du chemin par défaut, et le préchauffer immobilisait
+~2,3 Go pour un modèle qui ne s'exécutait pas. Il se charge au premier usage — environ
+3,5 s, hors du temps de réponse puisque la suggestion est générée en asynchrone.
+
+Le tout premier `/suggest` après un redémarrage du service reste plus lent que les
+suivants : excédent mesuré de +7,6 s (GPU) à +17,5 s (CPU), payé une fois par
+redémarrage, sans effet en exploitation. **Sa cause n'est pas établie**, et le préchauffage
+n'y change rien — voir le journal technique, « Le surcoût du premier appel —
+reproductible, non attribué ».
 
 ## Limites (à documenter au rapport)
 

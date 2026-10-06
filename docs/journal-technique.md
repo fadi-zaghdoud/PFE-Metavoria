@@ -26,8 +26,9 @@ demande explicite.
 ### Étude de l'existant, analyse des besoins, validation du CDC, étude technologique
 - **Date réelle** : `[À COMPLÉTER PAR FEDI]` (le dépôt Git démarre au 08/07/2026 ;
   la phase de cadrage la précède et n'a pas de trace versionnée).
-- **Ce qui a été fait** : le cahier des charges est présent au dépôt
-  (`Cahier_des_charges_Smart_Ticketing_1.pdf`). `[reconstitué depuis Git]`
+- **Ce qui a été fait** : le cahier des charges
+  (`Cahier_des_charges_Smart_Ticketing_1.pdf`) est conservé **hors du dépôt** : il n'est
+  pas versionné. `[reconstitué depuis Git]`
 - **Décisions / alternatives écartées / justification** : `[À COMPLÉTER PAR FEDI]`
 - **Problèmes rencontrés** : `[À COMPLÉTER PAR FEDI]`
 - **Conseils de l'encadrant (Mohamed Amine Laribi)** : `[À COMPLÉTER PAR FEDI]`
@@ -3096,3 +3097,263 @@ calibration pour l'un ni pour l'autre. À arbitrer avec le flywheel J9, pas en p
   seuils vivent sur le registre générique (`/api/parametres`). Noté dans le document de
   conception, implémentation inchangée — réutiliser le registre a évité une table, une
   migration et un second mécanisme d'audit.
+
+---
+
+# Passe interface page par page — tableau de bord et tickets
+
+> Travail du **24 au 30/09/2026**, branches `feat/ui-dashboard` (9 commits) puis
+> `feat/ui-tickets` (11 commits), fusionnées dans `main` par la **PR #15 le 06/10/2026**
+> (commit de fusion `d20b04b`, 14 fichiers, +933/−146). C'est la « passe de polissage page
+> par page » annoncée le 16/09 (entrée « Passe interface — photo de profil »), menée dans
+> l'ordre de visibilité en démonstration : tableau de bord, puis liste et détail des
+> tickets. Les pages d'administration n'ont pas été reprises.
+>
+> Entrée `[reconstitué depuis Git]` : les raisons citées sont celles que les messages de
+> commit consignent **au moment des faits**, pas des justifications écrites après coup.
+
+## Ce qui est livré
+
+**Tableau de bord**
+
+| Changement | Commits |
+| --- | --- |
+| Carte « À affecter » (administrateur seul) : tickets sans technicien, lien vers la vue « Non assignés » de la liste (`?vue=non-assignes`) | `5889471` |
+| Indicateurs rangés par actionnabilité : à affecter → ouverts → résolution moyenne → satisfaction ; le cumul « résolus ou clôturés » descend en mention | `5abd468` |
+| Charge par technicien : sous un filtre, les techniciens à zéro sont masqués et leur nombre est annoncé | `47a23c7` |
+| Délai de 1re prise en charge affiché **avec son effectif** (« sur 6 tickets ») — champ `nombrePrisesEnCharge` ajouté à la réponse | `094dfce`, `a566f62` |
+| Mise en page : graphiques appariés par hauteur, bloc « Comptes » réduit à une bande neutre, libellés tronqués corrigés | `31f3641`, `4008611`, `be1f77b`, `833a3fb` |
+
+**Liste et détail des tickets**
+
+| Changement | Commits |
+| --- | --- |
+| Pagination par curseur, 50 lignes et « Charger plus » | `431c680`, correctif `7dd3221` |
+| Recherche côté serveur : titre, description, catégorie, demandeur (nom complet compris), numéro exact | `7a572a0` |
+| Affectation depuis la liste (administrateur, tickets non résolus) | `c22ad6f` |
+| Pastille d'ancienneté à 7 jours (orange) et 30 jours (rouge) | `961a535` |
+| Lignes activables au clavier, comme celles du journal d'audit | `a85006b` |
+| Sélecteurs à visuel (photo du technicien, icône de priorité, marqueur de catégorie) dans le panneau Propriétés puis dans la liste, sur un socle commun `ChoixPropriete` | `08c5735`, `2739960`, `48cbc94`, `ecb8512`, `e51739c` |
+
+**Côté API, tout est additif** : `limite` (1–200) et `avantId` optionnels sur
+`GET /tickets`, `curseurSuivant` dans la réponse, `q` élargi, `nombrePrisesEnCharge` dans
+les statistiques. Aucun contrat retiré, aucune migration.
+
+## Les décisions, et leurs raisons
+
+### « À affecter » : un compteur dérivé, adossé à un invariant vérifié
+
+- **Décision** : le compteur est calculé côté interface, sans toucher au backend, sur
+  l'équivalence « NOUVEAU = sans technicien » (l'affectation fait passer à EN_ATTENTE, la
+  désaffectation ramène à NOUVEAU).
+- **Condition posée avant de s'en servir** : l'invariant a été vérifié sur les 870 tickets
+  de la base, **dans les deux sens** — 0 ticket NOUVEAU assigné, 0 ticket ouvert hors
+  NOUVEAU sans technicien.
+- **Alternative écartée** : un compteur explicite côté serveur. Le commentaire du code le
+  désigne comme le correctif à faire **si l'invariant tombait**, plutôt qu'une rustine.
+- **Réservée à l'administrateur**, en correction de l'analyse initiale qui la donnait à
+  tout le support : `ticketService.affecter` refuse tout autre rôle. La montrer à un
+  technicien lui désignerait une tâche qu'il n'a pas le droit d'accomplir.
+
+### Charge par technicien : corriger dans la vue, pas dans le service
+
+Filtrer sur un technicien affichait 10 barres dont 9 à zéro. Les **comptes** étaient bien
+filtrés ; c'est la **liste des lignes** qui ne l'était pas, parce qu'elle vient de
+`chargeCourante()`, la fonction que **partage l'affectation automatique** — pour laquelle un
+technicien à 0 est le meilleur candidat. **Alternative écartée** : filtrer côté serveur, qui
+aurait cassé l'affectation. La règle retenue porte sur le **sens du zéro** : sans filtre, 0
+veut dire « disponible » et reste affiché ; sous filtre, 0 veut dire « aucun ticket
+concerné » et la ligne est masquée — avec son nombre annoncé, pour ne pas remplacer un
+graphique illisible par un graphique trompeur.
+
+### Délai de prise en charge : qualifier plutôt que masquer
+
+Le délai repose sur **6 événements PRISE_EN_CHARGE pour 870 tickets** : la traçabilité est
+plus récente que le corpus. **Masquer** l'indicateur a été écarté — il figure au CDC.
+Premier temps (`094dfce`) : une réserve qualitative, « échantillon partiel », faute de
+champ dans l'API. Second temps (`a566f62`) : la valeur existait déjà côté serveur
+(`premierePriseEnCharge.size`), calculée puis jetée ; l'exposer a coûté une ligne, et la
+mention dit désormais « sur 6 tickets », comme la satisfaction annonce ses évaluations.
+
+### Pagination : le curseur dans l'ordre demandé, pas dans l'ordre des identifiants
+
+- **Mesure faite avant de choisir** : entre « date de création décroissante » et
+  « identifiant décroissant », **858 rangs sur 872 diffèrent**, dès le rang 12 — le corpus
+  synthétique a été inséré avec des dates antérieures à son ordre d'insertion.
+- **Alternative écartée** : `where: { id: { lt: curseur } }`, qui aurait produit doublons
+  et trous. **Retenu** : `cursor: { id }` + `skip: 1`, la mécanique déjà prouvée sur le
+  journal d'audit, avec un ordre rendu **total** (`dateCreation desc, id desc`).
+- **`limite` sans valeur par défaut, délibérément** : la page Paramètres appelle le même
+  point d'entrée **sans limite** pour compter les non-assignés ; un défaut y aurait plafonné
+  le compteur en silence.
+
+### Recherche : la basculer côté serveur était indissociable de la pagination
+
+Filtrée en mémoire, la recherche devenait **fausse** dès la liste paginée : « Aucun
+résultat » aurait pu vouloir dire « pas dans les 50 premières lignes ». **Alternative
+écartée** : se contenter du `q` existant (titre et description), qui aurait été une
+**régression** — la recherche côté client couvrait aussi le demandeur, la catégorie et le
+numéro. Le nom complet est traité mot par mot (« Fadi Zaghdoud » ne correspond à aucune
+colonne). Saisie temporisée à 300 ms.
+
+### Sélecteur à photos : réutiliser le `Dialog`, et un aller-retour sur la cible
+
+- **Point de départ** : un `<option>` natif ne peut pas contenir d'image.
+- **Alternative écartée** : un menu déroulant positionné dans la cellule — rogné par le
+  conteneur en `overflow-auto`, il aurait demandé un portail, le recalcul de position et
+  tout le clavier et l'ARIA à écrire. Le `Dialog` du dépôt apportait déjà échappement,
+  piège de focus et fermeture.
+- **Écart assumé avec la maquette** : pas de couple Annuler/Affecter. L'action est
+  réversible depuis le même endroit et tracée ; une confirmation ajoutait un clic sans rien
+  sécuriser.
+- **Aller-retour consigné** : le sélecteur a d'abord été posé dans la liste (`08c5735`),
+  alors que la demande portait sur le détail d'un ticket ; il y a été déplacé
+  (`2739960`), la liste retrouvant son `<select>`. Il a été repris ensuite dans la liste
+  (`e51739c`), pour qu'une même action n'ait pas deux contrôles différents selon l'écran.
+- **L'absence est affichée sans son motif** : seule la date de fin remonte, MALADIE étant
+  une donnée de santé qui ne sort pas de la page Absences.
+
+### Pastille d'ancienneté : des seuils tirés de la mesure
+
+Sur les tickets réellement clos de la base, la résolution prend **1 jour en médiane, 3 au
+90e centile, 4 au maximum**. Un ticket ouvert depuis plus de **7 jours** dépasse donc de
+plus du double le pire cas observé ; **30 jours** marque le décrochage franc. Rien sur un
+ticket clos.
+
+## Ce qui a été prouvé, et comment
+
+- **Pagination, contre la vérité terrain** : parcours complet par pas de dix, **872 lignes
+  en 88 pages, zéro doublon, zéro manquant**, séquence identique à la liste complète ;
+  refait sous filtre (statut RESOLU) : 468 contre 468. `[reconstitué depuis Git]`
+- **Recherche, sur un ticket témoin** (#913) : numéro, nom complet, prénom, mot du titre,
+  mot de la seule description trouvent le ticket ; un terme absurde ne rend rien.
+  `[reconstitué depuis Git]`
+- **Un défaut que rien de statique ne pouvait attraper** (`7dd3221`) : `buildQueryString`
+  est une liste blanche et jetait `limite` et `avantId`. Le typage, le lint, le build et les
+  tests étaient verts ; la pagination était pourtant **décorative**. Trouvé en observant les
+  requêtes dans le navigateur — c'est la limite exacte d'une vérification statique.
+- **Vérifications au navigateur** consignées dans les commits du sélecteur : clic et Entrée
+  sur le bouton n'ouvrent pas le ticket, aucun bouton sur un ticket clôturé, zéro erreur
+  console. `[reconstitué depuis Git]`
+- **Intégration continue sur le résultat de la fusion** (commit `17ea4eb`, la branche
+  fusionnée dans `main`) : **118/118** tests backend, typage et lint verts ; **62** tests ML
+  rapides. Puis de nouveau sur `main` après fusion (`d20b04b`) : mêmes résultats.
+  `[établi en séance]`
+- **Écart de chiffre, à ne pas reprendre tel quel** : quatre messages de commit annoncent
+  « 69 tests purs ». La branche ne modifie **aucun** fichier de test, et sa base en comptait
+  déjà 118 : ce chiffre ne correspond pas à la suite complète, et la commande lancée alors
+  n'est pas tracée. Le passage de la CI fait foi.
+
+## Dettes assumées et documentées
+
+- **Aucun test automatisé** ne couvre la pagination ni la recherche : elles vivent dans le
+  dépôt Prisma, que les tests sans base n'atteignent pas. La CI verte ne les prouve donc pas.
+- **La recherche est une recherche par sous-chaîne** (`contains`, insensible à la casse,
+  soit un `ILIKE`), pas la recherche plein texte de PostgreSQL — réservée au RAG. À
+  formuler ainsi au rapport.
+- **Le stock de tickets non assignés (lot D du Chantier 1) n'est pas résorbé** : la liste
+  rend chaque affectation plus rapide, mais il n'existe toujours pas d'affectation du stock
+  en un geste avec prévisualisation.
+- **La pastille d'ancienneté est quasi universelle sur cette base** : 134 tickets ouverts
+  sur 136 dépassent 7 jours (âge médian 112 jours). Ce n'est pas un défaut de calibrage,
+  c'est le stock synthétique jamais traité ; les seuils se règlent par deux constantes
+  exportées si l'affichage doit être allégé en démonstration.
+- **Exports PDF et Excel** : le délai de prise en charge y figure toujours sans son
+  effectif.
+- **Accessibilité** : une ligne en `role="button"` qui contient un bouton imbrique deux
+  éléments interactifs, mal restitués par les lecteurs d'écran. Sortie propre identifiée —
+  déplacer l'ouverture du ticket sur un élément dédié —, non engagée.
+- **Choisir parmi quatre priorités ouvre une boîte de dialogue**, plus lourd qu'un menu
+  natif : échange fait contre la lisibilité des icônes et l'homogénéité du panneau.
+- **Trou dans la grille de graphiques chez un employé** (trois cartes sur deux colonnes) :
+  toujours présent, déjà noté le 16/09.
+- **Le compteur « À affecter » dépend de l'invariant NOUVEAU = sans technicien** : s'il
+  tombait, le correctif est un compteur côté serveur.
+
+---
+
+# Intégration continue — les tests rejoués à chaque proposition vers `main`
+
+> Séance du **06/10/2026**, branche `ci-github-actions`, fusionnée par la **PR #14**
+> (commit de fusion `ec6aa57`). Point de départ : l'audit de fin de projet. L'entrée 13 du
+> plan de travail déposé à l'école annonçait des tests « rejoués automatiquement à chaque
+> modification du code (GitHub Actions) », et la section Technologies citait GitHub
+> Actions ; or le dépôt n'avait **aucun** répertoire `.github`, ni à ce jour ni dans tout
+> son historique. Un engagement écrit, vérifiable en dix secondes sur GitHub, et faux.
+
+## Ce qui est livré
+
+- `.github/workflows/ci.yml`, déclenché sur `push` et `pull_request` vers `main`, deux
+  jobs indépendants :
+  - **backend** : `npm ci`, `prisma generate`, `tsc --noEmit`, lint, tests `node:test` ;
+  - **ml** : `pip install -r requirements.lock`, puis `pytest -m "not slow"`.
+- Un script **`npm test`** dans `backend/package.json` : la commande n'existait qu'en
+  commentaire d'en-tête de chaque fichier de test.
+- **Ni build Docker, ni modèle téléchargé, ni base de données.**
+
+## Les décisions, et leurs raisons `[établi en séance]`
+
+### Des variables factices, parce qu'un test charge la validation d'environnement
+
+`config/env.ts` valide l'environnement **au chargement** et lève une erreur sans
+`DATABASE_URL` ni `JWT_SECRET`. Le test de rétention importe `audit.service`, qui le
+charge. **Mesuré** : sans ces variables, **111/112** ; avec, **118/118**. Aucun test n'ouvre
+de connexion, les valeurs sont donc factices — c'était la consigne de la séance — et
+déclarées comme telles dans le workflow.
+
+### Le client Prisma est généré dans la CI
+
+Il est gitignoré (`src/generated`). Sans `prisma generate`, ni le typage ni le test de
+rétention ne trouvent le client. L'étape ne demande aucune base.
+
+### Node 22, et un motif glob confié à Node
+
+Le script `test` passe `"src/**/*.test.ts"` **entre guillemets** à `node --test`, qui ne
+développe ce motif lui-même qu'à partir de **Node 21**. **Alternative écartée** : laisser le
+shell développer le motif — sous `sh`, `**` n'est pas récursif ; sous `cmd.exe`, il n'est
+pas développé du tout. L'image Docker du backend reste en Node 20 : elle ne lance pas les
+tests.
+
+### `python -m pytest`, et `PYTHONPATH=.`
+
+Le paquet `smart_ticketing_ml` n'est pas installé : un `pytest` nu ne le trouve pas, alors
+que `python -m` place le répertoire courant dans le chemin d'import. `PYTHONPATH=.`
+reproduit en outre ce que fait l'image du service (`PYTHONPATH=/app`).
+
+### Un garde-fou contre les téléchargements silencieux
+
+`HF_HUB_OFFLINE=1` et `TRANSFORMERS_OFFLINE=1` dans le job ML : un test qui chercherait un
+modèle **échoue** au lieu de rapatrier plusieurs gigaoctets sans que personne ne le voie.
+
+### L'image du runner figée en `ubuntu-24.04`
+
+Le premier passage portait une annotation de GitHub : `ubuntu-latest` bascule vers
+Ubuntu 26 **à partir du 19/10/2026**. Un changement d'image ne doit pas pouvoir casser la CI
+sans changement de code, a fortiori avant la soutenance. **Alternative écartée** :
+`ubuntu-latest`.
+
+## Ce qui a été prouvé, et comment
+
+- **Avant tout push, en local** :
+  - backend lancé **sans `.env`**, avec les seules variables factices : 118/118 ;
+  - ML sur un **export propre** de `ml/` (fichiers versionnés seuls), cache Hugging Face
+    **vide**, mode hors ligne forcé : **62 réussis**, 2 lents désélectionnés. La suite
+    rapide ne dépend donc d'aucun artefact absent du dépôt ni d'aucun modèle en cache.
+- **Premier passage sur GitHub, vert** : backend en 39 s (118/118), ML en 1 min 4 s
+  (62 réussis, PyTorch `2.2.0+cpu` installé — 187 Mo, aucune roue CUDA).
+- **Après le passage en `ubuntu-24.04`** : vert, l'image `ubuntu-24.04` confirmée dans les
+  journaux des deux jobs.
+- **Déclenchement réel sur `main`** : la fusion de la PR #14 a lancé la CI d'elle-même,
+  verte. La PR #15 a ensuite été testée sur son **résultat de fusion** (`17ea4eb`) — c'est
+  ce qui lui a permis d'utiliser le script `test`, absent de sa propre branche.
+
+## Dettes assumées et documentées
+
+- **Le frontend n'est pas dans la CI** : ni typage, ni `oxlint`, ni build. Périmètre de
+  cette séance limité au backend et au module IA.
+- **La couverture reste partielle** : le cycle de vie des tickets (transitions,
+  permissions) et l'authentification (code OTP, rotation des jetons de rafraîchissement)
+  n'ont aucun test. L'entrée 13 du plan parle de « règles métier du serveur » : la formule
+  est plus large que ce qui est couvert.
+- **Les 2 tests lents** (bge-m3, Tesseract) ne tournent pas en CI.
+- **Aucune vérification du build Docker** : un `Dockerfile` cassé ne serait pas détecté.

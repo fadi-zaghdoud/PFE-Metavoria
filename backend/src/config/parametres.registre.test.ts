@@ -253,7 +253,7 @@ test('AUCUNE entrée illisible ne peut OUVRIR la porte (fail-safe)', () => {
 });
 
 test('porte : aucune entrée, même absurde, ne lève', () => {
-  const entrees = [null, undefined, '', '   ', ' ', 'DESACTIVE'.repeat(100), '0.5'];
+  const entrees = [null, undefined, '', '   ', '\u0000', 'DESACTIVE'.repeat(100), '0.5'];
   for (const brut of entrees) {
     assert.doesNotThrow(() => interpreter(CLE_SEUIL_ABSTENTION, brut as string | null));
   }

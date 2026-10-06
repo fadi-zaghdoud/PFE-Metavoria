@@ -4,7 +4,8 @@ J6b — Génération citée de la suggestion (Ollama local, ancrage strict).
 Le LLM ne décide pas et n'invente pas : il **synthétise** une résolution UNIQUEMENT à
 partir des tickets résolus retrouvés, en **citant leurs #id** (traçabilité). Un contrôle
 anti-hallucination ne retient que les #id réellement présents dans les documents fournis.
-Local-first (qwen2.5:14b via Ollama) : aucune donnée sortante, coût nul (CDC §10).
+Local-first (Ollama, `qwen2.5:7b` par défaut — celui de la livraison) : aucune donnée
+sortante, coût nul (CDC §10).
 """
 
 from __future__ import annotations
@@ -51,7 +52,7 @@ def generer(
     """Renvoie (texte, sources_valides). `sources_valides` ⊆ ids des `docs` (anti-hallucination)."""
     gen = OllamaGenerator(
         host=host or os.environ.get("OLLAMA_HOST", "http://localhost:11434"),
-        model=model or os.environ.get("OLLAMA_MODEL", "qwen2.5:14b"),
+        model=model or os.environ.get("OLLAMA_MODEL", "qwen2.5:7b"),
         fallback=None,
         temperature=temperature,  # 0 → déterministe/reproductible
     )

@@ -39,9 +39,9 @@ import urllib.request
 
 HOTE = os.environ.get("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
 # Liste séparée par des espaces : tous les modèles dont la pile a besoin.
-MODELES = os.environ.get("OLLAMA_MODELES", "qwen2.5:14b qwen2.5:7b").split()
+MODELES = os.environ.get("OLLAMA_MODELES", "qwen2.5:7b qwen2.5:14b").split()
 # Modèle principal — celui sur lequel on éprouve l'inférence.
-PRINCIPAL = os.environ.get("OLLAMA_MODEL", MODELES[0] if MODELES else "qwen2.5:14b")
+PRINCIPAL = os.environ.get("OLLAMA_MODEL", MODELES[0] if MODELES else "qwen2.5:7b")
 # Longueur de la génération de préchauffage. Un seul jeton chargerait les poids
 # sans réchauffer le chemin d'inférence (cf. en-tête) ; quelques dizaines suffisent.
 JETONS_PRECHAUFFAGE = int(os.environ.get("OLLAMA_PREFETCH_JETONS", "32"))

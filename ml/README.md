@@ -8,9 +8,10 @@ README racine).
 
 ## Stack
 
-- **LLM** : Ollama. Dans la pile Docker, `qwen2.5:7b` (`OLLAMA_MODEL` posé par le
-  compose), retenu sur mesures en Phase 7. Hors conteneur, `ml/.env.example` et le code
-  retombent sur `qwen2.5:14b`, qui a servi à générer le corpus J1 et reste provisionné.
+- **LLM** : Ollama + `qwen2.5:7b` par défaut, dans la pile Docker comme hors conteneur
+  (retenu sur mesures en Phase 7). `qwen2.5:14b` reste provisionné : il a généré le corpus
+  J1, et reste le défaut des outils d'évaluation (juge LLM, foil de priorité) pour que
+  leurs mesures consignées restent rejouables.
 - **Embeddings** : `bge-m3` (1024d) — microservice FastAPI (J4)
 - **Classification** : embeddings + LogisticRegression **non calibrée** (J5 — la
   calibration, apprise sur un dev synthétique, dégradait le réel ; elle reste au harnais)

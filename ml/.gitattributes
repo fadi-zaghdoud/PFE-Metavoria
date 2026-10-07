@@ -1,0 +1,7 @@
+# Données de démonstration : octets FIGÉS, sans conversion des fins de ligne.
+# Ces fichiers ont été écrits sous Windows (CRLF) et leurs SHA-256 sont consignés dans
+# `real/lot_v2/train_v2_manifest.json`. Sans `-text`, `core.autocrlf` les stockerait en LF
+# et un clone sous Linux recevrait des fichiers dont l'empreinte ne correspond plus au
+# manifeste. Le contenu est lu ligne à ligne (JSON) : CRLF ou LF, le résultat est le même.
+artifacts/corpus/corpus_train_20260714T161302Z.jsonl -text
+artifacts/flywheel/train_v2_20260819T154457Z.jsonl -text

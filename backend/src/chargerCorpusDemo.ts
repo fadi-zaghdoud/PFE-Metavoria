@@ -1,23 +1,40 @@
 // =============================================================================
-//  Chargement du corpus synthétique (J1 — module IA) dans la base.
+//  Données de démonstration — chargement du corpus synthétique (J1) dans la base.
 //  Lit le JSONL produit par ml/smart_ticketing_ml/data/generate_corpus.py et
-//  crée les tickets marqués `synthetique = true` (exclus des KPI réels §6.4).
+//  crée les tickets marqués `synthetique = true`.
+//
+//  Le corpus n'est chargé QUE par ce script, lancé à la main (profil compose
+//  `demo`) : une installation réelle n'a aucun ticket synthétique en base.
+//
+//  POURQUOI CE FICHIER VIT DANS `src/` ET NON DANS `prisma/` : même raison que le
+//  seed. `tsconfig.json` ne compile que `src/**/*.ts` ; sous `prisma/`, le script
+//  exigeait `tsx`, absent de l'image de production, et ne pouvait donc pas tourner
+//  dans Docker. Ici, il est compilé en `dist/chargerCorpusDemo.js`.
 //
 //  Règles :
 //   - Idempotent : purge d'abord les tickets synthétiques existants (cascade).
+//   - Identifiants FIXES : le ticket de la ligne i reçoit l'identifiant
+//     PREMIER_ID + i. Un rechargement redonne donc les mêmes numéros, et une base
+//     reconstruite retrouve ceux de la démonstration documentée (voir PREMIER_ID).
 //   - Un demandeur par `service_demandeur` distinct → « répartition par service ».
-//   - Petit pool de techniciens → « charge par technicien ».
-//   - Dates étalées sur ~90 j (dateCloture pour les résolus) → KPI temps de
-//     résolution / graphes par période non vides pour la démo.
+//   - Petit pool de techniciens → « charge par technicien ». Comptes SANS mot de
+//     passe : aucun identifiant par défaut n'est livré avec le produit.
+//   - Dates étalées sur ~90 j avant le chargement (dateCloture pour les résolus) →
+//     KPI temps de résolution / graphes par période non vides pour la démo.
 //   - `resolution_a_lier` : la résolution devient un Commentaire du technicien
 //     UNIQUEMENT pour les résolus ; pour les ouverts elle reste dans le JSONL
 //     (ticket « ouvert » en démo, fermable à la demande).
 //
-//  Exécution : `npm run db:load-corpus [chemin/vers/corpus.jsonl]`
+//  Les embeddings ne sont PAS écrits ici : ils viennent du backfill du service IA
+//  (`python -m smart_ticketing_ml.service.backfill`), à lancer ensuite.
+//
+//  Exécution :
+//   - Docker : `docker compose run --rm demo-donnees`
+//   - local  : `npm run db:load-corpus [chemin/vers/corpus.jsonl]`
 // =============================================================================
-import { readdirSync, readFileSync } from 'fs';
+import { readFileSync } from 'fs';
 import { join } from 'path';
-import { prisma } from '../src/config/prisma';
+import { prisma } from './config/prisma';
 
 interface CorpusTicket {
   titre: string;
@@ -30,6 +47,17 @@ interface CorpusTicket {
   synthetique: boolean;
   resolution_a_lier: boolean;
 }
+
+// Corpus versionné au dépôt ; ses empreintes sont celles de
+// ml/real/lot_v2/train_v2_manifest.json.
+const CORPUS_DEMO = 'corpus_train_20260714T161302Z.jsonl';
+
+// Premier identifiant attribué. Dans la base où la démonstration a été préparée, le
+// corpus a été chargé après 8 tickets d'essai : il y occupe les identifiants 9 à 860.
+// Commencer à 9 fait correspondre une base reconstruite à cette démonstration — les
+// tickets cités au journal (#108, #282…) et les sources de leurs suggestions gardent
+// leur numéro.
+const PREMIER_ID = 9;
 
 const RESOLVED = new Set(['RESOLU', 'CLOTURE']);
 const NB_TECHNICIENS = 3;
@@ -48,14 +76,7 @@ function rng(seed: number): () => number {
 }
 
 function resoudreFichier(): string {
-  const arg = process.argv[2];
-  if (arg) return arg;
-  const dir = join(process.cwd(), '..', 'ml', 'artifacts', 'corpus');
-  const fichiers = readdirSync(dir)
-    .filter((f) => f.startsWith('corpus_train_') && f.endsWith('.jsonl'))
-    .sort();
-  if (fichiers.length === 0) throw new Error(`Aucun corpus_train_*.jsonl dans ${dir}`);
-  return join(dir, fichiers[fichiers.length - 1]);
+  return process.argv[2] ?? join(process.cwd(), '..', 'ml', 'artifacts', 'corpus', CORPUS_DEMO);
 }
 
 async function main() {
@@ -67,9 +88,31 @@ async function main() {
   const rand = rng(42);
   const maintenant = Date.now();
 
-  // Catégories : nom → id (jamais codées en dur).
+  // Catégories : nom → id (jamais codées en dur). Toutes doivent exister : sans ce
+  // contrôle, un ticket dont la catégorie manque serait créé sans catégorie, en silence.
   const categories = await prisma.categorie.findMany();
   const catId = new Map(categories.map((c) => [c.nom, c.id]));
+  const manquantes = [...new Set(tickets.map((t) => t.categorie))].filter((n) => !catId.has(n));
+  if (manquantes.length > 0) {
+    throw new Error(
+      `Catégories absentes de la base : ${manquantes.join(', ')}. ` +
+        'Lancez d’abord la pile (migrations et seed) avant de charger le corpus.',
+    );
+  }
+
+  // Les identifiants fixes ne doivent écraser aucun ticket réel : refus explicite,
+  // AVANT la purge — un refus après elle laisserait la base sans son corpus.
+  const dernierId = PREMIER_ID + tickets.length - 1;
+  const occupants = await prisma.ticket.count({
+    where: { synthetique: false, id: { gte: PREMIER_ID, lte: dernierId } },
+  });
+  if (occupants > 0) {
+    throw new Error(
+      `${occupants} ticket(s) non synthétique(s) occupent déjà les identifiants ` +
+        `${PREMIER_ID} à ${dernierId}. Le corpus de démonstration se charge sur une base ` +
+        'sans tickets réels dans cette plage.',
+    );
+  }
 
   // Purge idempotente (les commentaires/événements cascadent).
   const supprimes = await prisma.ticket.deleteMany({ where: { synthetique: true } });
@@ -115,10 +158,12 @@ async function main() {
     demandeurParService.set(svc, u.id);
   }
 
-  // Insertion des tickets.
+  // Insertion des tickets. L'ordre des tirages `rand()` est celui du chargement
+  // d'origine : chaque ticket retrouve le même technicien, la même durée de
+  // résolution et la même note de satisfaction.
   let crees = 0;
   let commentaires = 0;
-  for (const t of tickets) {
+  for (const [index, t] of tickets.entries()) {
     const categorieId = catId.get(t.categorie);
     const demandeurId = demandeurParService.get(t.service_demandeur)!;
     const resolu = RESOLVED.has(t.statut);
@@ -141,6 +186,7 @@ async function main() {
 
     const ticket = await prisma.ticket.create({
       data: {
+        id: PREMIER_ID + index,
         titre: t.titre,
         description: t.description,
         statut: t.statut,
@@ -171,8 +217,21 @@ async function main() {
     }
   }
 
-  console.log(`✅ ${crees} tickets synthétiques créés (${commentaires} résolutions liées).`);
+  // Séquence recalée : des identifiants posés à la main ne la font pas avancer. Sans
+  // ce recalage, le premier ticket créé ensuite dans l'application recevrait un
+  // identifiant déjà pris. GREATEST : ne jamais faire reculer la séquence, pour ne pas
+  // réattribuer le numéro d'un ticket supprimé.
+  await prisma.$queryRawUnsafe(`
+    SELECT setval(s::regclass, GREATEST(
+      COALESCE((SELECT max(id) FROM tickets), 1),
+      COALESCE(pg_sequence_last_value(s::regclass), 1)
+    ))
+    FROM (SELECT pg_get_serial_sequence('tickets', 'id') AS s) AS seq
+  `);
+
+  console.log(`✅ ${crees} tickets synthétiques créés, #${PREMIER_ID} à #${dernierId} (${commentaires} résolutions liées).`);
   console.log(`   ${techniciens.length} techniciens, ${services.length} demandeurs (par service).`);
+  console.log('   Étape suivante : les embeddings, via le backfill du service IA.');
 }
 
 main()

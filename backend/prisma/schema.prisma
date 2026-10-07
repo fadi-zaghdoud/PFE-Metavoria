@@ -137,7 +137,10 @@ model Ticket {
   description             String
   statut                  StatutTicket @default(NOUVEAU)
   priorite                Priorite     @default(MOYENNE)
-  // Ticket issu du corpus synthétique (bootstrap IA) : exclu des KPI réels (§6.4).
+  // Ticket issu du corpus synthétique (bootstrap IA). Il N'EST PAS exclu des indicateurs
+  // (§6.4) : le corpus n'est chargé que par le profil compose `demo`, donc une installation
+  // réelle n'a aucun ticket synthétique à exclure. Il sert à la base de connaissances du RAG
+  // et est exclu des labels du flywheel (seuls les tickets réels en fournissent).
   synthetique             Boolean      @default(false)
   dateCreation            DateTime     @default(now()) @map("date_creation")
   dateCloture             DateTime?    @map("date_cloture")

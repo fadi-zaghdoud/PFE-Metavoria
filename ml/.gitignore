@@ -3,8 +3,8 @@
 __pycache__/
 *.egg-info/
 
-# Artefacts générés — le corpus versionné n'est PAS committé ici (volumineux,
-# régénérable) ; seul le gold set relu à la main le sera (J2), sous un chemin dédié.
+# Artefacts générés — exclus par défaut (volumineux, régénérables). Le gold set relu
+# à la main vit sous un chemin dédié (J2). Exceptions nommées une à une ci-dessous.
 artifacts/*
 !artifacts/.gitkeep
 
@@ -19,7 +19,20 @@ artifacts/models/*
 !artifacts/models/classifier_*.joblib
 !artifacts/models/classifier_*.manifest.json
 # Les CANDIDATS du flywheel restent exclus : produits par /reentrainer, non déployés,
-# régénérables. Idem embeddings, corpus, caches et rapports datés.
+# régénérables. Idem embeddings, caches et rapports datés.
+
+# EXCEPTION — les DONNÉES DE DÉMONSTRATION sont versionnées (~800 Ko). Sans elles, un
+# clone propre n'a ni tickets à charger (base de connaissances du RAG vide, tableau de
+# bord vide), ni snapshot `train_v2` (`/reentrainer` échoue). Fichiers nommés un à un :
+# leurs empreintes sont celles de `real/lot_v2/train_v2_manifest.json`, et un nouveau
+# corpus généré ne doit pas entrer au dépôt par accident.
+!artifacts/corpus/
+artifacts/corpus/*
+!artifacts/corpus/corpus_train_20260714T161302Z.jsonl
+!artifacts/corpus/manifest_20260714T161302Z.json
+!artifacts/flywheel/
+artifacts/flywheel/*
+!artifacts/flywheel/train_v2_20260819T154457Z.jsonl
 
 # Secrets
 .env

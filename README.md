@@ -54,7 +54,7 @@ Projet de Fin d'Études (PFE) — Metavoria.
 │   │   ├── eval/          # Harnais d'évaluation et métriques
 │   │   └── data/          # Génération du corpus, ingestion des jeux réels et du gold set
 │   ├── tests/             # Tests pytest (suite rapide hors ligne + tests `slow`)
-│   ├── artifacts/         # Classifieur versionné ; le reste est régénérable
+│   ├── artifacts/         # Versionnés : classifieur, corpus de démonstration, train_v2 ; le reste est régénérable
 │   ├── gold/              # Jeu de test scellé
 │   ├── real/              # Données réelles relues (lot du flywheel, jeu Kaggle)
 │   └── requirements.lock  # Versions figées (voir ml/README.md)
@@ -257,6 +257,152 @@ POSTGRES_PORT=5433 BACKEND_PORT=4001 FRONTEND_PORT=5174 ML_PORT=8001   docker co
 
 > Une seule instance de la pile peut tourner à la fois sur une machine : les noms
 > de conteneurs sont fixés dans le compose (`container_name`). `[dette connue]`
+
+## Données de démonstration
+
+Une installation neuve démarre **sans aucun ticket**. Pour retrouver le produit tel qu'il
+est présenté — tableau de bord rempli, suggestions de solution, réentraînement —, un corpus
+de démonstration se charge en deux commandes. Il n'est **jamais** chargé automatiquement :
+une installation réelle n'a aucun ticket synthétique.
+
+### Origine des données
+
+Metavoria n'avait **aucun historique de tickets** : c'est précisément le problème que le
+projet résout. Le module IA a donc démarré sur un corpus d'amorçage **généré**.
+
+| Fichier versionné | Contenu |
+|---|---|
+| `ml/artifacts/corpus/corpus_train_20260714T161302Z.jsonl` | 852 tickets **générés** par `qwen2.5:14b` (graine 42, invite `j1-v2`) ; manifeste à côté |
+| `ml/artifacts/flywheel/train_v2_20260819T154457Z.jsonl` | Jeu d'entraînement du réentraînement : les 852 tickets + 50 tickets relus du jeu public ci-dessous |
+
+Leurs empreintes SHA-256 sont celles consignées dans `ml/real/lot_v2/train_v2_manifest.json`.
+
+**Crédit.** Les 50 tickets relus, et le jeu `ml/real/real_train_kaggle.jsonl` dont ils sont
+tirés, proviennent du **« Customer IT Support - Ticket Dataset »** de **Tobias Bueck**,
+publié sur Kaggle sous licence **Attribution 4.0 International (CC BY 4.0)** :
+<https://www.kaggle.com/datasets/tobiasbueck/multilingual-customer-support-tickets>.
+Ils ont été filtrés (français, files IT) et étiquetés pour ce projet.
+
+**Aucune donnée réelle ni personnelle** :
+
+- le jeu Kaggle est **anonymisé à la source** : noms, e-mails et sociétés y sont remplacés
+  par des gabarits (`<name>`, `<email>`, `<company>`) ;
+- le corpus généré ne contient ni e-mail ni téléphone. Six noms de personnes y figurent,
+  dans cinq tickets (« le comptable M. Ben Ammar », « Mme Ayari »…) : **inventés par le
+  modèle de langage, ils sont fictifs**.
+
+### Charger les données
+
+La pile doit être démarrée (`docker compose up -d`), migrations et seed faits. Ensuite :
+
+```bash
+docker compose run --rm demo-donnees                                        # 852 tickets (~10 s)
+docker compose run --rm ml python -m smart_ticketing_ml.service.backfill    # leurs embeddings (~100 s sur CPU)
+```
+
+| Attendu | Valeur |
+|---|---|
+| Tickets chargés | 852, numérotés **#9 à #860** |
+| Résolutions liées (base de connaissances du RAG) | 723 |
+| Évaluations de satisfaction | 178 |
+| Comptes créés | 3 techniciens, 31 demandeurs (un par service) — **sans mot de passe** |
+| Embeddings | 852 (`BAAI/bge-m3`) |
+
+À savoir :
+
+- **Les numéros sont fixes.** Le corpus commence à #9 pour reproduire la base où la
+  démonstration a été préparée (le corpus y avait été chargé après 8 tickets d'essai) :
+  les tickets cités ci-dessous gardent leur numéro. Un rechargement redonne les mêmes
+  numéros, et un ticket créé ensuite dans l'application reçoit un numéro au-delà de #860,
+  sans collision (la séquence est recalée et ne recule jamais).
+- **Le chargeur refuse** si un ticket réel occupe déjà la plage #9 à #860 — et il refuse
+  **avant** toute suppression.
+- **Tout rechargement efface les embeddings** : il supprime puis recrée les tickets
+  synthétiques. **Relancez toujours le backfill ensuite**, sinon le RAG n'a plus de base
+  de connaissances.
+- **Les dates sont relatives au chargement** : tickets étalés sur les 90 jours précédents.
+  Les durées (résolution, satisfaction) sont identiques d'un chargement à l'autre ; les
+  dates absolues, non.
+
+### Se connecter
+
+- **Administrateur** : celui créé par `ADMIN_EMAIL` / `ADMIN_PASSWORD`.
+- **Technicien** : aucun mot de passe n'est livré par défaut. Invitez un compte depuis
+  **Administration → Utilisateurs**. Sans SMTP configuré, le lien d'activation s'affiche
+  dans `docker compose logs backend` ; ouvrez-le pour choisir le mot de passe.
+
+### Ce que l'on voit
+
+**Tableau de bord** (administrateur), corpus seul : 852 tickets, 129 ouverts, 464 résolus,
+259 clôturés, résolution moyenne de 48,1 h, satisfaction de 3,9 sur 178 évaluations, et
+trois techniciens chargés de 25 à 27 tickets.
+
+Le **délai de 1re prise en charge reste vide** sur une base reconstruite : il se calcule
+sur les événements de prise en charge, et le chargeur n'en crée aucun — les tickets du
+corpus naissent directement dans leur statut final. Il se remplit dès qu'un technicien
+prend un ticket en charge dans l'application.
+
+**Suggestions de solution** — chaque cas ci-dessous donne la **même décision et les mêmes
+sources sur 5 appels consécutifs** (mesuré le 06/10/2026 sur une base reconstruite, `qwen2.5:7b`
+avec la surcouche GPU, base de connaissances de 723 documents) :
+
+| Ticket | Titre | Catégorie | Statut chargé | Sources citées |
+|---|---|---|---|---|
+| **#108** | Elévation droits admin | Accès | En cours | #70, #691, #760 |
+| **#151** | Station d'accueil ne charge pas le portable | Matériel | Nouveau | #28, #678 |
+| **#282** | Provisionnement VPN pour prestataire | Accès | Nouveau | #38, #124, #644 |
+| **#323** | DNS ne résout plus les adresses internes | Réseau | Nouveau | #606 |
+| *(réserve)* **#330** | Besoin logiciel notes | Autre | En cours | #75, #209 |
+
+Pour #330, la base où la démonstration a été préparée cite **#209 seul**. L'écart est
+constaté, pas expliqué : les deux bases ne retiennent pas les mêmes trois tickets pour la
+génération ([#65, #209, #240] contre [#209, #65, #75]).
+
+Une suggestion se demande sur un ticket **en cours**, par le technicien assigné ou un
+administrateur. #108 et #330 le sont dès le chargement : bouton **« Suggérer une
+résolution »**. Pour #151, #282 et #323 : **« Assigner un technicien »** (un compte
+invité), puis, connecté avec ce compte, **« Prendre en charge »**.
+
+**Abstention** — le système dit qu'aucun ticket passé ne couvre le problème plutôt que
+d'inventer. Deux saisies la produisent de façon stable (5/5, sur la base reconstruite comme
+sur la base de démonstration d'origine). **Saisissez-les exactement**, champ par champ,
+dans **Tickets → Nouveau ticket** :
+
+| Champ | Cas 1 | Cas 2 |
+|---|---|---|
+| Titre | `Ampoule grillée dans le couloir` | `Fuite d'eau dans les toilettes du rez-de-chaussée` |
+| Description | `Ampoule grillée dans le couloir` | `Fuite d'eau dans les toilettes du rez-de-chaussée` |
+| Catégorie, priorité, pièces jointes | laissées vides | laissées vides |
+
+- La description **n'est pas vide** : elle reprend le titre mot pour mot. Elle est
+  obligatoire (10 caractères au moins).
+- Accents tapés au clavier (`é` précomposé, U+00E9) ; dans le cas 2, **apostrophe droite**
+  `'` (U+0027) — pas l'apostrophe typographique `’` d'un copier-coller depuis un traitement
+  de texte.
+- Condition : la **porte d'abstention** (Administration → Paramètres) reste **désactivée**,
+  son réglage par défaut. Porte ouverte, la requête envoyée au service IA n'est plus celle
+  qui a été testée.
+- Puis assignez le ticket, prenez-le en charge et demandez la suggestion, comme ci-dessus.
+
+Ce que l'interface envoie au service IA a été vérifié : le titre et la description
+enregistrés, sans ajout (ni catégorie, ni texte de pièce jointe), et `seuil: null`. La
+validation du serveur ne modifie pas ces saisies.
+
+> **Limite à connaître** : sur 6 saisies hors périmètre essayées, **2 s'abstiennent**
+> (ci-dessus) et **4 reçoivent une suggestion citée mais hors sujet** (climatisation,
+> machine à café, place de parking, chaise de bureau). La garde du RAG vérifie que les
+> tickets cités existent, pas qu'ils sont pertinents — limite consignée au journal
+> technique. L'abstention n'est donc pas une garantie.
+>
+> Les cas « Écran Dell qui clignote » et « Fuite d'eau dans les sanitaires », retenus
+> auparavant, sont **retirés** : leurs textes d'origine n'avaient pas été conservés, et les
+> saisies reconstituées ne s'abstiennent plus.
+
+**Réentraînement** : **Administration → Modèle IA → Réentraîner** (environ 4 min sur CPU).
+Sur une base reconstruite, aucun ticket réel n'apporte de label : le candidat est entraîné
+sur `train_v2` seul. Mesure du 06/10/2026 : macro-F1 réel 0,4212 contre 0,438 pour le modèle
+actif, verdict **NUL** — et **« Déployer le candidat » est refusé**, la garde jouant son
+rôle.
 
 ## Développement local (hors Docker)
 
@@ -639,6 +785,9 @@ alertes automatiques sur échecs répétés · durée de conservation réglable 
 - ✅ **Conteneurisation Docker autonome et prouvée sur serveur nu** : 7 services, provisionnement
   vérifié des modèles. Après le premier démarrage, le **module IA** fonctionne hors-ligne ; les
   pièces jointes, l'OCR, les photos de profil et les e-mails exigent Cloudinary et le SMTP
+- ✅ **Données de démonstration** chargeables depuis un clone propre (profil `demo`) : 852 tickets
+  synthétiques aux numéros fixes, base de connaissances du RAG, réentraînement — voir
+  « Données de démonstration »
 - ✅ **Intégration continue** (GitHub Actions) : typage, lint et tests du backend, suite rapide
   pytest du module IA, rejoués à chaque push et pull request vers `main`
 

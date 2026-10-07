@@ -227,6 +227,8 @@ demande explicite.
     RESOLU 55 % + CLOTURE 30 % = **85 %** résolus, NOUVEAU/EN_COURS/EN_ATTENTE = **15 %** ;
     complétude **indigente 30 %** (tickets « une ligne, aucun symptôme »).
   - **Résultats de la génération complète (852 tickets réels)** :
+    *(Rectifié le 07/10/2026 : ces 852 tickets sont **synthétiques**, générés par
+    `qwen2.5:14b` — voir l'entrée « Données de démonstration ».)*
     - **0 résolution vide**, **100 % 14B** (aucun fallback), **100 %** des résolutions au
       format Cause/Action/Vérification.
     - **99 % de descriptions uniques** (849/852) — quasi zéro doublon ; longueur des
@@ -281,6 +283,11 @@ demande explicite.
     technicien), **31 demandeurs par service** (répartition par service), **dates étalées
     sur ~90 j** + dateCloture (temps moyen de résolution), **178 évaluations de
     satisfaction**. → le tableau de bord (§6.4) est alimenté.
+    > ⚠️ **Rectifié le 07/10/2026** : les tickets synthétiques ne sont **pas** exclus des
+    > indicateurs — `statistiques` ne filtre pas sur ce champ, et c'est pourquoi le tableau
+    > de bord ci-dessus « est alimenté ». Le corpus synthétique n'est chargé que par le
+    > profil `demo`, donc une installation réelle n'a aucun ticket synthétique à exclure
+    > des indicateurs.
 
 ### J2 — Gold set de test (scellé)
 - **Date** : 15/07/2026 (candidats) → **17/07/2026 (scellement)**. `[établi en séance]`
@@ -2749,6 +2756,14 @@ Seuls les cas limites basculent.
 22 tickets réels testés, **5 appels consécutifs chacun**, en configuration GPU. Critère de
 sélection : **même décision d'abstention ET mêmes sources citées sur les 5 appels**.
 
+> ⚠️ **Rectifié le 07/10/2026 — ces tickets ne sont pas « réels », ils sont SYNTHÉTIQUES.**
+> Vérifié en base : #108, #151, #282, #323 et #330 portent `synthetique = true` et
+> appartiennent au bloc #9 à #860 du corpus généré. Ce n'est pas un défaut de la
+> démonstration, c'est sa condition : Metavoria n'avait **aucun historique de tickets** —
+> c'est précisément le problème que le projet résout —, d'où un corpus d'amorçage
+> **généré**. La liste à jour et sa revalidation sont dans l'entrée « Données de
+> démonstration ».
+
 | Ticket | Catégorie | Cas | Sources | Médiane |
 | --- | --- | --- | --- | --- |
 | **#282** Provisionnement VPN prestataire | Accès | multi-sources (3) | `[38, 124, 644]` | 9,54 s |
@@ -2761,7 +2776,8 @@ sélection : **même décision d'abstention ET mêmes sources citées sur les 5 
 sur **une** source à la marge, jamais sur la décision d'abstention. Exclu aussi **#168**,
 stable mais à 23,41 s de médiane contre 6–13 s pour les autres.
 
-**Abstention : aucune dans les 22 tickets réels.** La KB de 723 documents couvre tout ce
+**Abstention : aucune dans les 22 tickets réels** *(synthétiques — voir la rectification
+ci-dessus)*. La KB de 723 documents couvre tout ce
 vivier. Pour la démontrer, il faut un ticket **hors périmètre**, créé en direct et annoncé
 comme tel. Retenus, 5/5 en version **accentuée** (celle qui sera tapée — les accents
 déplacent les valeurs : 0,77 → 0,7496) :
@@ -2771,6 +2787,11 @@ déplacent les valeurs : 0,77 → 0,7496) :
   couvre le problème. Deux briques indépendantes, deux formes d'honnêteté.
 - **Fuite d'eau dans les sanitaires** — classifieur `Matériel` **0,4296**, abstention 5/5,
   7,31 s. En secours.
+
+> ⚠️ **Retirés le 07/10/2026.** Les textes exacts saisis pour ces deux cas n'ont pas été
+> conservés, et aucune saisie reconstituée ne reproduit ni les confiances notées ni
+> l'abstention. Remplacés par deux cas dont le titre et la description exacts sont
+> consignés — voir l'entrée « Données de démonstration ».
 
 Fidélité vérifiée : Node envoie `{titre, description}` **bruts**, sans prétraitement ni
 ajout du texte OCR — l'appel direct est identique au chemin de l'interface. *Contrainte de
@@ -3357,3 +3378,210 @@ sans changement de code, a fortiori avant la soutenance. **Alternative écartée
   est plus large que ce qui est couvert.
 - **Les 2 tests lents** (bge-m3, Tesseract) ne tournent pas en CI.
 - **Aucune vérification du build Docker** : un `Dockerfile` cassé ne serait pas détecté.
+
+---
+
+# Données de démonstration — un clone propre retrouve la démonstration
+
+> Séance des **06 et 07/10/2026**, branche `donnees-demonstration`. Point B1 de l'audit de
+> fin de projet : depuis un clone propre, un tiers obtenait une application **vide**. Le
+> corpus et le snapshot `train_v2` n'étaient pas versionnés, le chargeur ne pouvait pas
+> tourner dans Docker, et `/reentrainer` échouait faute de `train_v2`. Règle tenue tout au
+> long de la séance : **la base de démonstration locale n'est jamais modifiée** —
+> interrogée en transactions `READ ONLY`, et toute expérience menée sur un projet compose
+> séparé.
+
+## Ce qui est livré
+
+- **Versionnés** (exceptions nommées dans `ml/.gitignore`) : le corpus
+  `corpus_train_20260714T161302Z.jsonl` (852 tickets, 506 Ko), son manifeste, et
+  `train_v2_20260819T154457Z.jsonl` (902 exemples, 291 Ko). Leurs SHA-256 (`2d3194…` et
+  `d5d275…`) sont exactement ceux du manifeste versionné de `train_v2`. Un
+  `ml/.gitattributes` les déclare `-text` : écrits sous Windows en CRLF, ils auraient été
+  stockés en LF par `core.autocrlf`, et un clone sous Linux aurait reçu des fichiers dont
+  l'empreinte ne correspond plus au manifeste. Défaut trouvé avant le commit, en vérifiant
+  les fins de ligne — une validation menée sous Windows ne pouvait pas le voir.
+- **Le chargeur déplacé** de `backend/prisma/` vers `backend/src/chargerCorpusDemo.ts`,
+  compilé avec le reste : sous `prisma/`, il exigeait `tsx`, absent de l'image de
+  production — le défaut déjà corrigé pour le seed.
+- **Un service compose `demo-donnees`** (profil `demo`, jamais lancé par `up`) qui monte le
+  corpus en lecture seule. La chaîne documentée tient en deux commandes :
+  `docker compose run --rm demo-donnees`, puis le backfill des embeddings.
+- **Identifiants fixes** `9 + ligne`, séquence recalée, refus avant purge (voir plus bas).
+- **README** : section « Données de démonstration ».
+
+## Les décisions, et leurs raisons `[établi en séance]`
+
+- **Numéros conservés (D2)** : le ticket de la ligne *i* reçoit l'identifiant `9 + i`.
+  Vérifié sur les 852 tickets de la base d'origine : identifiant = 9 + ligne, contenu
+  identique (titre, statut, priorité, catégorie). Le corpus y avait été chargé après 8
+  tickets d'essai ; sur une base vide, le chargeur d'origine commençait à 1 et décalait
+  tout de 8. **Alternative écartée** : la numérotation naturelle, qui aurait renuméroté
+  toute la documentation et donné deux numérotations selon la base. La séquence est
+  recalée sur `GREATEST(max(id), dernière valeur)` — sans recalage, le premier ticket créé
+  ensuite entrerait en collision ; sans `GREATEST`, elle pourrait reculer et réattribuer
+  le numéro d'un ticket supprimé.
+- **Refus avant purge** : si un ticket non synthétique occupe la plage 9 à 860, le chargeur
+  s'arrête **avant** de supprimer quoi que ce soit — un refus après la purge laisserait la
+  base sans son corpus. Il refuse aussi si une catégorie du corpus manque (pile non
+  initialisée), au lieu de créer des tickets sans catégorie en silence.
+- **Dates relatives au chargement (D3)** : les durées restent identiques d'un chargement à
+  l'autre ; les dates absolues, non.
+- **Aucun mot de passe par défaut (D4)** : les comptes synthétiques n'en ont pas. Un
+  technicien s'obtient par invitation ; sans SMTP, le lien s'affiche dans les logs.
+- **Documentation corrigée, pas le code (D6)** : le schéma et l'entrée J1 disaient les
+  tickets synthétiques « exclus des KPI ». C'est faux — `statistiques` ne filtre pas sur ce
+  champ, et c'est ce qui remplit le tableau de bord de démonstration. Formulation retenue :
+  le corpus n'est chargé que par le profil `demo`, donc une installation réelle n'a aucun
+  ticket synthétique à exclure des indicateurs.
+- **Les six noms de personnes du corpus sont conservés (D1)** : « le comptable M. Ben
+  Ammar », « Mme Ayari », « M. Khalifa », « M. Ghribi », « M. Khaled » (×2), dans cinq
+  tickets. Inventés par le modèle de langage, ils sont fictifs ; les neutraliser aurait
+  modifié cinq tickets, leurs embeddings, et rompu l'empreinte consignée au manifeste.
+
+## Origine des données, et crédit
+
+Metavoria n'avait **aucun historique de tickets** — c'est précisément le problème que le
+projet résout. Le module IA a donc démarré sur un corpus d'amorçage **généré** (J1,
+`qwen2.5:14b`, graine 42, invite `j1-v2`).
+
+Les 50 tickets « relus » de `train_v2`, et le jeu `ml/real/real_train_kaggle.jsonl` dont ils
+sont tirés, viennent du **« Customer IT Support - Ticket Dataset »** de **Tobias Bueck**,
+sur Kaggle, sous licence **Attribution 4.0 International (CC BY 4.0)** :
+<https://www.kaggle.com/datasets/tobiasbueck/multilingual-customer-support-tickets>.
+Vérifié le 07/10/2026 par l'API publique de Kaggle (titre, auteur, licence ; fiche mise à
+jour le 02/12/2025). Le crédit, exigé par CC BY, figure désormais au README.
+
+- **Une version Hugging Face du même auteur** (`Tobi-Bueck/customer-support-tickets`)
+  porte une **autre licence, CC BY-NC 4.0** (non commerciale). Le projet a pris ses données
+  sur Kaggle (cf. `real/real_train_kaggle_manifest.json`) : c'est la licence de Kaggle qui
+  s'applique. Écart consigné pour ne pas être découvert.
+- **Le jeu est anonymisé à la source** : noms, e-mails et sociétés y sont remplacés par des
+  gabarits (`<name>`, `<email>`, `<company>`) ; les seules adresses restantes sont
+  fictives (`email@example.com`).
+- La fiche Kaggle **ne dit pas** si ces tickets sont eux-mêmes générés ; elle renvoie vers
+  un service de jeux synthétiques de l'auteur. Rien n'est affirmé ici au-delà.
+
+## Ce qui a été prouvé, et comment
+
+**Méthode** : copie, dans un dossier temporaire, de **exactement les fichiers que Git
+versionnerait** (suivis et non ignorés) — un clone fidèle de l'état après commit. Projet
+compose séparé `st-demo`, avec une surcharge **non versionnée** : noms de conteneurs,
+ports, et **nom de l'image IA** (sans quoi le build aurait retagué `smart-ticketing-ia:latest`
+de la pile locale). Volume Postgres neuf `st-demo_postgres-data`. Cache Hugging Face local
+monté **en lecture seule**, et l'Ollama local (GPU) réutilisé — configuration de la mesure
+5/5 d'origine, sans retélécharger 17 Go. Le volume visé a été vérifié avant chaque commande
+destructive.
+
+| Vérification | Résultat |
+|---|---|
+| Démarrage avec `cp .env.example .env` | 20 migrations, 5 catégories, 1 administrateur, 0 ticket |
+| `docker compose run --rm demo-donnees` | 852 tickets **#9 à #860**, 723 résolutions, **178 évaluations** (comme le 15/07), 8 s |
+| Backfill dans Docker | 852/852 embeddings en **96,0 s** (8,87 tickets/s) |
+| **Collision** | Deux tickets créés ensuite reçoivent **#861 et #862** (HTTP 201) |
+| Rechargement | Mêmes numéros #9 à #860 ; séquence restée à 862 ; ticket suivant **#863** |
+| Refus | Ticket réel simulé au n° 500 : refus explicite, **aucune purge** (851 synthétiques intacts) |
+| Tableau de bord | 129 ouverts (corpus seul), 464 résolus, 259 clôturés, 48,1 h, satisfaction 3,9 / 178 |
+| Invitation sans SMTP | Lien dans les logs → activation → connexion technicien (HTTP 200) |
+| Chemin complet par Node | Suggestion de #108 : prête, sources #760, #70, #691 |
+| **Réentraînement** | 222 s, `train_v2` (902), 0 capture. Macro-F1 réel 0,4212 contre 0,438 (Δ −0,0168, **NUL**) → **déploiement refusé**, HTTP 409 |
+| Base locale | Inchangée en fin de séance : 872 tickets, séquence 913, 35 comptes, 32 suggestions |
+
+**Le délai de 1re prise en charge reste vide** sur une base reconstruite : il se calcule sur
+les événements `PRISE_EN_CHARGE`, et le chargeur n'en crée aucun. Le « 6 min sur 6 tickets »
+de la base d'origine vient de vrais tickets traités dans l'application.
+
+## Critère 5/5 rejoué — sur les deux bases
+
+Même méthode que l'entrée « Latence de la suggestion » : appel direct à `/suggest`, même
+décision et mêmes sources sur 5 appels. `qwen2.5:7b`, GPU.
+
+| Cas | Base reconstruite (723 docs) | Base d'origine (726 docs) | Journal (21/09) |
+|---|---|---|---|
+| #108 Elévation droits admin | [70, 691, 760] | [70, 691, 760] | [70, 691, 760] |
+| #151 Station d'accueil… | [28, 678] | [28, 678] | [28, 678] |
+| #282 Provisionnement VPN… | [38, 124, 644] | [38, 124, 644] | [38, 124, 644] |
+| #323 DNS ne résout plus… | [606] | [606] | [606] |
+| *(réserve)* #330 Besoin logiciel notes | **[75, 209]** | **[209]** | [209] |
+
+Tous stables 5/5 ; médianes de 7,1 à 10,2 s. Sur la base d'origine, les appels directs n'ont
+rien écrit (le service IA lit, Node seul écrit) : 32 suggestions avant comme après.
+
+**#330 : écart constaté, cause non établie.** Il naît dès les trois tickets retenus pour la
+génération — [#65, #209, #240] sur la base d'origine, [#209, #65, #75] sur la base
+reconstruite. Deux différences entre les bases sont constatées, sans qu'aucune soit
+démontrée responsable : 3 tickets réels en plus dans la base de connaissances d'origine
+(#865, #868, #890), et des embeddings calculés à des dates différentes (17/07 et 06/10).
+
+## Cas d'abstention remplacés — et cette fois, les textes exacts
+
+« Écran Dell qui clignote » et « Fuite d'eau dans les sanitaires » sont **retirés** : leurs
+textes d'origine n'avaient pas été conservés. Les reconstitutions ne reproduisent ni les
+confiances notées (0,7496 et 0,4296 → 0,4839 et 0,3112 avec titre = description), ni
+l'abstention : sur la base reconstruite, la première cite [567, 730], la seconde [31]. Et le
+ticket #913 réellement saisi le 23/09 (« Écran Dell qui clignote », titre et description
+identiques) a reçu, dans la base d'origine, une **suggestion**, pas une abstention.
+
+**Remplaçants, abstention 5/5 sur les deux bases** — saisie exacte, champ par champ :
+
+| Champ | Cas 1 | Cas 2 |
+|---|---|---|
+| Titre | `Ampoule grillée dans le couloir` | `Fuite d'eau dans les toilettes du rez-de-chaussée` |
+| Description | identique au titre (**non vide**) | identique au titre (**non vide**) |
+| Catégorie, priorité, pièces jointes | vides | vides |
+| Longueur | 31 caractères | 49 caractères |
+| Caractères non ASCII | `é` U+00E9 | `é` U+00E9 ; apostrophe **droite** U+0027 |
+| Classifieur | Matériel 0,4724 | Réseau 0,2807 |
+
+**Vérifié que l'interface envoie exactement cela**, par lecture puis par exécution :
+
+- le formulaire transmet les champs tels quels ; la validation du serveur (`trim`, 10
+  caractères minimum pour la description) **ne modifie pas** ces deux saisies — passées
+  dans le vrai schéma `creerTicketSchema`, elles ressortent identiques, en forme NFC ;
+- `demanderSuggestion` transmet le titre et la description **enregistrés**, sans catégorie
+  ni texte de pièce jointe, avec `seuil` = `null` quand la porte d'abstention est
+  désactivée — c'est le cas de la base d'origine (`IA_SEUIL_ABSTENTION = DESACTIVE`) et le
+  défaut d'une base neuve ;
+- 5/5 rejoué sur la base d'origine avec **ce corps exact** `{titre, description, seuil: null}` :
+  abstention pour les deux. Une variante à apostrophe typographique (U+2019) s'abstient
+  aussi, mais **seule la forme ci-dessus est la forme de référence**.
+
+## Hors périmètre : 2 sur 6
+
+Six saisies sans rapport avec l'informatique, titre = description, au même critère :
+
+| Saisie | Décision 5/5 | Sources |
+|---|---|---|
+| Ampoule grillée dans le couloir | **abstention** | — |
+| Fuite d'eau dans les toilettes du rez-de-chaussée | **abstention** | — |
+| Climatisation en panne dans la salle de réunion | suggestion | [327, 373] |
+| Machine à café du deuxième étage en panne | suggestion | [589] |
+| Demande de place de parking supplémentaire | suggestion | [71] |
+| Chaise de bureau cassée | suggestion | [42, 496] |
+
+**Quatre sur six reçoivent une suggestion citée mais hors sujet.** C'est la limite déjà
+consignée (« La garde d'ancrage ne vérifie pas la pertinence ») : la garde vérifie que les
+tickets cités existent, pas qu'ils répondent au problème. L'abstention n'est **pas une
+garantie** ; les deux cas retenus illustrent le mécanisme, ils ne le généralisent pas.
+
+## Dettes assumées et documentées
+
+- **Tout rechargement du corpus efface les embeddings** : il supprime puis recrée les tickets
+  synthétiques. Il faut relancer le backfill ; sinon, le RAG n'a plus de base de
+  connaissances. Écrit au README.
+- **Base de connaissances reconstruite : 723 documents, contre 726** dans la base d'origine
+  (3 tickets réels résolus avec solution). Les vrais tickets ne sont pas exportés : ils
+  portent des comptes réels.
+- **Délai de prise en charge vide** sur une base reconstruite (voir plus haut).
+- **`PREMIER_ID = 9` est un héritage** de l'histoire de la base d'origine, assumé pour
+  garder la documentation et la démonstration alignées. Écrit dans le code.
+- **#330 : cause de l'écart non établie.**
+- **La validation n'a pas reprouvé le téléchargement des modèles** (cache et Ollama
+  réutilisés) — prouvé séparément le 07/09.
+- **La licence Hugging Face (CC BY-NC) diffère de celle de Kaggle (CC BY)** pour le même
+  auteur ; seule la source Kaggle est utilisée.
+- **Le même écart de fins de ligne touche des fichiers versionnés plus tôt** :
+  `gold/gold.jsonl` et `real/real_train_kaggle.jsonl` sont stockés en LF alors que leurs
+  manifestes ont été calculés sur la copie Windows. Les empreintes n'étant jamais
+  contrôlées à l'exécution, rien ne casse ; mais sous Linux, elles ne se vérifient pas.
+  Non corrigé ici : renormaliser modifierait des fichiers versionnés hors du périmètre.

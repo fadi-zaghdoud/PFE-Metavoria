@@ -23,7 +23,7 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "db:seed": "tsx src/seed.ts",
-    "db:load-corpus": "tsx prisma/loadSyntheticCorpus.ts"
+    "db:load-corpus": "tsx src/chargerCorpusDemo.ts"
   },
   "prisma": {
     "seed": "tsx src/seed.ts"

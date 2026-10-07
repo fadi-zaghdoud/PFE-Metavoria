@@ -231,6 +231,28 @@ services:
     ports:
       - "${FRONTEND_PORT:-5173}:80"
 
+  # ── Données de démonstration (one-shot, profil `demo`) ─────────────────────
+  # Charge le corpus synthétique versionné (852 tickets) dans la base. JAMAIS lancé
+  # par `docker compose up` : le profil `demo` le réserve à un appel explicite, après
+  # le démarrage de la pile (migrations et seed faits) :
+  #     docker compose run --rm demo-donnees
+  # puis les embeddings : docker compose run --rm ml python -m smart_ticketing_ml.service.backfill
+  # Une installation réelle n'a donc aucun ticket synthétique en base.
+  demo-donnees:
+    build: ./backend
+    profiles: ["demo"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-smart_ticketing}?schema=public
+      # Exigé par la validation de config/env.ts, que charge le client Prisma.
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET manquant — définis-le dans .env}
+    volumes:
+      - ./ml/artifacts/corpus:/corpus:ro
+    command: ["node", "dist/chargerCorpusDemo.js", "/corpus/corpus_train_20260714T161302Z.jsonl"]
+
 volumes:
   postgres-data:
   ollama-data:

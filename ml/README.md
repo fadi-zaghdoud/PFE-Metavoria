@@ -65,7 +65,7 @@ Sortie : `artifacts/corpus/corpus_train_<horodatage>.jsonl` + `manifest_<horodat
 
 **Répartition** : ~85 % résolus (base RAG) / ~15 % ouverts (backlog de démo).
 Chaque ticket porte sa `resolution` dans le JSONL ; le chargeur
-(`backend/prisma/loadSyntheticCorpus.ts`, `npm run db:load-corpus`) ne la lie **pas** en
+(`backend/src/chargerCorpusDemo.ts`, `npm run db:load-corpus`) ne la lie **pas** en
 base pour les tickets ouverts (fermables à la demande en démo).
 
 ## J4 — Microservice d'embeddings (`bge-m3`, 1024d)

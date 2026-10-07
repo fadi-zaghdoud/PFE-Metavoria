@@ -1,0 +1,41 @@
+{
+  "prompt_version": "j1-v2",
+  "modele_demande": "qwen2.5:14b",
+  "modele_utilise": "qwen2.5:14b",
+  "ollama_host": "http://localhost:11434",
+  "seed": 42,
+  "genere_le": "20260714T161302Z",
+  "demandes": 900,
+  "produits": 852,
+  "defauts_resolution_vide": 0,
+  "categories_base": [
+    "Réseau",
+    "Matériel",
+    "Logiciel",
+    "Accès",
+    "Autre"
+  ],
+  "corpus_fichier": "corpus_train_20260714T161302Z.jsonl",
+  "distribution": {
+    "categorie": {
+      "Accès": 125,
+      "Autre": 84,
+      "Logiciel": 252,
+      "Matériel": 217,
+      "Réseau": 174
+    },
+    "priorite": {
+      "CRITIQUE": 85,
+      "FAIBLE": 167,
+      "HAUTE": 239,
+      "MOYENNE": 361
+    },
+    "statut": {
+      "CLOTURE": 259,
+      "EN_ATTENTE": 35,
+      "EN_COURS": 43,
+      "NOUVEAU": 51,
+      "RESOLU": 464
+    }
+  }
+}

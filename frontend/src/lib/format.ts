@@ -52,6 +52,35 @@ export function dateLongue(date: Date | string): string {
   return d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 }
 
+// ── Nombres à la française ───────────────────────────────────────────────────────────
+// Virgule décimale, espace fine insécable entre les milliers et devant « % » (Intl,
+// fr-FR) : « 47,5 h », jamais « 47.5 h ». Tout nombre affiché par le tableau de bord, ses
+// infobulles et le PDF passe par ces fonctions.
+export function nombreFr(n: number, decimalesMax = 0, decimalesMin = 0): string {
+  return n.toLocaleString('fr-FR', {
+    minimumFractionDigits: decimalesMin,
+    maximumFractionDigits: decimalesMax,
+  });
+}
+
+// Part d'un total en pourcentage (« 70,8 % »). « — » quand le total est nul : pas de
+// pourcentage sans effectif.
+export function pourcentageFr(part: number, total: number, decimales = 1): string {
+  if (total <= 0) return '—';
+  return (part / total).toLocaleString('fr-FR', {
+    style: 'percent',
+    minimumFractionDigits: decimales,
+    maximumFractionDigits: decimales,
+  });
+}
+
+// Durée en heures : « 48,1 h », « 2 h » ; sous l'heure, en minutes ; « — » si inconnue.
+export function dureeHeuresFr(heures: number | null): string {
+  if (heures == null) return '—';
+  if (heures < 1) return `${Math.round(heures * 60)} min`;
+  return `${nombreFr(heures, 1)} h`;
+}
+
 // Taille de fichier lisible : 512 o, 24 Ko, 3,4 Mo.
 export function formaterOctets(octets: number | null): string {
   if (octets == null) return '';

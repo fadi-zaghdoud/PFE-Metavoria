@@ -3933,3 +3933,85 @@ CSS compilé y sont toutes définies.
 - **Au-delà de six catégories**, l'anneau devra regrouper : à traiter au groupe 2.
 - **Bornes de période en UTC** : la plage de démonstration est à reconfirmer par le point
   d'accès lui-même au groupe 1.
+
+---
+
+# Tableau de bord v1.1 — groupe 1 : l'anneau, la jauge et la satisfaction
+
+> Séance du **10/10/2026**, même branche (étape 2 commitée en `1ddbf89`). Nouvelle consigne
+> de l'utilisateur, avec une maquette cible : **aucune liste de barres horizontales** sur le
+> tableau de bord, un type de graphique fixé pour chaque section, et un nouvel ordre des
+> groupes — 1 : les graphiques sur les données actuelles, sans toucher au serveur ;
+> 2 : le socle (périodes, points d'accès, tests SQL, en-tête, cartes, aires, exports) ;
+> 3 : module IA et « À traiter » ; 4 : techniciens. Trois corrections s'y ajoutent :
+> aucune adresse e-mail sur le tableau de bord ; techniciens actifs seulement ; virgule
+> décimale partout, l'Excel gardant de vrais nombres. Chaque groupe laisse un tableau de
+> bord complet et fusionnable.
+
+## Ce qui est livré
+
+- **Recharts 3.10.1**, seule bibliothèque de graphiques (décision D1), chargé **à la
+  demande** avec le tableau de bord (`React.lazy`) : le morceau principal passe de 594 à
+  582 kB ; le tableau de bord et Recharts forment un morceau de 328 kB (97 kB compressé)
+  que les autres écrans ne chargent pas.
+- **Anneau des catégories** : total au centre, légende chiffrée (toutes les catégories,
+  même à 0), infobulle (effectif, part, total). Une catégorie garde l'emplacement de couleur
+  de son rang dans l'ordre des identifiants, jamais celui de son effectif ; au-delà de six
+  catégories, la sixième part regroupe les suivantes ; « Non classé » ferme l'anneau, en gris.
+- **Jauge des priorités** : demi-anneau segmenté de Faible, à gauche, à Critique, à droite,
+  rampe d'une seule teinte, total au centre, légende chiffrée, infobulle.
+- **Satisfaction** : note moyenne en grand, nombre d'évaluations, trois lignes —
+  positives, neutres, négatives — avec icône et pourcentage ; l'effectif de chaque ligne en
+  infobulle, au survol comme au focus clavier ; la règle écrite dessous, « 4-5 étoiles
+  positive · 3 neutre · 1-2 négative » ; « Aucune évaluation sur la période » sinon.
+- **Retirés** : le bandeau d'accueil, le bloc « Utilisateurs » et la liste des derniers
+  comptes créés — qui affichait les adresses e-mail. Un titre de page sobre les remplace.
+- **Restent jusqu'à leurs remplaçants** (règle : un bloc ne disparaît qu'à l'arrivée du
+  sien) : les barres « Tickets par statut » (groupe 2, mention sous la carte « Ouverts »),
+  « Charge par technicien » (groupe 4) et les quatre cartes actuelles (groupe 2).
+- **Virgule décimale** : `nombreFr`, `pourcentageFr` et `dureeHeuresFr` dans
+  `lib/format.ts` ; « 48,1 h » sur les cartes, dans les infobulles et le PDF. L'espace fine
+  insécable qu'Intl place entre les milliers est remplacée, dans le PDF, par une espace
+  insécable : les polices standard de jsPDF ne savent pas écrire la première. **L'Excel
+  écrit de vrais nombres** — la synthèse écrivait jusque-là des textes — au format `0` ou
+  `0.0`, que le tableur affiche dans sa langue.
+- **États** : une erreur de chargement s'annonce, avec « Réessayer » ; pendant un
+  rechargement, l'image précédente reste, atténuée — ni squelette, ni saut de mise en page.
+
+## Les décisions, et leurs raisons `[établi en séance]`
+
+- **Parts dans l'ordre des emplacements**, pas des tailles : c'est l'ordre dont les
+  voisinages ont été vérifiés par `verifier:contrastes` ; la légende suit le même.
+- **L'infobulle de l'anneau passait sous la carte voisine** : chaque carte animée forme son
+  propre contexte d'empilement, et l'infobulle, qui déborde, était peinte avant la carte
+  suivante. La carte survolée, ou qui a le focus, passe désormais au premier plan.
+- **Rampe claire des priorités foncée d'un cran** (`primary-500`, `-600`, `-800`, `-950`).
+  À l'étape 2, sa marche Faible (`primary-400`, 2,98:1) était admise au seuil des rampes
+  ordinales (2:1). Le contrôle des secteurs **dans le rendu**, ajouté pour ce groupe, l'a
+  relevée : désormais toutes les marques sont à 3:1, sans exception, et `verifier:contrastes`
+  l'exige. L'entrée de l'étape 2 décrit l'état d'alors ; celle-ci, la correction.
+- **Pourcentages au dixième** : leur somme peut s'écarter de 100 d'un dixième, par arrondi.
+
+## Ce qui a été prouvé, et comment
+
+- **Hors navigateur** : build ; `oxlint`, les 6 avertissements de `main` et aucun autre ;
+  `verifier:couleurs` sur 75 fichiers ; `verifier:contrastes`, dont les quatre marches de
+  priorité de 4,47:1 à 15,99:1 en clair et de 3,99:1 à 11,96:1 en sombre ; formulaire de
+  création et détail de ticket toujours identiques à `v1.0` hors classes.
+- **Dans le navigateur**, pile séparée `st-demo` (base locale non touchée) — tableau de bord
+  administrateur, technicien, employée et mobile, dans les deux thèmes, plus les trois
+  infobulles survolées : 22 relevés, **1 450 textes, aucun sous le seuil** ; chaque secteur
+  SVG mesuré contre sa carte, **aucun sous 3:1** ; **aucune adresse e-mail** et **aucun point
+  décimal** dans le texte rendu.
+- **Exports** téléchargés depuis `st-demo` puis relus : le PDF écrit « 48,1 » et « 3,9 »,
+  sans aucun point décimal ; la synthèse Excel ne contient que des valeurs numériques.
+
+## Dettes assumées et documentées
+
+- **Doublon provisoire** : la carte « Satisfaction moyenne » et la section Satisfaction
+  disent la même note jusqu'au groupe 2, qui remplace les cartes.
+- **Deux listes de barres** restent jusqu'aux groupes 2 et 4, comme dit plus haut.
+- **`npm audit`** signale trois vulnérabilités (`dompurify`, par jsPDF ; `react-router`),
+  **antérieures à Recharts** et hors du périmètre : non corrigées ici.
+- **Les fichiers exportés sont datés en UTC** (`toISOString`) : peu après minuit, heure
+  locale, ils portent la date de la veille. Antérieur à la séance, non corrigé.

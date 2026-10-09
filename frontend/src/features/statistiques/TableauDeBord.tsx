@@ -29,18 +29,17 @@ import { StatCard } from '../../components/ui/StatCard';
 import { Input, Select } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { Skeleton } from '../../components/ui/Skeleton';
+import { Alert } from '../../components/ui/Alert';
 import { cn } from '../../lib/cn';
+import { dureeHeuresFr, nombreFr } from '../../lib/format';
+import { CarteGraphique } from './graphiques/CarteGraphique';
+import { AnneauCategories } from './graphiques/AnneauCategories';
+import { JaugePriorites } from './graphiques/JaugePriorites';
+import { SectionSatisfaction } from './graphiques/SectionSatisfaction';
+import { COULEUR_PRIORITE, partsCategories, type PartGraphique } from './graphiques/couleurs';
 
-// Aplats par série (jetons d'index.css, vérifiés dans les deux thèmes par
-// `verifier:contrastes`). Les statuts gardent la couleur qu'ils ont sur tous les écrans ;
-// les priorités suivent la rampe de l'accent, de Faible (claire) à Critique (soutenue).
-// L'étiquette reste toujours visible : l'identité ne repose jamais sur la couleur seule.
-const COULEUR_PRIORITE: Record<PrioriteTicket, string> = {
-  CRITIQUE: 'bg-priorite-critique',
-  HAUTE: 'bg-priorite-haute',
-  MOYENNE: 'bg-priorite-moyenne',
-  FAIBLE: 'bg-priorite-faible',
-};
+// Jauge des priorités : de Faible, à gauche, à Critique, à droite.
+const PRIORITES_JAUGE: PrioriteTicket[] = ['FAIBLE', 'MOYENNE', 'HAUTE', 'CRITIQUE'];
 
 interface DonneeBarre {
   label: string;
@@ -143,14 +142,6 @@ const jourCourt = (jour: string) => {
   return mois && j ? `${j}/${mois}` : jour;
 };
 
-// Au-delà de ce nombre de barres, « Charge par technicien » occupe les deux colonnes.
-// Six est la hauteur de la plus grande des autres séries (catégories + « Non classé ») :
-// en dessous, la charge tient dans une colonne sans creuser la carte d'à côté.
-const SEUIL_CHARGE_PLEINE_LARGEUR = 6;
-
-const fmtHeures = (h: number | null) =>
-  h == null ? '—' : h < 1 ? `${Math.round(h * 60)} min` : `${h} h`;
-
 export function TableauDeBord() {
   const token = useAuthStore((s) => s.token);
   const utilisateur = useAuthStore((s) => s.utilisateur);
@@ -158,7 +149,15 @@ export function TableauDeBord() {
   const estSupport = utilisateur?.role === 'TECHNICIEN' || estAdmin;
 
   const [filtres, setFiltres] = useState<FiltresStatistiques>({});
-  const [stats, setStats] = useState<StatistiquesTickets | null>(null);
+  // Dernier résultat reçu, avec la requête qui l'a produit. Tant que la réponse à de
+  // nouveaux filtres n'est pas arrivée, l'écran garde l'image précédente, atténuée — ni
+  // squelette, ni saut de mise en page.
+  const [essai, setEssai] = useState(0);
+  const [resultat, setResultat] = useState<{
+    cle: string;
+    stats: StatistiquesTickets | null;
+    erreur: boolean;
+  } | null>(null);
   const [categories, setCategories] = useState<Categorie[]>([]);
   const [techniciens, setTechniciens] = useState<Utilisateur[]>([]);
   const [exportEnCours, setExportEnCours] = useState<'excel' | 'pdf' | null>(null);
@@ -178,13 +177,21 @@ export function TableauDeBord() {
     }
   }, [token, estAdmin]);
 
+  const cleRequete = `${JSON.stringify(filtres)}#${essai}`;
   useEffect(() => {
     if (!token) return;
+    let actif = true;
     ticketsApi
       .statistiques(filtres, token)
-      .then(setStats)
-      .catch(() => setStats(null));
-  }, [token, filtres]);
+      .then((s) => actif && setResultat({ cle: cleRequete, stats: s, erreur: false }))
+      .catch(() => actif && setResultat({ cle: cleRequete, stats: null, erreur: true }));
+    return () => {
+      actif = false;
+    };
+  }, [token, filtres, cleRequete]);
+  const stats = resultat?.stats ?? null;
+  const erreur = resultat?.erreur === true && resultat.cle === cleRequete;
+  const enChargement = resultat !== null && resultat.cle !== cleRequete;
 
   function maj(patch: Partial<FiltresStatistiques>) {
     setFiltres((f) => ({ ...f, ...patch }));
@@ -246,15 +253,12 @@ export function TableauDeBord() {
     value: r.count,
     couleur: PASTILLE_STATUT[r.statut],
   }));
-  const dataPriorite = (stats?.repartitionPriorite ?? []).map((r) => ({
-    label: LABEL_PRIORITE[r.priorite],
-    value: r.count,
-    couleur: COULEUR_PRIORITE[r.priorite],
-  }));
-  const dataCategorie = (stats?.repartitionCategorie ?? []).map((r) => ({
-    label: r.categorie,
-    value: r.count,
-    couleur: 'bg-serie-accent',
+  const partsCategorie = partsCategories(stats?.repartitionCategorie ?? [], categories);
+  const partsPriorite: PartGraphique[] = PRIORITES_JAUGE.map((p) => ({
+    cle: p,
+    libelle: LABEL_PRIORITE[p],
+    valeur: stats?.repartitionPriorite.find((r) => r.priorite === p)?.count ?? 0,
+    ...COULEUR_PRIORITE[p],
   }));
   const chargeComplete = (stats?.chargeParTechnicien ?? []).map((r) => ({
     cle: String(r.technicienId),
@@ -276,11 +280,6 @@ export function TableauDeBord() {
   // COMPTES, eux, respectent bien le filtre. Y toucher casserait le §6.2.
   const chargeMasquees = filtresActifs ? chargeComplete.filter((d) => d.value === 0).length : 0;
   const dataCharge = chargeMasquees > 0 ? chargeComplete.filter((d) => d.value > 0) : chargeComplete;
-  const dataSatisfaction = [...(stats?.repartitionSatisfaction ?? [])].reverse().map((r) => ({
-    label: `${r.note} étoile${r.note > 1 ? 's' : ''}`,
-    value: r.count,
-    couleur: 'bg-serie-accent',
-  }));
 
   return (
     <div className="space-y-6">
@@ -384,6 +383,20 @@ export function TableauDeBord() {
         </div>
       </Card>
 
+      {erreur && (
+        <Alert variant="danger">
+          Les statistiques n'ont pas pu être chargées.{' '}
+          <button
+            type="button"
+            onClick={() => setEssai((n) => n + 1)}
+            className="font-semibold underline underline-offset-2"
+          >
+            Réessayer
+          </button>
+        </Alert>
+      )}
+
+      <div className={cn('space-y-6 transition-opacity duration-200', enChargement && 'opacity-60')}>
       {/* Indicateurs clés */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {stats ? (
@@ -420,7 +433,7 @@ export function TableauDeBord() {
             <StatCard
               label="Tickets ouverts"
               value={stats.ticketsOuverts}
-              hint={estAdmin ? `${resolusEtClotures} résolus ou clôturés` : undefined}
+              hint={estAdmin ? `${nombreFr(resolusEtClotures)} résolus ou clôturés` : undefined}
               icon={Inbox}
               tone="warning"
               index={estAdmin ? 1 : 0}
@@ -441,12 +454,12 @@ export function TableauDeBord() {
                 lecteur juge lui-même du poids de la moyenne. */}
             <StatCard
               label="Résolution moyenne"
-              value={fmtHeures(stats.tempsResolutionMoyenHeures)}
+              value={dureeHeuresFr(stats.tempsResolutionMoyenHeures)}
               hint={
                 stats.delaiPriseEnChargeMoyenHeures != null
-                  ? `1re prise en charge : ${fmtHeures(stats.delaiPriseEnChargeMoyenHeures)} sur ${
-                      stats.nombrePrisesEnCharge
-                    } ticket${stats.nombrePrisesEnCharge > 1 ? 's' : ''}`
+                  ? `1re prise en charge : ${dureeHeuresFr(stats.delaiPriseEnChargeMoyenHeures)} sur ${nombreFr(
+                      stats.nombrePrisesEnCharge,
+                    )} ticket${stats.nombrePrisesEnCharge > 1 ? 's' : ''}`
                   : undefined
               }
               icon={Clock}
@@ -458,39 +471,54 @@ export function TableauDeBord() {
               value={stats.satisfactionMoyenne ?? '—'}
               decimals={1}
               suffix=" / 5"
-              hint={`${stats.nombreEvaluations} évaluation${stats.nombreEvaluations > 1 ? 's' : ''}`}
+              hint={`${nombreFr(stats.nombreEvaluations)} évaluation${stats.nombreEvaluations > 1 ? 's' : ''}`}
               icon={Star}
               tone="warning"
               index={3}
             />
           </>
-        ) : (
+        ) : erreur ? null : (
           Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className="h-[116px] rounded-2xl" />
           ))
         )}
       </div>
 
-      {/* Graphiques — l'ordre appaire les hauteurs plutôt que les thèmes. Chaque carte
-          mesure une barre par ligne de données : statut 5 et priorité 4 d'un côté,
-          catégorie 6 et évaluations 5 de l'autre, soit deux rangées presque d'aplomb. La
-          charge, seule série dont la longueur suit l'effectif des techniciens (10 ici),
-          passe en dernier et prend toute la largeur dès qu'elle dépasse le seuil — sinon
-          elle laissait une centaine de pixels de vide sous la carte voisine, et la
-          dernière rangée se terminait sur une cellule creuse. */}
+      {/* Graphiques : catégories, priorités, satisfaction (groupe 1). */}
+      {stats ? (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <CarteGraphique titre="Par catégorie">
+            <AnneauCategories parts={partsCategorie} />
+          </CarteGraphique>
+          <CarteGraphique titre="Par priorité">
+            <JaugePriorites parts={partsPriorite} />
+          </CarteGraphique>
+          <CarteGraphique titre="Satisfaction" className="md:col-span-2 xl:col-span-1">
+            <SectionSatisfaction
+              moyenne={stats.satisfactionMoyenne}
+              nombre={stats.nombreEvaluations}
+              repartition={stats.repartitionSatisfaction}
+            />
+          </CarteGraphique>
+        </div>
+      ) : erreur ? null : (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-[330px] rounded-2xl" />
+          ))}
+        </div>
+      )}
+
+      {/* Barres conservées jusqu'à l'arrivée de leurs remplaçants : la mention des statuts
+          sous la carte « Ouverts » (groupe 2), la liste des techniciens (groupe 4). */}
       {stats && (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <CarteBarres titre="Tickets par statut" donnees={dataStatut} index={0} />
-          <CarteBarres titre="Tickets par priorité" donnees={dataPriorite} index={1} />
-          <CarteBarres titre="Tickets par catégorie" donnees={dataCategorie} index={2} />
-          {stats.nombreEvaluations > 0 && (
-            <CarteBarres
-              titre="Répartition des évaluations"
-              description={`${stats.nombreEvaluations} évaluation${stats.nombreEvaluations > 1 ? 's' : ''}`}
-              donnees={dataSatisfaction}
-              index={3}
-            />
-          )}
+          <CarteBarres
+            titre="Tickets par statut"
+            donnees={dataStatut}
+            index={0}
+            className={estSupport ? undefined : 'lg:col-span-2'}
+          />
           {estSupport && (
             <CarteBarres
               titre="Charge par technicien"
@@ -502,15 +530,12 @@ export function TableauDeBord() {
                   : 'Tickets ouverts assignés'
               }
               donnees={dataCharge}
-              index={4}
-              // Bandeau pleine largeur seulement si la série est longue : filtrée sur un
-              // technicien (cf. masquage des zéros), elle n'a qu'une barre et une carte
-              // pleine largeur pour une barre serait aussi déséquilibrée que l'inverse.
-              className={dataCharge.length > SEUIL_CHARGE_PLEINE_LARGEUR ? 'lg:col-span-2' : undefined}
+              index={1}
             />
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }

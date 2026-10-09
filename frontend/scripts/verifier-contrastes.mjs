@@ -14,7 +14,7 @@
 // plancher de saturation de leur thème, avec des teintes voisines séparées d'au moins 15 en
 // vision normale et 8 sous protanopie et deutéranopie (distance OKLab ×100, simulation de
 // Machado, Oliveira et Fernandes 2009, sévérité 1) ; la rampe des priorités monotone, à
-// 0,06 de luminance d'un cran à l'autre, sa marche la plus proche de la carte à 2:1.
+// 0,06 de luminance d'un cran à l'autre, et chacune de ses marches à 3:1 comme toute marque.
 //
 // Lancer : npm run verifier:contrastes
 
@@ -215,7 +215,7 @@ const NORMALE = 15;
 const DALTONISME = 8;
 const SATURATION_MIN = 0.1;
 const ECART_RAMPE = 0.06;
-const RAMPE_BORD = 2;
+const RAMPE_BORD = 3;
 let echecsGraphiques = 0;
 const rvbDe = (jeton, defs) => fondReel(jeton, defs);
 const surfaceDe = (defs) => fondReel('surface', defs);
@@ -230,6 +230,7 @@ const MARQUES = [
   'statut-nouveau', 'statut-attente', 'statut-cours', 'statut-resolu', 'statut-clos', 'serie-accent',
   'categorie-1', 'categorie-2', 'categorie-3', 'categorie-4', 'categorie-5', 'categorie-6',
   'categorie-aucune', 'avis-negatif', 'avis-neutre', 'avis-positif',
+  'priorite-faible', 'priorite-moyenne', 'priorite-haute', 'priorite-critique',
 ];
 for (const jeton of MARQUES) {
   const [rc, rs] = ['clair', 'sombre'].map((t) => rapport(rvbDe(jeton, THEMES[t]), surfaceDe(THEMES[t])));
@@ -270,8 +271,8 @@ series('Aires créés / résolus', ['serie-accent', 'statut-resolu'], [[0, 1]]);
 series('Satisfaction', ['avis-negatif', 'avis-neutre', 'avis-positif'], [[0, 1], [1, 2]], false);
 
 // 3. Rampe ordinale des priorités (de Faible à Critique) : monotone, crans visibles, et la
-// marche la plus proche de la carte encore à 2:1 — chaque barre porte aussi son libellé et
-// sa valeur, d'où le seuil des rampes ordinales plutôt que celui des marques.
+// marche la plus proche de la carte à 3:1 — le seuil de toute marque, sans exception : la
+// jauge a montré qu'une marche à 2,98:1 se voyait mal dans le rendu.
 const PRIORITES = ['priorite-faible', 'priorite-moyenne', 'priorite-haute', 'priorite-critique'];
 for (const t of ['clair', 'sombre']) {
   const L = PRIORITES.map((j) => luminosite(rvbDe(j, THEMES[t])));

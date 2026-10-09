@@ -3,11 +3,21 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { StatistiquesTickets } from '../../types/ticket';
 import { LABEL_PRIORITE, LABEL_STATUT } from '../tickets/ticket-ui';
+import { nombreFr } from '../../lib/format';
 
 const COULEUR_MARQUE = '#4f46e5';
 const nomFichier = (ext: string) => `rapport-tickets-${new Date().toISOString().slice(0, 10)}.${ext}`;
 
-const fmtValeur = (v: number | null) => (v == null ? '—' : String(v));
+// PDF : nombres à la française (« 48,1 »). Les polices standard de jsPDF ne connaissent pas
+// l'espace fine insécable (U+202F) qu'Intl place entre les milliers : elle devient une
+// espace insécable ordinaire (U+00A0), qu'elles savent écrire.
+const pdf = (v: number | null, decimales = 1) =>
+  v == null ? '—' : nombreFr(v, decimales).replace(/\u202f/g, '\u00a0');
+
+// Excel : une valeur reste un NOMBRE (le tableur l'affiche selon sa propre langue) ; seule
+// une valeur absente s'écrit « — ».
+const cellule = (v: number | null, format = '0') =>
+  v == null ? ({ value: '—' } as const) : ({ value: v, type: Number, format } as const);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Export Excel (.xlsx) — deux feuilles : Synthèse (KPI) et Répartitions.
@@ -24,12 +34,12 @@ export async function exporterStatistiquesExcel(stats: StatistiquesTickets, resu
     [{ value: resumeFiltres ? `Filtres : ${resumeFiltres}` : 'Aucun filtre appliqué', color: '#64748b' } as const],
     [],
     [entete('Indicateur'), entete('Valeur')],
-    [{ value: 'Tickets ouverts' }, { value: fmtValeur(stats.ticketsOuverts) }],
-    [{ value: 'Résolus / clôturés' }, { value: fmtValeur(stats.ticketsResolus + stats.ticketsClotures) }],
-    [{ value: 'Temps de résolution moyen (h)' }, { value: fmtValeur(stats.tempsResolutionMoyenHeures) }],
-    [{ value: 'Délai de prise en charge moyen (h)' }, { value: fmtValeur(stats.delaiPriseEnChargeMoyenHeures) }],
-    [{ value: 'Satisfaction moyenne (/5)' }, { value: fmtValeur(stats.satisfactionMoyenne) }],
-    [{ value: "Nombre d'évaluations" }, { value: fmtValeur(stats.nombreEvaluations) }],
+    [{ value: 'Tickets ouverts' }, cellule(stats.ticketsOuverts)],
+    [{ value: 'Résolus / clôturés' }, cellule(stats.ticketsResolus + stats.ticketsClotures)],
+    [{ value: 'Temps de résolution moyen (h)' }, cellule(stats.tempsResolutionMoyenHeures, '0.0')],
+    [{ value: 'Délai de prise en charge moyen (h)' }, cellule(stats.delaiPriseEnChargeMoyenHeures, '0.0')],
+    [{ value: 'Satisfaction moyenne (/5)' }, cellule(stats.satisfactionMoyenne, '0.0')],
+    [{ value: "Nombre d'évaluations" }, cellule(stats.nombreEvaluations)],
   ];
 
   const nombre = (n: number) => ({ value: n, type: Number }) as const;
@@ -83,12 +93,12 @@ export function exporterStatistiquesPdf(stats: StatistiquesTickets, resumeFiltre
     startY: resumeFiltres ? 37 : 31,
     head: [['Indicateur', 'Valeur']],
     body: [
-      ['Tickets ouverts', fmtValeur(stats.ticketsOuverts)],
-      ['Résolus / clôturés', fmtValeur(stats.ticketsResolus + stats.ticketsClotures)],
-      ['Temps de résolution moyen (h)', fmtValeur(stats.tempsResolutionMoyenHeures)],
-      ['Délai de prise en charge moyen (h)', fmtValeur(stats.delaiPriseEnChargeMoyenHeures)],
-      ['Satisfaction moyenne (/5)', fmtValeur(stats.satisfactionMoyenne)],
-      ["Nombre d'évaluations", fmtValeur(stats.nombreEvaluations)],
+      ['Tickets ouverts', pdf(stats.ticketsOuverts)],
+      ['Résolus / clôturés', pdf(stats.ticketsResolus + stats.ticketsClotures)],
+      ['Temps de résolution moyen (h)', pdf(stats.tempsResolutionMoyenHeures)],
+      ['Délai de prise en charge moyen (h)', pdf(stats.delaiPriseEnChargeMoyenHeures)],
+      ['Satisfaction moyenne (/5)', pdf(stats.satisfactionMoyenne)],
+      ["Nombre d'évaluations", pdf(stats.nombreEvaluations)],
     ],
     headStyles: teteStyle,
     styles: { fontSize: 9 },
@@ -105,17 +115,17 @@ export function exporterStatistiquesPdf(stats: StatistiquesTickets, resumeFiltre
   section(
     'Répartition par statut',
     ['Statut', 'Nombre'],
-    stats.repartitionStatut.map((r) => [LABEL_STATUT[r.statut], String(r.count)]),
+    stats.repartitionStatut.map((r) => [LABEL_STATUT[r.statut], pdf(r.count)]),
   );
   section(
     'Répartition par priorité',
     ['Priorité', 'Nombre'],
-    stats.repartitionPriorite.map((r) => [LABEL_PRIORITE[r.priorite], String(r.count)]),
+    stats.repartitionPriorite.map((r) => [LABEL_PRIORITE[r.priorite], pdf(r.count)]),
   );
   section(
     'Répartition par catégorie',
     ['Catégorie', 'Nombre'],
-    stats.repartitionCategorie.map((r) => [r.categorie, String(r.count)]),
+    stats.repartitionCategorie.map((r) => [r.categorie, pdf(r.count)]),
   );
   section(
     'Charge par technicien',
@@ -123,14 +133,14 @@ export function exporterStatistiquesPdf(stats: StatistiquesTickets, resumeFiltre
     // Même mention qu'à l'écran : sans elle, l'export contredirait le tableau de bord.
     stats.chargeParTechnicien.map((r) => [
       r.absenceJusquau ? `${r.technicien} (absent jusqu'au ${r.absenceJusquau})` : r.technicien,
-      String(r.count),
+      pdf(r.count),
     ]),
   );
   if (stats.nombreEvaluations > 0) {
     section(
       'Répartition des évaluations',
       ['Note', 'Nombre'],
-      [...stats.repartitionSatisfaction].reverse().map((r) => [`${r.note} étoile${r.note > 1 ? 's' : ''}`, String(r.count)]),
+      [...stats.repartitionSatisfaction].reverse().map((r) => [`${r.note} étoile${r.note > 1 ? 's' : ''}`, pdf(r.count)]),
     );
   }
 

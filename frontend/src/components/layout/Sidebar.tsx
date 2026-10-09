@@ -95,7 +95,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   }
 
   return (
-    <div className="flex h-full w-64 flex-col border-r border-bordure/80 bg-surface/90 backdrop-blur-xl">
+    <div className="flex h-full w-64 flex-col border-r border-bordure/80 bg-surface">
       <div className="flex h-14 items-center border-b border-bordure-faible px-4">
         <Logo />
       </div>

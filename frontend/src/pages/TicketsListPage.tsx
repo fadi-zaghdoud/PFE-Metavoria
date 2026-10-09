@@ -224,7 +224,7 @@ export function TicketsListPage() {
               className={cn(
                 'rounded-lg px-3 py-1.5 text-sm font-medium transition-all duration-150',
                 vue === id
-                  ? 'bg-primary-600 text-white shadow-glow-sm ring-1 ring-inset ring-white/15'
+                  ? 'bg-primary-600 text-white shadow-xs ring-1 ring-inset ring-white/15'
                   : 'text-texte-3 hover:bg-surface-3 hover:text-texte',
               )}
             >

@@ -253,7 +253,7 @@ export function UsersManagementPage() {
       />
 
       {/* Barre d'outils : recherche + filtres (collante au défilement) */}
-      <div className="sticky top-14 z-20 -mx-4 mb-4 border-b border-bordure/70 bg-surface-2/90 px-4 py-3 backdrop-blur md:-mx-6 md:px-6">
+      <div className="sticky top-14 z-20 -mx-4 mb-4 border-b border-bordure/70 bg-surface-2 px-4 py-3 md:-mx-6 md:px-6">
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative min-w-52 flex-1 sm:max-w-xs">
             <Search

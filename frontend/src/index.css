@@ -7,8 +7,10 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   Design tokens — Smart Ticketing Design System « Premium »
-   Échelle 8px, cartes arrondies (16px), profondeur en couches, Inter Variable.
+   Design tokens — Smart Ticketing
+   Échelle 8px, cartes arrondies (16px), Inter Variable. Style PLAT : aucun dégradé, effet
+   de verre ni lueur (consigne du 09/10/2026 — ils passent mal au vidéoprojecteur et gênent
+   le mode sombre). `npm run verifier:couleurs` le fait respecter.
    ──────────────────────────────────────────────────────────────────────────── */
 @theme {
   --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -26,20 +28,12 @@
   --color-primary-900: #312e81;
   --color-primary-950: #1e1b4b;
 
-  /* Accent secondaire — violet (dégradés de marque) */
-  --color-accent-400: #a78bfa;
-  --color-accent-500: #8b5cf6;
-  --color-accent-600: #7c3aed;
-
   /* Ombres douces (elevation system) */
   --shadow-xs: 0 1px 2px 0 rgb(15 23 42 / 0.04);
   --shadow-sm: 0 1px 3px 0 rgb(15 23 42 / 0.06), 0 1px 2px -1px rgb(15 23 42 / 0.04);
   --shadow-md: 0 4px 12px -2px rgb(15 23 42 / 0.08), 0 2px 4px -2px rgb(15 23 42 / 0.04);
   --shadow-lg: 0 12px 32px -8px rgb(15 23 42 / 0.14), 0 4px 8px -4px rgb(15 23 42 / 0.06);
   --shadow-xl: 0 24px 56px -16px rgb(15 23 42 / 0.22), 0 8px 20px -12px rgb(15 23 42 / 0.10);
-  /* Lueur colorée de marque — boutons et surfaces primaires */
-  --shadow-glow: 0 8px 24px -6px rgb(79 70 229 / 0.45);
-  --shadow-glow-sm: 0 2px 8px -2px rgb(79 70 229 / 0.35);
 
   /* ── Jetons sémantiques — THÈME CLAIR ─────────────────────────────────────────
      Chaque jeton RÉFÉRENCE la couleur Tailwind qu'il remplace : le thème clair est
@@ -60,7 +54,6 @@
   /* Texte posé SUR l'encre (panneau de marque de la connexion) : constant dans les deux
      thèmes, comme l'encre elle-même — le bloc `.dark` ne le redéfinit pas. */
   --color-texte-sur-encre: var(--color-slate-400);
-  --color-reflet: color-mix(in oklab, var(--color-white) 70%, transparent); /* balayage des squelettes */
 
   /* Textes */
   --color-texte: var(--color-slate-900); /* principal (et ex-slate-800) */
@@ -78,12 +71,6 @@
   --color-bordure: var(--color-slate-200);
   --color-bordure-forte: var(--color-slate-300); /* champs de saisie */
   --color-bordure-survol: var(--color-slate-400); /* champs survolés */
-
-  /* Neutres de données */
-  --color-serie-neutre-a: var(--color-slate-300); /* barres « Clôturé », « Faible » */
-  --color-serie-neutre-b: var(--color-slate-400);
-  --color-puce-neutre: var(--color-slate-500); /* puce d'indicateur neutre */
-  --color-puce-neutre-fonce: var(--color-slate-600);
 
   /* Marque, en texte et en aplat léger (les boutons gardent la rampe primary) */
   --color-marque: var(--color-primary-600); /* liens, élément actif */
@@ -123,6 +110,51 @@
   --color-info-texte-fort: var(--color-sky-800);
 }
 
+/* Jetons de statut et de graphiques — `static` : émis TOUJOURS, même sans classe Tailwind
+   qui les utilise. Les graphiques (SVG) les lisent par var(--color-…) : sans `static`,
+   Tailwind retirerait la valeur claire d'un jeton qu'aucune classe ne référence. */
+@theme static {
+  /* Statuts — couleur de REMPLISSAGE de chaque statut : pastilles des badges, barres et
+     marques des graphiques, la même sur tous les écrans. Le texte des badges garde ses
+     jetons d'état (4,5:1). Marques à 3:1 sur la carte (WCAG 1.4.11). */
+  --color-statut-nouveau: var(--color-info-accent);
+  --color-statut-attente: var(--color-alerte-accent);
+  --color-statut-cours: var(--color-primary-600);
+  --color-statut-resolu: var(--color-succes-accent);
+  --color-statut-clos: var(--color-slate-500);
+
+  /* Graphiques. Tous vérifiés dans les deux thèmes par `npm run verifier:contrastes`
+     (marques à 3:1 sur la carte, séparation des teintes voisines, rampe ordinale).
+     - `serie-accent` : la série unique ou principale (tickets créés, jauges) — l'accent.
+     - `categorie-1` à `-6` : anneau des catégories, dans cet ORDRE FIXE (une catégorie
+       garde son emplacement, jamais son rang). Ordre dérivé par énumération sur la palette
+       Tailwind, hors teintes des statuts : il maximise la séparation des parts voisines,
+       dernière et première comprises, pour 3 à 6 parts, en vision normale (≥ 15) et sous
+       protanopie et deutéranopie (≥ 8, Machado 2009). `categorie-aucune` : « Non classé ».
+     - `priorite-*` : rampe ordinale de l'accent, de Faible (claire) à Critique (soutenue).
+     - `avis-*` : satisfaction négative, neutre, positive. */
+  --color-serie-accent: var(--color-primary-600);
+  --color-categorie-1: var(--color-blue-600);
+  --color-categorie-2: var(--color-orange-700);
+  --color-categorie-3: var(--color-teal-600);
+  --color-categorie-4: var(--color-yellow-700);
+  --color-categorie-5: var(--color-pink-600);
+  --color-categorie-6: var(--color-lime-700);
+  /* « Non classé » : gris LOIN en luminance des six teintes, toutes de luminance moyenne —
+     ardoise 500 ne se distinguait de la sarcelle (emplacement 3) qu'à 11,6 et 6,1. */
+  --color-categorie-aucune: var(--color-slate-700);
+  --color-priorite-faible: var(--color-primary-400);
+  --color-priorite-moyenne: var(--color-primary-500);
+  --color-priorite-haute: var(--color-primary-700);
+  --color-priorite-critique: var(--color-primary-900);
+  --color-avis-negatif: var(--color-danger-accent);
+  --color-avis-neutre: var(--color-slate-500);
+  --color-avis-positif: var(--color-succes-accent);
+  /* Grille et axes : traits fins, un cran au-dessus de la surface, jamais pointillés. */
+  --color-graphe-grille: var(--color-bordure-faible);
+  --color-graphe-axe: var(--color-bordure);
+}
+
 /* ── Jetons sémantiques — THÈME SOMBRE ──────────────────────────────────────────
    Mêmes noms, autres valeurs. Surfaces étagées du plus sombre (fond) au plus clair
    (surface-4) : en sombre, la profondeur se lit par la clarté des surfaces plus que par
@@ -142,7 +174,6 @@
     --color-surface-3: var(--color-slate-800);
     --color-surface-4: var(--color-slate-700);
     --color-encre: var(--color-slate-950);
-    --color-reflet: color-mix(in oklab, var(--color-white) 6%, transparent);
 
     --color-texte: var(--color-slate-100);
     --color-texte-2: var(--color-slate-200);
@@ -157,11 +188,6 @@
        sombre ne se distingue que par lui. */
     --color-bordure-forte: var(--color-slate-500);
     --color-bordure-survol: var(--color-slate-400);
-
-    --color-serie-neutre-a: var(--color-slate-500);
-    --color-serie-neutre-b: var(--color-slate-400);
-    --color-puce-neutre: var(--color-slate-500);
-    --color-puce-neutre-fonce: var(--color-slate-600);
 
     --color-marque: var(--color-primary-300);
     --color-marque-fort: var(--color-primary-200);
@@ -197,14 +223,34 @@
     --color-info-texte: var(--color-sky-300);
     --color-info-texte-fort: var(--color-sky-200);
 
+    /* Statuts et graphiques : pas propres au sombre, choisis pour la bande de luminance
+       des séries sur fond sombre (OKLCH 0,48 à 0,67) et 3:1 sur la carte. */
+    --color-statut-cours: var(--color-primary-400);
+    --color-statut-resolu: var(--color-emerald-600);
+    --color-statut-clos: var(--color-slate-400);
+    --color-serie-accent: var(--color-primary-500);
+    --color-categorie-1: var(--color-blue-500);
+    --color-categorie-2: var(--color-orange-600);
+    --color-categorie-3: var(--color-teal-600);
+    --color-categorie-4: var(--color-yellow-700);
+    --color-categorie-5: var(--color-pink-600);
+    --color-categorie-6: var(--color-lime-600);
+    --color-categorie-aucune: var(--color-slate-300);
+    /* Rampe inversée : en sombre, la plus soutenue est la plus claire. */
+    --color-priorite-faible: var(--color-primary-500);
+    --color-priorite-moyenne: var(--color-primary-400);
+    --color-priorite-haute: var(--color-primary-300);
+    --color-priorite-critique: var(--color-primary-200);
+    /* Neutre plus clair qu'en thème clair : à ardoise 500, il ne se distinguait du rose
+       « négatif » qu'à 7,4 sous deutéranopie (seuil 8) ; à ardoise 400, 10,1. */
+    --color-avis-neutre: var(--color-slate-400);
+
     /* Ombres : sur fond sombre, l'ombre ardoise ne se voit plus — noir plus dense. */
     --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.3);
     --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.35), 0 1px 2px -1px rgb(0 0 0 / 0.3);
     --shadow-md: 0 4px 12px -2px rgb(0 0 0 / 0.45), 0 2px 4px -2px rgb(0 0 0 / 0.3);
     --shadow-lg: 0 12px 32px -8px rgb(0 0 0 / 0.55), 0 4px 8px -4px rgb(0 0 0 / 0.35);
     --shadow-xl: 0 24px 56px -16px rgb(0 0 0 / 0.65), 0 8px 20px -12px rgb(0 0 0 / 0.4);
-    --shadow-glow: 0 8px 24px -6px rgb(99 102 241 / 0.35);
-    --shadow-glow-sm: 0 2px 8px -2px rgb(99 102 241 / 0.3);
   }
 }
 
@@ -213,33 +259,20 @@
     scrollbar-gutter: stable;
   }
 
-  /* Variables d'ambiance propres à la couche de base : halos du fond, barre de
-     défilement, dégradé de texte. Valeurs claires d'origine, reprises telles quelles. */
+  /* Variables propres à la couche de base : barre de défilement. */
   :root {
-    --halo-a: rgb(99 102 241 / 0.07);
-    --halo-b: rgb(139 92 246 / 0.05);
     --barre: rgb(203 213 225);
     --barre-survol: rgb(148 163 184);
-    --degrade-texte-a: var(--color-primary-600);
-    --degrade-texte-b: var(--color-accent-600);
   }
   .dark {
-    --halo-a: rgb(99 102 241 / 0.12);
-    --halo-b: rgb(139 92 246 / 0.08);
     --barre: rgb(71 85 105);
     --barre-survol: rgb(100 116 139);
-    --degrade-texte-a: var(--color-primary-300);
-    --degrade-texte-b: var(--color-accent-400);
   }
 
   body {
     @apply text-texte antialiased;
+    /* Fond plat, gris très clair : les cartes blanches s'en détachent sans halo. */
     background-color: var(--color-fond);
-    /* Halos de marque très diffus — profondeur sans distraction */
-    background-image:
-      radial-gradient(48rem 48rem at 100% -8%, var(--halo-a), transparent 60%),
-      radial-gradient(42rem 42rem at -12% 4%, var(--halo-b), transparent 55%);
-    background-attachment: fixed;
     font-feature-settings: "cv11", "ss01";
   }
 
@@ -292,11 +325,6 @@
       opacity: 1;
     }
   }
-  @keyframes shimmer {
-    100% {
-      transform: translateX(100%);
-    }
-  }
   @keyframes pop-in {
     0% {
       transform: scale(0.92);
@@ -319,20 +347,6 @@
   }
   .animate-pop-in {
     animation: pop-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
-  }
-
-  /* Dégradé de texte de marque (titres, chiffres clés) */
-  .text-gradient {
-    background-image: linear-gradient(135deg, var(--degrade-texte-a), var(--degrade-texte-b));
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-  }
-
-  /* Surface vitrée légère pour éléments flottants */
-  .glass {
-    background-color: color-mix(in oklab, var(--color-surface) 75%, transparent);
-    backdrop-filter: blur(12px) saturate(140%);
   }
 
   @media (prefers-reduced-motion: reduce) {

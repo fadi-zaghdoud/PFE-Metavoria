@@ -3714,3 +3714,222 @@ n'est pas modifié, et le garde-fou l'exclut nommément.
   données. La CI rejoue les deux garde-fous statiques, pas les captures.
 - **Les glyphes décoratifs** (`decor` : chevrons, séparateurs) restent sous 3:1 dans les
   deux thèmes (1,48 et 2,36) : ils ne portent aucune information.
+
+---
+
+# Tableau de bord v1.1 — la consigne, les définitions, puis l'aplat (étape 2)
+
+> Séance du **09/10/2026**, branche `mode-sombre-et-tableau-de-bord` : `v1.0` plus le mode
+> sombre, commité en sauvegarde de travail (`a1d0dde`) et poussé. Consigne de la séance,
+> qui remplace les précédentes sur le tableau de bord et le mode sombre : refaire le tableau
+> de bord en produit professionnel — neuf sections (en-tête ; quatre indicateurs ; créés et
+> résolus en aires ; anneau par catégorie ; techniciens ; satisfaction ; priorités ;
+> performance du module IA ; « À traiter ») — dans un style **plat** : cartes blanches
+> arrondies sur gris très clair, une seule couleur d'accent, statuts de même couleur sur
+> tous les écrans, **aucun dégradé ni effet de verre** (« ils passent mal au vidéoprojecteur
+> et gênent le mode sombre »). Règles : backend en nouveaux points d'accès de lecture seule,
+> agrégés en SQL et testés, sans migration ni contrat modifié ; une seule bibliothèque de
+> graphiques ; formulaire de création et chemin de suggestion IA strictement inchangés,
+> prouvé par le diff ; exports clairs ; base locale en lecture seule. Le travail avance par
+> étapes, et chaque arrêt laisse un état complet et fusionnable.
+
+## Étape 1 — ce que l'inventaire a établi
+
+- **Aucune bibliothèque de graphiques** n'était installée : les barres étaient des `div`
+  animées. **Recharts** est retenu (SVG : les jetons CSS et l'audit du DOM s'y appliquent).
+  **Chart.js est écarté** : il dessine dans un canvas, qui ignore les variables CSS et
+  échappe à l'audit.
+- **L'API de statistiques existante** porte la période sur la date de création et mesure la
+  « résolution moyenne » de la création à la **clôture**. Elle reste inchangée (contrat) ;
+  les nouveaux indicateurs passeront par de nouveaux points d'accès.
+- **Base locale**, mesurée en session `default_transaction_read_only=on` (Docker démarré
+  avec l'accord de l'utilisateur ; la pile a relancé `migrate deploy`, sans rien à
+  appliquer, et le seed des catégories — son démarrage normal) :
+  - 852 tickets synthétiques créés du **16/04 au 15/07/2026** (UTC), 20 réels du 10/07 au
+    23/09 ;
+  - 7 tickets portent un événement `PRISE_EN_CHARGE` (du 28/07 au 23/09) ; 185 évaluations ;
+  - 32 lignes `SuggestionIA` : 12 classifications sur 11 tickets réels (3 acceptées,
+    1 corrigée, 8 non tranchées), 7 solutions du RAG (6 générées, 1 abstention),
+    12 priorisations, 1 résumé ;
+  - **aucun des 10 techniciens n'a de photo** ;
+  - le ticket réel **#3** (essai du 11/07) est « Résolu » sans aucun événement ni clôture :
+    sa date de résolution est inconnue.
+- **Base reconstruite** : dates posées sur les 90 jours qui précèdent le chargement ; aucun
+  événement de prise en charge ; aucune suggestion IA avant la première action.
+
+## Les définitions des indicateurs `[établi en séance, validé par l'utilisateur]`
+
+Elles iront dans le rapport. L'écran et les exports les partageront : les exports seront
+alignés au groupe 1, en même temps que les quatre indicateurs, pour que l'écran et le PDF
+n'affichent jamais deux temps de résolution différents.
+
+| Indicateur | Définition |
+| --- | --- |
+| Date de résolution | dernier événement « Résolu » ; à défaut, date de clôture |
+| Tickets résolus sur la période | date de résolution dans la période |
+| Temps moyen de résolution | moyenne de (résolution − création) des tickets résolus sur la période, effectif affiché |
+| Délai moyen de 1re prise en charge | moyenne de (1er `PRISE_EN_CHARGE` − création) des tickets pris en charge dans la période, effectif affiché ; « — » s'il n'y en a aucun |
+| Tickets ouverts | stock à la **fin** de la période : créés avant, pas encore résolus à cet instant |
+| Période précédente | même durée, juste avant ; variation affichée **seulement** si l'indicateur y a des données |
+| Répartitions (catégorie, priorité) | tickets créés dans la période |
+| « À traiter » | indépendant de la période, suit les autres filtres |
+| Satisfaction | positive = 4 et 5, neutre = 3, négative = 1 et 2, règle écrite à l'écran |
+
+- **Pourquoi l'événement, et non la clôture.** `resoudre()` n'écrit que l'événement
+  « Résolu » (`resolutionDate` n'est rempli que si une solution est saisie). La clôture
+  n'arrive qu'à la validation du demandeur ou par l'administrateur : la prendre pour fin
+  compterait l'attente du demandeur dans le temps de résolution. Les tickets synthétiques
+  n'ont aucun événement ; le chargeur pose leur `dateCloture` à la résolution, d'où le repli.
+- **Pourquoi un stock pour « ouverts ».** « Créés dans la période et encore ouverts » — la
+  définition de l'API existante — ne se compare pas d'une période à l'autre : les tickets
+  anciens ont eu plus de temps pour être résolus.
+- **Ticket résolu sans date connue (#3)** : jamais compté ouvert, ni résolu dans une
+  période, ni dans le temps de résolution. On montre ce qu'on sait.
+- **Alternatives écartées** : la mesure existante création → clôture ; « ouverts » au sens
+  de l'API existante.
+- Bornes : jours entiers en UTC, comme le point d'accès existant (serveur en UTC). À
+  reconfirmer par le point d'accès lui-même au groupe 1.
+
+## La période de démonstration
+
+- **12 derniers mois par défaut** : tout s'affiche sur les deux bases ; la période
+  précédente est vide, donc aucune variation n'apparaît — conformément à la règle.
+  **30 jours** aurait laissé le tableau de bord presque vide sur la base locale (données
+  d'avril à juillet). **90 jours pour montrer la variation**, que j'avais proposé, est
+  **refusé** par l'utilisateur : période en cours presque vide, précédente pleine, et toutes
+  les cartes en forte baisse rouge devant le jury.
+- **Plage retenue pour montrer la variation sur la base locale : du 31/05/2026 au
+  09/06/2026** (10 jours ; période précédente du 21/05 au 30/05). Trouvée par une requête en
+  lecture seule sur toutes les fenêtres de 7 à 45 jours comprises dans le corpus, en
+  minimisant le plus grand écart relatif des quatre mesures :
+
+| Mesure | 31/05 → 09/06 | 21/05 → 30/05 | Écart |
+| --- | --- | --- | --- |
+| Créés | 90 | 96 | −6,3 % |
+| Résolus | 85 | 80 | +6,3 % |
+| Temps moyen de résolution | 48,6 h | 51,7 h | −6,1 % |
+| Ouverts (fin de période) | 87 | 82 | +6,1 % |
+| Prises en charge | 0 | 0 | « — » |
+
+- **Pourquoi pas plus long.** Les 129 tickets synthétiques ouverts ne se résolvent jamais :
+  le stock d'ouverts croît avec le temps, et son écart avec la durée de la fenêtre — la
+  meilleure fenêtre de 30 jours donne +33 %, celle de 42 jours +61,5 %.
+
+## Étape 2 — l'aplat, les jetons de statut et de graphiques
+
+### Ce qui est livré
+
+- **Plus aucun dégradé, effet de verre, flou ni lueur**, dans 18 fichiers d'interface :
+  barre du haut et menu opaques ; voiles des dialogues et de la palette ⌘K à 50 % sans flou
+  (au lieu de 40 % flouté) ; bouton principal sans lueur ; logo, pastilles d'indicateurs,
+  état vide et panneau des pages publiques en aplat ; halos du fond de page retirés ;
+  squelettes de chargement en pulsation au lieu d'un balayage en dégradé ; bandeau
+  d'accueil du tableau de bord en carte plate ; barres du tableau de bord en aplat.
+- **Jetons de statut** `statut-nouveau` … `statut-clos` : la couleur de remplissage de
+  chaque statut, la même pour la pastille des badges — désormais — et pour les graphiques.
+  Une seule table, `PASTILLE_STATUT` (`features/tickets/statutCouleurs.ts`).
+- **Jetons de graphiques** : `serie-accent` ; l'anneau `categorie-1` à `-6` et
+  `categorie-aucune` ; la rampe `priorite-*` ; la satisfaction `avis-*` ; grille et axes.
+  Déclarés dans un bloc `@theme static` (voir plus bas).
+- **Garde-fous étendus**, rejoués par la CI :
+  - `verifier:couleurs` refuse désormais tout dégradé, effet de verre, flou ou lueur, dans
+    les composants **et** la feuille de style, ainsi que tout texte en jeton translucide ;
+  - `verifier:contrastes` contrôle les graphiques : marques à 3:1 sur la carte ; bande de
+    luminance et saturation des séries ; voisins séparés d'au moins 15 en vision normale et
+    8 sous protanopie et deutéranopie (distance OKLab ×100, simulation de Machado, Oliveira
+    et Fernandes 2009) ; rampe des priorités monotone, à 0,06 d'un cran à l'autre, sa
+    marche la plus proche de la carte à 2:1.
+- **`scripts/prouver-classes-seulement.mjs`** : compare l'arbre syntaxique TypeScript d'un
+  fichier à celui d'une révision ; seules les chaînes faites entièrement de classes sont
+  neutralisées. Tout autre écart — logique, texte, propriété, élément — le fait échouer.
+
+### Les décisions, et leurs raisons `[établi en séance]`
+
+#### L'aplat sur toute l'application
+
+Décision validée : un tableau de bord plat dans une coquille vitrée et dégradée serait
+incohérent, et les raisons de la consigne valent pour tous les écrans. Condition posée :
+pour le formulaire de création et le panneau IA, le diff ne doit changer que des classes. Le
+cercle décoratif du panneau IA est donc **gardé, en aplat** (`bg-marque-fond-2/60`), plutôt
+que supprimé : retirer l'élément aurait changé la structure.
+
+#### La palette de l'anneau, dérivée par énumération
+
+- **Méthode** : neuf familles de la palette Tailwind, hors teintes des statuts — sans le
+  rouge, qui dit « danger », ni le pourpre et le fuchsia, trop proches du violet. Pour
+  chaque famille et chaque thème, le pas le plus proche d'une luminance cible parmi ceux qui
+  tiennent la bande, la saturation et 3:1. Puis tous les ordres de 6 parmi 9, notés sur la
+  pire séparation des parts voisines, **dernière et première comprises, pour 3 à 6 parts** :
+  la séparation doit tenir quel que soit le nombre de catégories.
+- **Huit emplacements sont impossibles** sans le rouge et les trois violets : la meilleure
+  séparation tombe à 6,6, sous la cible de 8. D'où **six emplacements, plus le gris** de
+  « Non classé » — un anneau se lit mal au-delà de six parts.
+- **Retenu : bleu → orange → sarcelle → ocre → rose → olive** (clair : `blue-600`,
+  `orange-700`, `teal-600`, `yellow-700`, `pink-600`, `lime-700` ; sombre : `blue-500`,
+  `orange-600`, `teal-600`, `yellow-700`, `pink-600`, `lime-600`) : 10,1 sous daltonisme,
+  20,8 en vision normale. Ce n'est **pas** l'ordre le mieux séparé : le premier (violet →
+  orange → sarcelle → ocre → cyan → olive) atteint 13,2. Le retenu l'est pour son ouverture
+  bleu, orange, sarcelle, celle de la palette de référence de la méthode ; les deux
+  dépassent la cible. Choix esthétique entre ordres valides, assumé comme tel.
+
+#### Deux défauts trouvés par le garde-fou lui-même
+
+- **Satisfaction, thème sombre** : le gris neutre (`slate-500`) ne se distinguait du rose
+  « négatif » qu'à **7,4** sous deutéranopie. Passé à `slate-400` : 10,1.
+- **« Non classé »** : `slate-500` ne se distinguait de la sarcelle qu'à **11,6** en vision
+  normale et **6,1** sous daltonisme. Contre les six teintes, deux gris seulement passent :
+  `slate-700` en clair, `slate-300` en sombre (24,0 et 9,7 ; 28,2 et 23,3). Conséquence
+  assumée : « Non classé » est la part la plus contrastée de l'anneau.
+
+#### `@theme static`, sans quoi un graphique aurait perdu ses couleurs en clair
+
+Tailwind v4 n'émet la valeur d'un jeton de `@theme` que si une classe l'utilise ; le bloc
+`.dark`, en CSS ordinaire, est toujours émis. Un graphique lisant `var(--color-categorie-1)`
+aurait donc eu une couleur en sombre et **aucune en clair**. Constaté dans le CSS compilé,
+corrigé par `@theme static`, puis vérifié : les 136 variables de couleur référencées par le
+CSS compilé y sont toutes définies.
+
+### Ce qui a été prouvé, et comment
+
+- **Hors navigateur** : `tsc -b` et build propres ; `oxlint` rend les 6 avertissements de
+  `main`, aucun nouveau (la table des pastilles vit dans un module sans composant pour ne pas
+  en ajouter un septième) ; `verifier:couleurs` : 68 fichiers, aucun effet interdit ;
+  `verifier:contrastes` : 52 couples de texte et tous les contrôles de graphiques, dans les
+  deux thèmes.
+- **Le formulaire de création et le panneau IA ne changent que par des classes**
+  (`prouver-classes-seulement.mjs`, depuis `v1.0`) : `CreateTicketPage.tsx`, arbres
+  identiques hors classes (1 099 nœuds), 7 listes de classes modifiées sur 17, 12 classes de
+  couleur ; `TicketDetailPage.tsx`, arbres identiques hors classes (6 762 nœuds), 84 listes
+  sur 171. `backend/`, `ml/` et les clients d'API du frontend : aucune modification depuis
+  `v1.0`.
+- **Dans le navigateur**, sur la pile séparée `st-demo` (frontend reconstruit depuis l'arbre
+  de travail ; base locale non touchée) : Edge sans
+  interface, piloté par le protocole DevTools (banc de la séance des 08-09/10, adapté), a
+  capturé chaque écran **dans les deux thèmes** — pages publiques, administrateur,
+  technicien, employée, états flottants, vues à 390 px — et la notification de connexion
+  **au repos** pour les trois rôles : 68 relevés, **10 189 textes mesurés, aucun sous le
+  seuil**, et **aucun dégradé, arrière-plan filtré ni flou dans le rendu** (détection
+  ajoutée au banc, sur les styles calculés de chaque élément).
+  - Une première passe avait relevé 5 textes. Quatre venaient de la notification
+    « Connexion réussie », capturée pendant son fondu de sortie — une animation JavaScript,
+    que la neutralisation des animations CSS n'arrête pas : le banc la mesure désormais au
+    repos, puis attend sa disparition avant chaque capture ; 0 échec.
+  - Le cinquième était un **vrai défaut, présent depuis `v1.0`** : l'encart « Le service IA
+    est injoignable » de la page des catégories, en `text-amber-700/90` (devenu
+    `text-alerte-texte/90` à la migration), à **4,18:1**. Il n'apparaît que service IA
+    arrêté : les passes précédentes, service démarré, ne pouvaient pas le voir. Corrigé,
+    avec deux autres textes d'état translucides du même mécanisme (catégories, paramètres) ;
+    `verifier:couleurs` refuse désormais tout texte en jeton translucide, que le calcul sur
+    les jetons pleins ne peut pas vérifier.
+
+### Dettes assumées et documentées
+
+- **« Non classé » ressort** davantage que les catégories (gris foncé en clair, clair en
+  sombre) : c'est le prix de la séparation mesurée.
+- **Les teintes de l'anneau sont saturées** (pas 600 et 700 en clair) : les pas plus sobres
+  sortaient de la bande ou passaient sous 3:1.
+- **Le cercle décoratif du panneau IA reste**, en aplat, pour que le diff ne change que des
+  classes.
+- **Au-delà de six catégories**, l'anneau devra regrouper : à traiter au groupe 2.
+- **Bornes de période en UTC** : la plage de démonstration est à reconfirmer par le point
+  d'accès lui-même au groupe 1.

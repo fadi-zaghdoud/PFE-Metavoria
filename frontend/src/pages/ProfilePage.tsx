@@ -129,7 +129,7 @@ export function ProfilePage() {
       <PageHeader title="Mon profil" description="Gérez vos informations personnelles et votre mot de passe." />
 
       {/* Carte d'identité */}
-      <Card className="mb-6 overflow-hidden bg-gradient-to-br from-surface to-marque-fond/50">
+      <Card className="mb-6 overflow-hidden">
         <CardContent className="flex flex-wrap items-center gap-4">
           <div className="relative shrink-0">
             <Avatar

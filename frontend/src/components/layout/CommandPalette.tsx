@@ -111,7 +111,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.12 }}
-            className="absolute inset-0 bg-encre/40 backdrop-blur-[2px]"
+            className="absolute inset-0 bg-encre/50"
             onClick={onClose}
             aria-hidden
           />

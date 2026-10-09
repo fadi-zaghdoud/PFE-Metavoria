@@ -34,28 +34,6 @@ export function AuthLayout({ titre, sousTitre, children, pied }: AuthLayoutProps
     <div className="grid min-h-dvh lg:grid-cols-[1.1fr_1fr]">
       {/* Panneau de marque */}
       <div className="relative hidden overflow-hidden bg-encre lg:flex lg:flex-col lg:justify-between lg:p-10">
-        <div
-          aria-hidden
-          className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,rgba(99,102,241,0.30),transparent_55%),radial-gradient(ellipse_at_bottom_right,rgba(139,92,246,0.20),transparent_55%)]"
-        />
-        <div
-          aria-hidden
-          className="absolute inset-0 opacity-[0.04] [background-image:linear-gradient(white_1px,transparent_1px),linear-gradient(90deg,white_1px,transparent_1px)] [background-size:44px_44px]"
-        />
-        {/* Orbes flottants */}
-        <motion.div
-          aria-hidden
-          className="absolute -left-10 top-24 size-72 rounded-full bg-primary-600/20 blur-3xl"
-          animate={{ y: [0, -24, 0], opacity: [0.5, 0.8, 0.5] }}
-          transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut' }}
-        />
-        <motion.div
-          aria-hidden
-          className="absolute -right-16 bottom-10 size-80 rounded-full bg-accent-500/20 blur-3xl"
-          animate={{ y: [0, 20, 0], opacity: [0.4, 0.7, 0.4] }}
-          transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut' }}
-        />
-
         <div className="relative">
           <Logo light />
         </div>
@@ -90,7 +68,7 @@ export function AuthLayout({ titre, sousTitre, children, pied }: AuthLayoutProps
                 transition={{ duration: 0.45, delay: 0.18 + i * 0.1, ease: 'easeOut' }}
                 className="flex gap-3.5"
               >
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-white/10 to-white/5 text-primary-300 ring-1 ring-inset ring-white/10">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-white/10 text-primary-300 ring-1 ring-inset ring-white/10">
                   <Icon className="size-4.5" aria-hidden />
                 </span>
                 <div>

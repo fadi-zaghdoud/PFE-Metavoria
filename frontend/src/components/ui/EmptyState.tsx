@@ -11,12 +11,8 @@ interface EmptyStateProps {
 export function EmptyState({ icon: Icon, title, description, action }: EmptyStateProps) {
   return (
     <div className="animate-fade-up flex flex-col items-center justify-center px-6 py-16 text-center">
-      <span className="relative flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-surface-3 to-surface-4 text-texte-4 ring-1 ring-inset ring-bordure/70">
-        <span
-          aria-hidden
-          className="absolute inset-0 rounded-2xl bg-gradient-to-br from-primary-500/10 to-transparent"
-        />
-        <Icon className="relative size-6" aria-hidden />
+      <span className="flex size-14 items-center justify-center rounded-2xl bg-surface-3 text-texte-4 ring-1 ring-inset ring-bordure/70">
+        <Icon className="size-6" aria-hidden />
       </span>
       <h3 className="mt-4 text-sm font-semibold text-texte">{title}</h3>
       {description && <p className="mt-1 max-w-sm text-sm text-texte-4">{description}</p>}

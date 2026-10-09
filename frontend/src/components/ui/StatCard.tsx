@@ -6,12 +6,14 @@ import { AnimatedNumber } from './AnimatedNumber';
 
 type Tone = 'primary' | 'success' | 'warning' | 'danger' | 'neutral';
 
-const TONES: Record<Tone, { chip: string; aura: string; glow: string }> = {
-  primary: { chip: 'from-primary-500 to-primary-600', aura: 'from-primary-500/15', glow: 'shadow-glow-sm' },
-  success: { chip: 'from-emerald-500 to-teal-600', aura: 'from-emerald-500/15', glow: '' },
-  warning: { chip: 'from-amber-500 to-orange-500', aura: 'from-amber-500/15', glow: '' },
-  danger: { chip: 'from-rose-500 to-rose-600', aura: 'from-rose-500/15', glow: '' },
-  neutral: { chip: 'from-puce-neutre to-puce-neutre-fonce', aura: 'from-puce-neutre/10', glow: '' },
+// Pastille d'icône : aplat teinté de l'état, icône à 3:1 sur ce fond (vérifié par
+// `verifier:contrastes`). Ni dégradé, ni halo, ni lueur (consigne du 09/10).
+const TONES: Record<Tone, string> = {
+  primary: 'bg-marque-fond text-marque',
+  success: 'bg-succes-fond text-succes-accent',
+  warning: 'bg-alerte-fond text-alerte-accent',
+  danger: 'bg-danger-fond text-danger-accent',
+  neutral: 'bg-surface-3 text-texte-3',
 };
 
 interface Trend {
@@ -61,14 +63,6 @@ export function StatCard({
       )}
       style={{ animationDelay: `${index * 70}ms` }}
     >
-      {/* Halo décoratif discret en coin */}
-      <span
-        aria-hidden
-        className={cn(
-          'pointer-events-none absolute -right-8 -top-10 size-28 rounded-full bg-gradient-to-br to-transparent opacity-70 blur-2xl transition-opacity duration-300 group-hover:opacity-100',
-          t.aura,
-        )}
-      />
       <div className="relative flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-texte-4">{label}</p>
@@ -96,13 +90,7 @@ export function StatCard({
             </div>
           )}
         </div>
-        <span
-          className={cn(
-            'flex size-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white ring-1 ring-inset ring-white/20',
-            t.chip,
-            t.glow,
-          )}
-        >
+        <span className={cn('flex size-11 shrink-0 items-center justify-center rounded-xl', t)}>
           <Icon className="size-5" aria-hidden />
         </span>
       </div>

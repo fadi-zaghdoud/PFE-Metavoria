@@ -2,6 +2,7 @@ import { Clock, Minus, SignalHigh, TriangleAlert, type LucideIcon } from 'lucide
 import { Badge, type BadgeVariant } from '../../components/ui/Badge';
 import { cn } from '../../lib/cn';
 import type { PrioriteTicket, StatutTicket } from '../../types/ticket';
+import { PASTILLE_STATUT } from './statutCouleurs';
 
 // ── Statut ───────────────────────────────────────────────────────────────────
 const STATUTS: Record<StatutTicket, { label: string; variant: BadgeVariant }> = {
@@ -25,7 +26,7 @@ export const STATUT_OPTIONS: StatutTicket[] = ['NOUVEAU', 'EN_COURS', 'EN_ATTENT
 export function StatutBadge({ statut }: { statut: StatutTicket }) {
   const { label, variant } = STATUTS[statut];
   return (
-    <Badge variant={variant} dot>
+    <Badge variant={variant} dot pastille={PASTILLE_STATUT[statut]}>
       {label}
     </Badge>
   );

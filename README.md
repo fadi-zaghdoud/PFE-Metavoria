@@ -504,8 +504,8 @@ cd frontend
 npm ci
 npm run lint                  # oxlint
 npm run build                 # tsc -b, puis vite build
-npm run verifier:couleurs     # aucune couleur réservée au thème clair
-npm run verifier:contrastes   # contrastes WCAG des jetons, dans les deux thèmes
+npm run verifier:couleurs     # aucune couleur réservée au thème clair, aucun dégradé ni verre
+npm run verifier:contrastes   # contrastes WCAG des jetons et des graphiques, deux thèmes
 ```
 
 - **`verifier:couleurs`** refuse toute classe Tailwind qui ne vaut que pour le thème
@@ -513,10 +513,20 @@ npm run verifier:contrastes   # contrastes WCAG des jetons, dans les deux thème
   `-200`, textes `-600` et plus…) sans son pendant `dark:` sur la même ligne. Les écrans
   passent par les jetons sémantiques d'`src/index.css` (`surface`, `texte`, `bordure`,
   `marque`, états…), redéfinis pour le thème sombre. `exportRapport.ts` en est exclu :
-  les exports PDF et Excel restent clairs, quel que soit le thème de l'interface.
+  les exports PDF et Excel restent clairs, quel que soit le thème de l'interface. Il
+  refuse aussi tout **dégradé, effet de verre, flou ou lueur** (`bg-gradient-*`,
+  `*-gradient()`, `backdrop-*`, `blur-*`, `shadow-glow`, `glass`), dans les composants et
+  la feuille de style : l'interface est plate.
 - **`verifier:contrastes`** calcule, à partir d'`index.css` et de la palette Tailwind, le
   contraste de chaque couple texte/fond des jetons, dans les deux thèmes : 4,5:1 pour le
-  texte, 3:1 pour les icônes d'état. Il échoue si un couple passe sous son seuil.
+  texte, 3:1 pour les icônes d'état. Il contrôle aussi les **graphiques** : chaque marque à
+  3:1 sur la carte, les teintes voisines de l'anneau des catégories séparées en vision
+  normale et sous daltonisme, la rampe des priorités monotone. Il échoue si un contrôle
+  passe sous son seuil.
+- **`node scripts/prouver-classes-seulement.mjs <révision> <fichier.tsx>`** prouve qu'un
+  fichier ne diffère d'une révision que par des classes CSS : les deux arbres syntaxiques
+  sont comparés, seules les chaînes faites entièrement de classes sont neutralisées
+  (ex. `v1.0 src/pages/CreateTicketPage.tsx`).
 
 ## Modèle de données
 

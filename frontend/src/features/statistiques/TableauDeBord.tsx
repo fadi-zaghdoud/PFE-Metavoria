@@ -15,13 +15,13 @@ import {
 import { ticketsApi } from '../tickets/ticketsApi';
 import { utilisateursApi } from '../utilisateurs/utilisateursApi';
 import { LABEL_PRIORITE, LABEL_STATUT } from '../tickets/ticket-ui';
+import { PASTILLE_STATUT } from '../tickets/statutCouleurs';
 import { useAuthStore } from '../../store/authStore';
 import type {
   Categorie,
   FiltresStatistiques,
   PrioriteTicket,
   StatistiquesTickets,
-  StatutTicket,
 } from '../../types/ticket';
 import type { Utilisateur } from '../../types/auth';
 import { Card, CardContent, CardHeader } from '../../components/ui/Card';
@@ -31,21 +31,15 @@ import { Button } from '../../components/ui/Button';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { cn } from '../../lib/cn';
 
-// Dégradés par catégorie de données — la teinte porte l'identité, l'étiquette
-// reste toujours visible (l'identité ne repose jamais sur la couleur seule).
-const GRAD_STATUT: Record<StatutTicket, string> = {
-  NOUVEAU: 'from-sky-400 to-sky-500',
-  EN_COURS: 'from-primary-400 to-primary-600',
-  EN_ATTENTE: 'from-amber-400 to-amber-500',
-  RESOLU: 'from-emerald-400 to-emerald-500',
-  CLOTURE: 'from-serie-neutre-a to-serie-neutre-b',
-};
-
-const GRAD_PRIORITE: Record<PrioriteTicket, string> = {
-  CRITIQUE: 'from-rose-400 to-rose-500',
-  HAUTE: 'from-amber-400 to-orange-500',
-  MOYENNE: 'from-sky-400 to-sky-500',
-  FAIBLE: 'from-serie-neutre-a to-serie-neutre-b',
+// Aplats par série (jetons d'index.css, vérifiés dans les deux thèmes par
+// `verifier:contrastes`). Les statuts gardent la couleur qu'ils ont sur tous les écrans ;
+// les priorités suivent la rampe de l'accent, de Faible (claire) à Critique (soutenue).
+// L'étiquette reste toujours visible : l'identité ne repose jamais sur la couleur seule.
+const COULEUR_PRIORITE: Record<PrioriteTicket, string> = {
+  CRITIQUE: 'bg-priorite-critique',
+  HAUTE: 'bg-priorite-haute',
+  MOYENNE: 'bg-priorite-moyenne',
+  FAIBLE: 'bg-priorite-faible',
 };
 
 interface DonneeBarre {
@@ -60,8 +54,8 @@ interface DonneeBarre {
   annotation?: string;
 }
 
-// Graphique en barres horizontales : balayage animé à l'apparition, dégradé de
-// remplissage, survol de ligne. Chaque barre porte son libellé et sa valeur.
+// Graphique en barres horizontales : balayage animé à l'apparition, remplissage en
+// aplat, survol de ligne. Chaque barre porte son libellé et sa valeur.
 function CarteBarres({
   titre,
   description,
@@ -115,7 +109,7 @@ function CarteBarres({
               </span>
               <div className="relative h-2.5 flex-1 overflow-hidden rounded-full bg-surface-3">
                 <motion.div
-                  className={cn('h-full rounded-full bg-gradient-to-r', d.couleur)}
+                  className={cn('h-full rounded-full', d.couleur)}
                   initial={{ width: '0%' }}
                   animate={{ width: `${d.value === 0 ? 0 : Math.max(4, (d.value / max) * 100)}%` }}
                   transition={{ duration: 0.7, delay: 0.1 + i * 0.05, ease: [0.16, 1, 0.3, 1] }}
@@ -250,23 +244,23 @@ export function TableauDeBord() {
   const dataStatut = (stats?.repartitionStatut ?? []).map((r) => ({
     label: LABEL_STATUT[r.statut],
     value: r.count,
-    couleur: GRAD_STATUT[r.statut],
+    couleur: PASTILLE_STATUT[r.statut],
   }));
   const dataPriorite = (stats?.repartitionPriorite ?? []).map((r) => ({
     label: LABEL_PRIORITE[r.priorite],
     value: r.count,
-    couleur: GRAD_PRIORITE[r.priorite],
+    couleur: COULEUR_PRIORITE[r.priorite],
   }));
   const dataCategorie = (stats?.repartitionCategorie ?? []).map((r) => ({
     label: r.categorie,
     value: r.count,
-    couleur: 'from-primary-400 to-primary-600',
+    couleur: 'bg-serie-accent',
   }));
   const chargeComplete = (stats?.chargeParTechnicien ?? []).map((r) => ({
     cle: String(r.technicienId),
     label: r.technicien,
     value: r.count,
-    couleur: 'from-violet-400 to-violet-500',
+    couleur: 'bg-serie-accent',
     annotation: r.absenceJusquau ? `absent jusqu'au ${jourCourt(r.absenceJusquau)}` : undefined,
   }));
 
@@ -285,7 +279,7 @@ export function TableauDeBord() {
   const dataSatisfaction = [...(stats?.repartitionSatisfaction ?? [])].reverse().map((r) => ({
     label: `${r.note} étoile${r.note > 1 ? 's' : ''}`,
     value: r.count,
-    couleur: 'from-amber-300 to-amber-400',
+    couleur: 'bg-serie-accent',
   }));
 
   return (

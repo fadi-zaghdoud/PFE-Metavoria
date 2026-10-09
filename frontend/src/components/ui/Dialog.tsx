@@ -69,7 +69,7 @@ export function Dialog({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
-            className="absolute inset-0 bg-encre/40 backdrop-blur-[2px]"
+            className="absolute inset-0 bg-encre/50"
             onClick={onClose}
             aria-hidden
           />

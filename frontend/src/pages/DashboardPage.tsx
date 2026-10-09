@@ -150,35 +150,30 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-8">
-      {/* Hero de bienvenue — bannière de marque */}
-      <div className="animate-fade-up relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary-600 via-primary-700 to-accent-600 p-6 text-white shadow-glow md:p-8">
-        <span
-          aria-hidden
-          className="absolute inset-0 opacity-[0.12] [background-image:linear-gradient(white_1px,transparent_1px),linear-gradient(90deg,white_1px,transparent_1px)] [background-size:32px_32px]"
-        />
-        <span aria-hidden className="absolute -right-16 -top-20 size-64 rounded-full bg-white/10 blur-3xl" />
-        <span aria-hidden className="absolute -bottom-24 left-1/3 size-56 rounded-full bg-accent-400/20 blur-3xl" />
-        <div className="relative flex flex-wrap items-end justify-between gap-4">
+      {/* Bienvenue — carte plate : le bandeau en dégradé est retiré (consigne du 09/10). Le
+          bloc reste jusqu'à l'arrivée de l'en-tête du tableau de bord, qui le remplacera. */}
+      <Card className="animate-fade-up p-6 md:p-8">
+        <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-xs font-medium uppercase tracking-wider text-white/85">
+            <p className="text-xs font-medium uppercase tracking-wider text-texte-4">
               {dateLongue(new Date())}
             </p>
-            <h1 className="mt-1.5 text-2xl font-semibold tracking-tight md:text-3xl">
+            <h1 className="mt-1.5 text-2xl font-semibold tracking-tight text-texte md:text-3xl">
               Bonjour, {utilisateur.prenom} 👋
             </h1>
-            <p className="mt-2 max-w-lg text-sm leading-relaxed text-white/90">
+            <p className="mt-2 max-w-lg text-sm leading-relaxed text-texte-3">
               {DESCRIPTIONS[utilisateur.role]}
             </p>
           </div>
           <Link
             to="/profil"
-            className="inline-flex h-9 items-center gap-2 rounded-lg bg-white/10 px-4 text-sm font-medium text-white ring-1 ring-inset ring-white/20 backdrop-blur transition-colors hover:bg-white/20"
+            className="inline-flex h-9 items-center gap-2 rounded-lg border border-bordure bg-surface px-4 text-sm font-medium text-texte-2 shadow-xs transition-colors hover:border-bordure-forte hover:bg-surface-2"
           >
             <UserCircle className="size-4" aria-hidden />
             Mon profil
           </Link>
         </div>
-      </div>
+      </Card>
 
       <TableauDeBord />
 

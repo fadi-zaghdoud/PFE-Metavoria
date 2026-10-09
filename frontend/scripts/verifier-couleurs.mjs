@@ -15,6 +15,12 @@
 // AUTORISÉ : `text-white`, les blancs translucides sur les surfaces de marque (bg-white/10,
 // ring-white/20…), les teintes moyennes (300 à 500), les aplats soutenus des boutons.
 //
+// APLAT (consigne du 09/10/2026) : aucun dégradé, effet de verre, flou ni lueur — ils passent
+// mal au vidéoprojecteur et gênent le mode sombre. INTERDIT dans src/ (composants et
+// index.css) : utilitaires de dégradé (bg-gradient-*, bg-linear-*, bg-radial-*, bg-conic-*,
+// text-gradient), toute fonction CSS *-gradient(), les utilitaires backdrop-* et
+// backdrop-filter, le flou (blur-*, blur()), les lueurs (shadow-glow) et la classe glass.
+//
 // Lancer : npm run verifier:couleurs
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -75,13 +81,30 @@ function verdict(variantes, utilitaire, couleur, nuanceTexte, alphaTexte, ligne)
   return null;
 }
 
-function* fichiers(dossier) {
+function* fichiers(dossier, motif = /\.(tsx?|jsx?)$/) {
   for (const nom of readdirSync(dossier)) {
     const chemin = join(dossier, nom);
-    if (statSync(chemin).isDirectory()) yield* fichiers(chemin);
-    else if (/\.(tsx?|jsx?)$/.test(nom)) yield chemin;
+    if (statSync(chemin).isDirectory()) yield* fichiers(chemin, motif);
+    else if (motif.test(nom)) yield chemin;
   }
 }
+
+// Effets interdits par l'aplat. `glass-box` (la transparence du module IA, dans les
+// commentaires) n'est pas la classe `glass` : le tiret qui suit l'exclut.
+const EFFETS = [
+  [/(?<![\w-])(?:[a-z0-9-]+:)*bg-(?:gradient|linear|radial|conic)-/g, 'dégradé'],
+  [/(?<![\w-])text-gradient(?![\w-])/g, 'texte en dégradé'],
+  [/[a-z-]*-gradient\(/g, 'dégradé CSS'],
+  [/(?<![\w-])(?:[a-z0-9-]+:)*backdrop-[a-z]+/g, 'effet de verre (arrière-plan filtré)'],
+  [/(?<![\w-])(?:[a-z0-9-]+:)*blur-(?:none|xs|sm|md|lg|xl|[2-3]xl|\[[^\]]*\])(?![\w-])/g, 'flou'],
+  [/(?<![\w-])blur\(/g, 'flou CSS'],
+  [/shadow-glow/g, 'lueur'],
+  [/(?<![\w-])glass(?![\w-])/g, 'effet de verre'],
+];
+// Un texte en jeton rendu translucide (text-alerte-texte/90…) échappe au calcul de
+// `verifier:contrastes`, qui mesure les jetons pleins : un tel texte tombait à 4,18:1.
+const TEXTE_TRANSLUCIDE =
+  /(?<![\w-])(?:[a-z0-9-]+:)*text-(?:texte(?:-[234])?|marque(?:-fort)?|(?:succes|alerte|danger|info)-texte(?:-fort)?)\/\d{1,3}(?![\w-])/g;
 
 const ecarts = [];
 let examines = 0;
@@ -100,10 +123,30 @@ for (const chemin of fichiers(RACINE)) {
     });
 }
 
+// Aplat : composants ET feuille de style (la palette du PDF/Excel reste exclue).
+const effets = [];
+for (const chemin of fichiers(RACINE, /\.(tsx?|jsx?|css)$/)) {
+  const rel = relative(RACINE, chemin).split(sep).join('/');
+  if (EXCLUS.has(rel)) continue;
+  readFileSync(chemin, 'utf-8')
+    .split('\n')
+    .forEach((ligne, i) => {
+      for (const [motif, nature] of EFFETS)
+        for (const m of ligne.matchAll(motif)) effets.push(`${rel}:${i + 1}  ${m[0]}  — ${nature}`);
+      for (const m of ligne.matchAll(TEXTE_TRANSLUCIDE))
+        effets.push(`${rel}:${i + 1}  ${m[0]}  — texte translucide : contraste non vérifiable, passer au jeton plein`);
+    });
+}
+
 if (ecarts.length > 0) {
   console.error(`✗ ${ecarts.length} couleur(s) écrite(s) pour le thème clair seulement :\n`);
   for (const e of ecarts) console.error(`  ${e}`);
   console.error('\nVoir les jetons sémantiques de src/index.css.');
-  process.exit(1);
 }
+if (effets.length > 0) {
+  console.error(`✗ ${effets.length} effet(s) interdit(s) par l'aplat (dégradé, verre, flou, lueur) :\n`);
+  for (const e of effets) console.error(`  ${e}`);
+}
+if (ecarts.length > 0 || effets.length > 0) process.exit(1);
 console.log(`✓ Aucune couleur réservée au thème clair (${examines} fichiers examinés).`);
+console.log('✓ Aucun dégradé, effet de verre, flou ni lueur, ni texte translucide (composants et feuille de style).');

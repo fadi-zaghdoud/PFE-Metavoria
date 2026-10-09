@@ -20,7 +20,7 @@ export function Th({ className, ...props }: ThHTMLAttributes<HTMLTableCellElemen
   return (
     <th
       className={cn(
-        'sticky top-0 z-10 border-b border-bordure bg-surface-2/95 px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-texte-4 backdrop-blur',
+        'sticky top-0 z-10 border-b border-bordure bg-surface-2 px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-texte-4',
         className,
       )}
       {...props}

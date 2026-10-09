@@ -252,7 +252,7 @@ export function ParametresPage() {
                     {nonAssignes} ticket{nonAssignes > 1 ? 's' : ''} non assigné
                     {nonAssignes > 1 ? 's' : ''} — ce changement ne les affecte pas
                   </p>
-                  <p className="mt-0.5 text-alerte-texte/90">
+                  <p className="mt-0.5 text-alerte-texte">
                     L'affectation automatique ne s'applique qu'aux tickets créés à partir de
                     maintenant. Les tickets déjà en attente doivent être{' '}
                     <Link to="/tickets?nonAssignes=true" className="font-medium underline">

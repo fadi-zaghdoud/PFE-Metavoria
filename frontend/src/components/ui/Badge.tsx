@@ -15,9 +15,19 @@ const VARIANTS: Record<BadgeVariant, string> = {
 interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
   variant?: BadgeVariant;
   dot?: boolean;
+  // Couleur de la pastille, quand elle porte une identité propre (statut d'un ticket) ;
+  // à défaut, elle reprend la couleur du texte.
+  pastille?: string;
 }
 
-export function Badge({ variant = 'neutral', dot = false, className, children, ...props }: BadgeProps) {
+export function Badge({
+  variant = 'neutral',
+  dot = false,
+  pastille,
+  className,
+  children,
+  ...props
+}: BadgeProps) {
   return (
     <span
       className={cn(
@@ -27,7 +37,7 @@ export function Badge({ variant = 'neutral', dot = false, className, children, .
       )}
       {...props}
     >
-      {dot && <span className="size-1.5 rounded-full bg-current" aria-hidden />}
+      {dot && <span className={cn('size-1.5 rounded-full', pastille ?? 'bg-current')} aria-hidden />}
       {children}
     </span>
   );

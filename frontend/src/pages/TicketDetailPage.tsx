@@ -497,7 +497,7 @@ function EncartResumeFil({
   return (
     <div className="rounded-xl border border-marque-fond-2 bg-marque-fond/40 p-3">
       <div className="flex items-center gap-2">
-        <span className="flex size-6 items-center justify-center rounded-md bg-gradient-to-br from-primary-500 to-accent-600 text-white">
+        <span className="flex size-6 items-center justify-center rounded-md bg-primary-600 text-white">
           <Sparkles className="size-3.5" aria-hidden />
         </span>
         <h3 className="text-xs font-semibold text-texte-2">Résumé du fil (IA)</h3>
@@ -1232,13 +1232,13 @@ export function TicketDetailPage() {
           </Card>
 
           {/* Assistant IA — suggestions à la création (Greffe 1, glass-box : montre sa confiance) */}
-          <div className="relative overflow-hidden rounded-2xl border border-marque-bordure/70 bg-gradient-to-br from-marque-fond/70 to-violet-50/50 dark:to-violet-500/10 p-4">
+          <div className="relative overflow-hidden rounded-2xl border border-marque-bordure/70 bg-marque-fond/70 p-4">
             <span
               aria-hidden
-              className="pointer-events-none absolute -right-8 -top-8 size-24 rounded-full bg-gradient-to-br from-primary-400/20 to-transparent blur-2xl"
+              className="pointer-events-none absolute -right-8 -top-8 size-24 rounded-full bg-marque-fond-2/60"
             />
             <div className="relative flex items-center gap-2">
-              <span className="flex size-7 items-center justify-center rounded-lg bg-gradient-to-br from-primary-500 to-accent-600 text-white shadow-glow-sm ring-1 ring-inset ring-white/20">
+              <span className="flex size-7 items-center justify-center rounded-lg bg-primary-600 text-white ring-1 ring-inset ring-white/20">
                 <Sparkles className="size-4" aria-hidden />
               </span>
               <h2 className="text-sm font-semibold text-texte-2">Assistant IA</h2>

@@ -33,7 +33,7 @@ export function Topbar({ onOpenMobileNav, onOpenPalette }: TopbarProps) {
   const crumbs = useBreadcrumbs();
 
   return (
-    <header className="glass sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-bordure/70 px-4 shadow-xs md:px-6">
+    <header className="sticky top-0 z-30 bg-surface flex h-14 items-center gap-3 border-b border-bordure/70 px-4 shadow-xs md:px-6">
       <button
         onClick={onOpenMobileNav}
         aria-label="Ouvrir le menu"

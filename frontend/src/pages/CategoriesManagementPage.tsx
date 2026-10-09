@@ -203,7 +203,7 @@ export function CategoriesManagementPage() {
       {!modeleDisponible && !chargement && (
         <Alert variant="warning" className="mb-4">
           <p className="font-medium">Statut IA indisponible</p>
-          <p className="mt-0.5 text-alerte-texte/90">
+          <p className="mt-0.5 text-alerte-texte">
             Le service IA est injoignable : la reconnaissance des catégories ne peut pas être vérifiée. La
             création et l'édition des descriptions restent possibles ; le renommage et la suppression sont
             bloqués par sécurité.
@@ -216,7 +216,7 @@ export function CategoriesManagementPage() {
       {modeleDisponible && aDesNonReconnues && !chargement && (
         <Alert variant="info" className="mb-4">
           <p className="font-medium">Certaines catégories ne sont pas encore reconnues par l'IA</p>
-          <p className="mt-0.5 text-info-texte-fort/90">
+          <p className="mt-0.5 text-info-texte-fort">
             L'IA ne peut suggérer que les catégories qu'elle a apprises. Les autres restent utilisables
             manuellement : chaque ticket que les techniciens y classent devient un exemple.{' '}
             {nbApprenables > 0

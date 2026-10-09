@@ -30,10 +30,10 @@ interface ToastApi {
 const ToastContext = createContext<ToastApi | null>(null);
 
 const STYLES: Record<ToastVariant, { icone: typeof Info; classes: string }> = {
-  success: { icone: CircleCheck, classes: 'text-emerald-600' },
-  error: { icone: CircleAlert, classes: 'text-rose-600' },
-  warning: { icone: TriangleAlert, classes: 'text-amber-600' },
-  info: { icone: Info, classes: 'text-sky-600' },
+  success: { icone: CircleCheck, classes: 'text-succes-accent' },
+  error: { icone: CircleAlert, classes: 'text-danger-accent' },
+  warning: { icone: TriangleAlert, classes: 'text-alerte-accent' },
+  info: { icone: Info, classes: 'text-info-accent' },
 };
 
 // Les erreurs restent affichées plus longtemps que les confirmations.
@@ -93,19 +93,19 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 exit={{ opacity: 0, x: 24 }}
                 transition={{ duration: 0.2, ease: 'easeOut' }}
                 role={toast.variant === 'error' ? 'alert' : 'status'}
-                className="pointer-events-auto flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-3.5 shadow-lg"
+                className="pointer-events-auto flex items-start gap-3 rounded-xl border border-bordure bg-surface p-3.5 shadow-lg"
               >
                 <Icone className={cn('mt-0.5 size-5 shrink-0', classes)} aria-hidden />
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-slate-900">{toast.titre}</p>
+                  <p className="text-sm font-semibold text-texte">{toast.titre}</p>
                   {toast.description && (
-                    <p className="mt-0.5 text-sm leading-snug text-slate-500">{toast.description}</p>
+                    <p className="mt-0.5 text-sm leading-snug text-texte-4">{toast.description}</p>
                   )}
                 </div>
                 <button
                   onClick={() => fermer(toast.id)}
                   aria-label="Fermer la notification"
-                  className="rounded-md p-1 text-slate-300 transition-colors hover:bg-slate-100 hover:text-slate-500"
+                  className="rounded-md p-1 text-texte-4 transition-colors hover:bg-surface-3 hover:text-texte-2"
                 >
                   <X className="size-4" aria-hidden />
                 </button>

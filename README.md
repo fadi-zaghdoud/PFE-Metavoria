@@ -497,6 +497,27 @@ python -m pytest -m "not slow"     # suite rapide, 100 % hors ligne
   se désactivent proprement si la dépendance manque.
 - Dans la pile Docker : `docker compose run --rm ml pytest -m "not slow" -p no:cacheprovider`.
 
+### Frontend — lint, build, garde-fous du thème
+
+```bash
+cd frontend
+npm ci
+npm run lint                  # oxlint
+npm run build                 # tsc -b, puis vite build
+npm run verifier:couleurs     # aucune couleur réservée au thème clair
+npm run verifier:contrastes   # contrastes WCAG des jetons, dans les deux thèmes
+```
+
+- **`verifier:couleurs`** refuse toute classe Tailwind qui ne vaut que pour le thème
+  clair (nuances neutres `slate-*`, `gray-*`…, blanc ou noir pleins, fonds pâles `-50` à
+  `-200`, textes `-600` et plus…) sans son pendant `dark:` sur la même ligne. Les écrans
+  passent par les jetons sémantiques d'`src/index.css` (`surface`, `texte`, `bordure`,
+  `marque`, états…), redéfinis pour le thème sombre. `exportRapport.ts` en est exclu :
+  les exports PDF et Excel restent clairs, quel que soit le thème de l'interface.
+- **`verifier:contrastes`** calcule, à partir d'`index.css` et de la palette Tailwind, le
+  contraste de chaque couple texte/fond des jetons, dans les deux thèmes : 4,5:1 pour le
+  texte, 3:1 pour les icônes d'état. Il échoue si un couple passe sous son seuil.
+
 ## Modèle de données
 
 Entités principales (voir `backend/prisma/schema.prisma`) : `Utilisateur`, `Ticket`, `Categorie`, `Commentaire`, `PieceJointe`, `Notification`, `SuggestionIA`, `EvenementTicket`, `RefreshToken`, ainsi que `Parametre`, `TechnicienCategorie` et `Absence` (affectation automatique, §6.2) et `JournalAudit` (traçabilité, §7).
@@ -782,6 +803,9 @@ alertes automatiques sur échecs répétés · durée de conservation réglable 
 - ✅ **Flywheel** : capture des labels validés, réentraînement supervisé et garde de déploiement
   qui refuse un modèle non meilleur sur le jeu réel
 - ✅ Design system frontend (sidebar, palette ⌘K, toasts, composants réutilisables)
+- ✅ **Thème clair et thème sombre** sur tous les écrans : préférence du système par
+  défaut, bascule à trois états (système, clair, sombre) mémorisée dans le navigateur,
+  contrastes vérifiés dans les deux thèmes ; les exports PDF et Excel restent clairs
 - ✅ **Conteneurisation Docker autonome et prouvée sur serveur nu** : 7 services, provisionnement
   vérifié des modèles. Après le premier démarrage, le **module IA** fonctionne hors-ligne ; les
   pièces jointes, l'OCR, les photos de profil et les e-mails exigent Cloudinary et le SMTP
@@ -789,7 +813,8 @@ alertes automatiques sur échecs répétés · durée de conservation réglable 
   synthétiques aux numéros fixes, base de connaissances du RAG, réentraînement — voir
   « Données de démonstration »
 - ✅ **Intégration continue** (GitHub Actions) : typage, lint et tests du backend, suite rapide
-  pytest du module IA, rejoués à chaque push et pull request vers `main`
+  pytest du module IA, lint, build et garde-fous du thème du frontend, rejoués à chaque
+  push et pull request vers `main`
 
 **Non retenu au périmètre** — écarté par écrit, annexe B du
 [plan de travail](docs/plan-de-travail-esprit.md) :

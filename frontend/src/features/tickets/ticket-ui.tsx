@@ -74,10 +74,10 @@ export function BadgeAnciennete({
 
 // ── Priorité ─────────────────────────────────────────────────────────────────
 const PRIORITES: Record<PrioriteTicket, { label: string; icon: LucideIcon; classe: string }> = {
-  CRITIQUE: { label: 'Critique', icon: TriangleAlert, classe: 'text-rose-600' },
-  HAUTE: { label: 'Haute', icon: SignalHigh, classe: 'text-amber-600' },
-  MOYENNE: { label: 'Moyenne', icon: SignalHigh, classe: 'text-sky-600' },
-  FAIBLE: { label: 'Faible', icon: Minus, classe: 'text-slate-400' },
+  CRITIQUE: { label: 'Critique', icon: TriangleAlert, classe: 'text-danger-texte' },
+  HAUTE: { label: 'Haute', icon: SignalHigh, classe: 'text-alerte-texte' },
+  MOYENNE: { label: 'Moyenne', icon: SignalHigh, classe: 'text-info-texte' },
+  FAIBLE: { label: 'Faible', icon: Minus, classe: 'text-texte-4' },
 };
 
 export const LABEL_PRIORITE: Record<PrioriteTicket, string> = {
@@ -97,7 +97,7 @@ export function PrioriteIcone({ priorite }: { priorite: PrioriteTicket }) {
   const { icon: Icon, classe } = PRIORITES[priorite];
   return (
     <span
-      className={cn('flex size-8 shrink-0 items-center justify-center rounded-full bg-slate-100', classe)}
+      className={cn('flex size-8 shrink-0 items-center justify-center rounded-full bg-surface-3', classe)}
       aria-hidden
     >
       <Icon className="size-4" />

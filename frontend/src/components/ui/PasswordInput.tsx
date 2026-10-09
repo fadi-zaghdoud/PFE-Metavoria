@@ -14,7 +14,7 @@ export function PasswordInput({ className, ...props }: InputHTMLAttributes<HTMLI
         type="button"
         onClick={() => setVisible((v) => !v)}
         aria-label={visible ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
-        className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 transition-colors hover:text-slate-600"
+        className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-texte-4 transition-colors hover:text-texte-3"
       >
         {visible ? <EyeOff className="size-4" aria-hidden /> : <Eye className="size-4" aria-hidden />}
       </button>
@@ -32,10 +32,10 @@ interface Niveau {
 }
 
 const NIVEAUX: Niveau[] = [
-  { label: 'Très faible', barres: 1, couleur: 'bg-rose-500', texte: 'text-rose-600' },
-  { label: 'Faible', barres: 2, couleur: 'bg-amber-500', texte: 'text-amber-600' },
-  { label: 'Bon', barres: 3, couleur: 'bg-sky-500', texte: 'text-sky-600' },
-  { label: 'Excellent', barres: 4, couleur: 'bg-emerald-500', texte: 'text-emerald-600' },
+  { label: 'Très faible', barres: 1, couleur: 'bg-rose-500', texte: 'text-danger-texte' },
+  { label: 'Faible', barres: 2, couleur: 'bg-amber-500', texte: 'text-alerte-texte' },
+  { label: 'Bon', barres: 3, couleur: 'bg-sky-500', texte: 'text-info-texte' },
+  { label: 'Excellent', barres: 4, couleur: 'bg-emerald-500', texte: 'text-succes-texte' },
 ];
 
 // Termes trop prévisibles (rejetés aussi côté backend) : plafonnent la jauge.
@@ -69,14 +69,14 @@ export function PasswordStrength({ motDePasse }: { motDePasse: string }) {
             key={i}
             className={cn(
               'h-1 flex-1 rounded-full transition-colors duration-200',
-              i < niveau.barres ? niveau.couleur : 'bg-slate-200',
+              i < niveau.barres ? niveau.couleur : 'bg-surface-4',
             )}
             aria-hidden
           />
         ))}
         <span className={cn('ml-1 text-xs font-medium', niveau.texte)}>{niveau.label}</span>
       </div>
-      <p className="mt-1 text-xs text-slate-400">
+      <p className="mt-1 text-xs text-texte-4">
         10 caractères minimum, avec au moins une majuscule, une minuscule et un chiffre.
       </p>
     </div>

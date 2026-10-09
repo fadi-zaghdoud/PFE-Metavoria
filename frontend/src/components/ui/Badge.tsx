@@ -4,12 +4,12 @@ import { cn } from '../../lib/cn';
 export type BadgeVariant = 'neutral' | 'primary' | 'success' | 'warning' | 'danger' | 'info';
 
 const VARIANTS: Record<BadgeVariant, string> = {
-  neutral: 'bg-slate-100 text-slate-600 ring-slate-500/10',
-  primary: 'bg-primary-50 text-primary-700 ring-primary-600/15',
-  success: 'bg-emerald-50 text-emerald-700 ring-emerald-600/15',
-  warning: 'bg-amber-50 text-amber-700 ring-amber-600/20',
-  danger: 'bg-rose-50 text-rose-700 ring-rose-600/15',
-  info: 'bg-sky-50 text-sky-700 ring-sky-600/15',
+  neutral: 'bg-surface-3 text-texte-3 ring-texte-4/10',
+  primary: 'bg-marque-fond text-marque-fort ring-marque/15',
+  success: 'bg-succes-fond text-succes-texte ring-succes-accent/15',
+  warning: 'bg-alerte-fond text-alerte-texte ring-alerte-accent/20',
+  danger: 'bg-danger-fond text-danger-texte ring-danger-accent/15',
+  info: 'bg-info-fond text-info-texte ring-info-accent/15',
 };
 
 interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {

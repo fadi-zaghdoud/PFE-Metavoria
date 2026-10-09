@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { motion } from 'motion/react';
 import { BrainCircuit, GaugeCircle, Sparkles } from 'lucide-react';
 import { Logo } from './Logo';
+import { BasculeTheme } from '../ui/BasculeTheme';
 
 const ARGUMENTS = [
   {
@@ -32,7 +33,7 @@ export function AuthLayout({ titre, sousTitre, children, pied }: AuthLayoutProps
   return (
     <div className="grid min-h-dvh lg:grid-cols-[1.1fr_1fr]">
       {/* Panneau de marque */}
-      <div className="relative hidden overflow-hidden bg-slate-950 lg:flex lg:flex-col lg:justify-between lg:p-10">
+      <div className="relative hidden overflow-hidden bg-encre lg:flex lg:flex-col lg:justify-between lg:p-10">
         <div
           aria-hidden
           className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,rgba(99,102,241,0.30),transparent_55%),radial-gradient(ellipse_at_bottom_right,rgba(139,92,246,0.20),transparent_55%)]"
@@ -74,7 +75,7 @@ export function AuthLayout({ titre, sousTitre, children, pied }: AuthLayoutProps
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.08, ease: 'easeOut' }}
-            className="mt-3 text-sm leading-relaxed text-slate-400"
+            className="mt-3 text-sm leading-relaxed text-texte-sur-encre"
           >
             Centralisez vos demandes, laissez l'IA classifier et prioriser, et capitalisez sur chaque
             résolution.
@@ -94,18 +95,19 @@ export function AuthLayout({ titre, sousTitre, children, pied }: AuthLayoutProps
                 </span>
                 <div>
                   <p className="text-sm font-medium text-white">{t}</p>
-                  <p className="mt-0.5 text-xs leading-relaxed text-slate-400">{texte}</p>
+                  <p className="mt-0.5 text-xs leading-relaxed text-texte-sur-encre">{texte}</p>
                 </div>
               </motion.li>
             ))}
           </ul>
         </div>
 
-        <p className="relative text-xs text-slate-500">© 2026 Metavoria — Projet de fin d'études</p>
+        <p className="relative text-xs text-texte-sur-encre">© 2026 Metavoria — Projet de fin d'études</p>
       </div>
 
       {/* Formulaire */}
-      <div className="flex items-center justify-center bg-slate-50 px-4 py-10">
+      <div className="relative flex items-center justify-center bg-surface-2 px-4 py-10">
+        <BasculeTheme className="absolute right-4 top-4" />
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -115,10 +117,10 @@ export function AuthLayout({ titre, sousTitre, children, pied }: AuthLayoutProps
           <div className="mb-8 lg:hidden">
             <Logo />
           </div>
-          <h2 className="text-xl font-semibold tracking-tight text-slate-900">{titre}</h2>
-          <p className="mt-1 text-sm text-slate-500">{sousTitre}</p>
+          <h2 className="text-xl font-semibold tracking-tight text-texte">{titre}</h2>
+          <p className="mt-1 text-sm text-texte-4">{sousTitre}</p>
           <div className="mt-7">{children}</div>
-          {pied && <div className="mt-6 text-center text-sm text-slate-500">{pied}</div>}
+          {pied && <div className="mt-6 text-center text-sm text-texte-4">{pied}</div>}
         </motion.div>
       </div>
     </div>

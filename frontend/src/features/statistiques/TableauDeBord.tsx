@@ -38,14 +38,14 @@ const GRAD_STATUT: Record<StatutTicket, string> = {
   EN_COURS: 'from-primary-400 to-primary-600',
   EN_ATTENTE: 'from-amber-400 to-amber-500',
   RESOLU: 'from-emerald-400 to-emerald-500',
-  CLOTURE: 'from-slate-300 to-slate-400',
+  CLOTURE: 'from-serie-neutre-a to-serie-neutre-b',
 };
 
 const GRAD_PRIORITE: Record<PrioriteTicket, string> = {
   CRITIQUE: 'from-rose-400 to-rose-500',
   HAUTE: 'from-amber-400 to-orange-500',
   MOYENNE: 'from-sky-400 to-sky-500',
-  FAIBLE: 'from-slate-300 to-slate-400',
+  FAIBLE: 'from-serie-neutre-a to-serie-neutre-b',
 };
 
 interface DonneeBarre {
@@ -85,12 +85,12 @@ function CarteBarres({
       <CardHeader title={titre} description={description} />
       <CardContent className="@container space-y-0.5">
         {vide ? (
-          <p className="py-6 text-center text-sm text-slate-400">Aucune donnée sur la période.</p>
+          <p className="py-6 text-center text-sm text-texte-4">Aucune donnée sur la période.</p>
         ) : (
           donnees.map((d, i) => (
             <div
               key={d.cle ?? d.label}
-              className="group -mx-2 flex items-center gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-slate-50"
+              className="group -mx-2 flex items-center gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-surface-2"
             >
               {/* La colonne de libellés s'élargit avec LA CARTE, pas avec l'écran : en
                   bandeau pleine largeur, « Youssef Mansour » et « Nadia Khelifi » tenaient
@@ -100,20 +100,20 @@ function CarteBarres({
                   pas rogner les barres. `truncate` reste le filet pour les noms extrêmes,
                   avec le nom complet en infobulle. */}
               <span
-                className="flex w-24 shrink-0 items-center gap-1 text-xs font-medium text-slate-500 @4xl:w-44"
+                className="flex w-24 shrink-0 items-center gap-1 text-xs font-medium text-texte-4 @4xl:w-44"
                 title={d.annotation ? `${d.label} — ${d.annotation}` : d.label}
               >
                 <span className="truncate">{d.label}</span>
                 {d.annotation && (
                   <span
-                    className="shrink-0 rounded bg-amber-100 px-1 text-[10px] font-semibold text-amber-700"
+                    className="shrink-0 rounded bg-alerte-fond-2 px-1 text-[10px] font-semibold text-alerte-texte"
                     aria-label={d.annotation}
                   >
                     abs.
                   </span>
                 )}
               </span>
-              <div className="relative h-2.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+              <div className="relative h-2.5 flex-1 overflow-hidden rounded-full bg-surface-3">
                 <motion.div
                   className={cn('h-full rounded-full bg-gradient-to-r', d.couleur)}
                   initial={{ width: '0%' }}
@@ -121,7 +121,7 @@ function CarteBarres({
                   transition={{ duration: 0.7, delay: 0.1 + i * 0.05, ease: [0.16, 1, 0.3, 1] }}
                 />
               </div>
-              <span className="w-8 text-right text-xs font-semibold tabular-nums text-slate-700">
+              <span className="w-8 text-right text-xs font-semibold tabular-nums text-texte-2">
                 {d.value}
               </span>
             </div>
@@ -135,7 +135,7 @@ function CarteBarres({
 function ChampFiltre({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
-      <span className="mb-1 block text-xs font-medium text-slate-500">{label}</span>
+      <span className="mb-1 block text-xs font-medium text-texte-4">{label}</span>
       {children}
     </div>
   );
@@ -293,7 +293,7 @@ export function TableauDeBord() {
       {/* Panneau de filtres */}
       <Card className="animate-fade-up p-4">
         <div className="flex flex-wrap items-end gap-3">
-          <span className="mr-1 hidden items-center gap-1.5 self-center text-xs font-semibold uppercase tracking-wide text-slate-400 sm:inline-flex">
+          <span className="mr-1 hidden items-center gap-1.5 self-center text-xs font-semibold uppercase tracking-wide text-texte-4 sm:inline-flex">
             <SlidersHorizontal className="size-3.5" aria-hidden />
             Filtres
           </span>

@@ -17,6 +17,7 @@ import { authApi } from '../../features/auth/authApi';
 import { LABELS_ROLE } from '../../lib/format';
 import { Avatar } from '../ui/Avatar';
 import { Badge } from '../ui/Badge';
+import { BasculeTheme } from '../ui/BasculeTheme';
 import { Logo } from './Logo';
 import { cn } from '../../lib/cn';
 
@@ -43,8 +44,8 @@ function SidebarLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => v
         cn(
           'group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-150',
           isActive
-            ? 'bg-primary-50 text-primary-700 shadow-xs ring-1 ring-inset ring-primary-600/10'
-            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
+            ? 'bg-marque-fond text-marque-fort shadow-xs ring-1 ring-inset ring-marque/10'
+            : 'text-texte-3 hover:bg-surface-3 hover:text-texte',
         )
       }
     >
@@ -60,7 +61,7 @@ function SidebarLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => v
           <Icon
             className={cn(
               'size-4.5 shrink-0 transition-colors duration-150',
-              isActive ? 'text-primary-600' : 'text-slate-400 group-hover:text-slate-600',
+              isActive ? 'text-marque' : 'text-texte-4 group-hover:text-texte-3',
             )}
             aria-hidden
           />
@@ -74,7 +75,7 @@ function SidebarLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => v
 
 function SectionTitle({ children }: { children: string }) {
   return (
-    <p className="px-3 pb-1.5 pt-5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+    <p className="px-3 pb-1.5 pt-5 text-[11px] font-semibold uppercase tracking-wider text-texte-4">
       {children}
     </p>
   );
@@ -94,8 +95,8 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   }
 
   return (
-    <div className="flex h-full w-64 flex-col border-r border-slate-200/80 bg-white/90 backdrop-blur-xl">
-      <div className="flex h-14 items-center border-b border-slate-100 px-4">
+    <div className="flex h-full w-64 flex-col border-r border-bordure/80 bg-surface/90 backdrop-blur-xl">
+      <div className="flex h-14 items-center border-b border-bordure-faible px-4">
         <Logo />
       </div>
 
@@ -140,21 +141,28 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         )}
       </nav>
 
+      {/* Bascule de thème du téléphone (la barre du haut la masque sous 640 px). La barre
+          latérale de bureau n'apparaît qu'à partir de 768 px : cette ligne n'y est jamais visible. */}
+      <div className="flex items-center justify-between border-t border-bordure-faible px-5 py-2.5 sm:hidden">
+        <span className="text-xs font-medium text-texte-4">Thème</span>
+        <BasculeTheme />
+      </div>
+
       {utilisateur && (
-        <div className="border-t border-slate-100 p-3">
-          <div className="flex items-center gap-2.5 rounded-xl border border-transparent px-2 py-1.5 transition-colors hover:border-slate-200/70 hover:bg-slate-50">
+        <div className="border-t border-bordure-faible p-3">
+          <div className="flex items-center gap-2.5 rounded-xl border border-transparent px-2 py-1.5 transition-colors hover:border-bordure/70 hover:bg-surface-2">
             <Avatar prenom={utilisateur.prenom} nom={utilisateur.nom} photoUrl={utilisateur.photoUrl} />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-slate-900">
+              <p className="truncate text-sm font-medium text-texte">
                 {utilisateur.prenom} {utilisateur.nom}
               </p>
-              <p className="truncate text-xs text-slate-400">{LABELS_ROLE[utilisateur.role]}</p>
+              <p className="truncate text-xs text-texte-4">{LABELS_ROLE[utilisateur.role]}</p>
             </div>
             <button
               onClick={handleDeconnexion}
               aria-label="Se déconnecter"
               title="Se déconnecter"
-              className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white hover:text-rose-600 hover:shadow-xs"
+              className="rounded-lg p-1.5 text-texte-4 transition-colors hover:bg-surface hover:text-danger-accent hover:shadow-xs"
             >
               <LogOut className="size-4" aria-hidden />
             </button>

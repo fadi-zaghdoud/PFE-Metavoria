@@ -3,7 +3,7 @@ import { ChevronDown } from 'lucide-react';
 import { cn } from '../../lib/cn';
 
 const FIELD_BASE =
-  'w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 shadow-xs transition-colors duration-150 hover:border-slate-400 focus:border-primary-500 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500';
+  'w-full rounded-lg border border-bordure-forte bg-surface px-3 text-sm text-texte placeholder:text-texte-4 shadow-xs transition-colors duration-150 hover:border-bordure-survol focus:border-primary-500 disabled:cursor-not-allowed disabled:bg-surface-2 disabled:text-texte-4';
 
 export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
   return <input className={cn(FIELD_BASE, 'h-9', className)} {...props} />;
@@ -20,7 +20,7 @@ export function Select({ className, children, ...props }: SelectHTMLAttributes<H
         {children}
       </select>
       <ChevronDown
-        className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-slate-400"
+        className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-texte-4"
         aria-hidden
       />
     </div>
@@ -39,16 +39,16 @@ interface FieldProps {
 export function Field({ label, htmlFor, error, hint, children }: FieldProps) {
   return (
     <div className="space-y-1.5">
-      <label htmlFor={htmlFor} className="block text-sm font-medium text-slate-700">
+      <label htmlFor={htmlFor} className="block text-sm font-medium text-texte-2">
         {label}
       </label>
       {children}
       {error ? (
-        <p className="text-xs text-rose-600" role="alert">
+        <p className="text-xs text-danger-texte" role="alert">
           {error}
         </p>
       ) : hint ? (
-        <p className="text-xs text-slate-400">{hint}</p>
+        <p className="text-xs text-texte-4">{hint}</p>
       ) : null}
     </div>
   );

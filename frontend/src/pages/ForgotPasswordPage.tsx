@@ -111,7 +111,7 @@ export function ForgotPasswordPage() {
       titre="Mot de passe oublié"
       sousTitre={SOUS_TITRES[etape]}
       pied={
-        <Link to="/connexion" className="font-medium text-primary-600 hover:underline">
+        <Link to="/connexion" className="font-medium text-marque hover:underline">
           Retour à la connexion
         </Link>
       }
@@ -173,19 +173,19 @@ export function ForgotPasswordPage() {
                     setEtape('EMAIL');
                     setErreur(null);
                   }}
-                  className="inline-flex items-center gap-1 text-slate-500 hover:text-slate-900"
+                  className="inline-flex items-center gap-1 text-texte-4 hover:text-texte"
                 >
                   <ArrowLeft className="size-3.5" aria-hidden />
                   Changer d'e-mail
                 </button>
                 {renvoiDans > 0 ? (
-                  <span className="tabular-nums text-slate-400">Renvoyer dans {renvoiDans} s</span>
+                  <span className="tabular-nums text-texte-4">Renvoyer dans {renvoiDans} s</span>
                 ) : (
                   <button
                     type="button"
                     onClick={() => demanderCode('RENVOI')}
                     disabled={enCours}
-                    className="font-medium text-primary-600 hover:underline disabled:opacity-50"
+                    className="font-medium text-marque hover:underline disabled:opacity-50"
                   >
                     Renvoyer le code
                   </button>
@@ -197,7 +197,7 @@ export function ForgotPasswordPage() {
           {etape === 'MOT_DE_PASSE' && (
             <form onSubmit={handleSubmitMotDePasse} className="space-y-4">
               <div className="space-y-1.5">
-                <label htmlFor="nouveauMotDePasse" className="block text-sm font-medium text-slate-700">
+                <label htmlFor="nouveauMotDePasse" className="block text-sm font-medium text-texte-2">
                   Nouveau mot de passe
                 </label>
                 <PasswordInput

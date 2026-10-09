@@ -69,7 +69,7 @@ export function Dialog({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
-            className="absolute inset-0 bg-slate-950/40 backdrop-blur-[2px]"
+            className="absolute inset-0 bg-encre/40 backdrop-blur-[2px]"
             onClick={onClose}
             aria-hidden
           />
@@ -84,7 +84,7 @@ export function Dialog({
             exit={lateral ? { opacity: 0, x: 32 } : { opacity: 0, scale: 0.96, y: 8 }}
             transition={{ duration: 0.18, ease: 'easeOut' }}
             className={cn(
-              'relative border border-slate-200/80 bg-white shadow-xl outline-none',
+              'relative border border-bordure/80 bg-surface shadow-xl outline-none',
               lateral
                 ? 'flex h-full w-full max-w-lg flex-col overflow-hidden border-y-0 border-r-0 sm:rounded-l-2xl'
                 : 'w-full max-w-md rounded-2xl',
@@ -93,13 +93,13 @@ export function Dialog({
           >
             <div className="flex items-start justify-between gap-4 px-5 pt-5">
               <div>
-                <h2 className="text-base font-semibold text-slate-900">{title}</h2>
-                {description && <p className="mt-1 text-sm text-slate-500">{description}</p>}
+                <h2 className="text-base font-semibold text-texte">{title}</h2>
+                {description && <p className="mt-1 text-sm text-texte-4">{description}</p>}
               </div>
               <button
                 onClick={onClose}
                 aria-label="Fermer"
-                className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+                className="rounded-md p-1 text-texte-4 transition-colors hover:bg-surface-3 hover:text-texte-3"
               >
                 <X className="size-4" aria-hidden />
               </button>
@@ -108,7 +108,7 @@ export function Dialog({
               <div className={cn('px-5 py-4', lateral && 'flex-1 overflow-y-auto')}>{children}</div>
             )}
             {footer && (
-              <div className="flex justify-end gap-2 rounded-b-xl border-t border-slate-100 bg-slate-50/60 px-5 py-3.5">
+              <div className="flex justify-end gap-2 rounded-b-xl border-t border-bordure-faible bg-surface-2/60 px-5 py-3.5">
                 {footer}
               </div>
             )}

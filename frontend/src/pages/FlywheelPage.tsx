@@ -208,7 +208,7 @@ export function FlywheelPage() {
         />
         {reentrainementEnCours && (
           <CardContent>
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-texte-4">
               Le candidat s'entraîne côté service (asynchrone). Suivi automatique toutes les 2 s…
             </p>
           </CardContent>
@@ -248,28 +248,28 @@ export function FlywheelPage() {
                   <tr>
                     <Td>Actif (servi)</Td>
                     <Td className="text-right tabular-nums">{f3(rapport.actif.reel.macro_f1)}</Td>
-                    <Td className="text-right tabular-nums text-slate-400">{f3(rapport.actif.gold.macro_f1)}</Td>
+                    <Td className="text-right tabular-nums text-texte-4">{f3(rapport.actif.gold.macro_f1)}</Td>
                   </tr>
                   <tr>
                     <Td className="font-medium">Candidat</Td>
                     <Td className="text-right font-medium tabular-nums">{f3(rapport.candidat.reel.macro_f1)}</Td>
-                    <Td className="text-right tabular-nums text-slate-400">{f3(rapport.candidat.gold.macro_f1)}</Td>
+                    <Td className="text-right tabular-nums text-texte-4">{f3(rapport.candidat.gold.macro_f1)}</Td>
                   </tr>
                 </tbody>
               </Table>
             </TableContainer>
 
-            <p className="text-sm text-slate-600">
+            <p className="text-sm text-texte-3">
               Δ macro-F1 réel :{' '}
               {/* Vert seulement si DÉPLOYABLE (Δ≥+0.02) ; ambre pour un positif NUL (bruit,
                   refusé) ; rouge si négatif — la couleur suit la décision, pas juste le signe. */}
               <span
                 className={`font-semibold tabular-nums ${
                   rapport.candidat_meilleur
-                    ? 'text-emerald-600'
+                    ? 'text-succes-texte'
                     : rapport.delta_macro_f1_reel >= 0
-                      ? 'text-amber-600'
-                      : 'text-rose-600'
+                      ? 'text-alerte-texte'
+                      : 'text-danger-texte'
                 }`}
               >
                 {signe(rapport.delta_macro_f1_reel)}
@@ -279,7 +279,7 @@ export function FlywheelPage() {
 
             {/* Détail par classe (glass-box) : rend visible l'histoire de la courbe */}
             <div>
-              <h3 className="mb-2 text-sm font-semibold text-slate-700">F1 réel par classe</h3>
+              <h3 className="mb-2 text-sm font-semibold text-texte-2">F1 réel par classe</h3>
               <TableContainer>
                 <Table>
                   <thead>
@@ -302,10 +302,10 @@ export function FlywheelPage() {
                           <Td className="font-medium">{c}</Td>
                           <Td className="text-right tabular-nums">{f3(a)}</Td>
                           <Td className="text-right tabular-nums">{f3(cand)}</Td>
-                          <Td className={`text-right tabular-nums ${d > 0 ? 'text-emerald-600' : d < 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                          <Td className={`text-right tabular-nums ${d > 0 ? 'text-succes-texte' : d < 0 ? 'text-danger-texte' : 'text-texte-4'}`}>
                             {d === 0 ? '—' : signe(d)}
                           </Td>
-                          <Td className="text-right tabular-nums text-slate-400">{sup}</Td>
+                          <Td className="text-right tabular-nums text-texte-4">{sup}</Td>
                         </tr>
                       );
                     })}
@@ -339,7 +339,7 @@ export function FlywheelPage() {
                   <Rocket className="size-4" aria-hidden />
                   Déployer le candidat
                 </Button>
-                <p className="text-sm text-slate-500">
+                <p className="text-sm text-texte-4">
                   Déploiement indisponible : candidat non meilleur sur le test gelé
                   (Δ {signe(rapport.delta_macro_f1_reel)}, verdict {rapport.verdict_pre_enregistre}).
                   Le système refuse de déployer un modèle qui n'améliore pas le réel.
@@ -351,8 +351,8 @@ export function FlywheelPage() {
       )}
 
       {!chargement && !rapport && !rapportErreur && (
-        <div className="mt-6 flex items-center gap-3 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 p-6 text-sm text-slate-500">
-          <Brain className="size-5 shrink-0 text-slate-400" aria-hidden />
+        <div className="mt-6 flex items-center gap-3 rounded-xl border border-dashed border-bordure bg-surface-2/50 p-6 text-sm text-texte-4">
+          <Brain className="size-5 shrink-0 text-texte-4" aria-hidden />
           Aucun candidat encore évalué. Lance un réentraînement pour comparer un candidat au modèle actif.
         </div>
       )}

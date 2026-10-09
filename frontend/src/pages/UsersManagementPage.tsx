@@ -253,11 +253,11 @@ export function UsersManagementPage() {
       />
 
       {/* Barre d'outils : recherche + filtres (collante au défilement) */}
-      <div className="sticky top-14 z-20 -mx-4 mb-4 border-b border-slate-200/70 bg-slate-50/90 px-4 py-3 backdrop-blur md:-mx-6 md:px-6">
+      <div className="sticky top-14 z-20 -mx-4 mb-4 border-b border-bordure/70 bg-surface-2/90 px-4 py-3 backdrop-blur md:-mx-6 md:px-6">
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative min-w-52 flex-1 sm:max-w-xs">
             <Search
-              className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400"
+              className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-texte-4"
               aria-hidden
             />
             <Input
@@ -281,7 +281,7 @@ export function UsersManagementPage() {
               </option>
             ))}
           </Select>
-          <p className="ml-auto text-xs tabular-nums text-slate-400">
+          <p className="ml-auto text-xs tabular-nums text-texte-4">
             {chargement ? '…' : `${resultats.length} ${resultats.length > 1 ? 'comptes' : 'compte'}`}
           </p>
         </div>
@@ -332,16 +332,16 @@ export function UsersManagementPage() {
               resultats.map((u) => {
                 const estSoiMeme = u.id === utilisateurConnecte?.id;
                 return (
-                  <tr key={u.id} className="transition-colors hover:bg-slate-50/60">
+                  <tr key={u.id} className="transition-colors hover:bg-surface-2/60">
                     <Td>
                       <div className="flex items-center gap-3">
                         <Avatar prenom={u.prenom} nom={u.nom} photoUrl={u.photoUrl} />
                         <div className="min-w-0">
-                          <p className="flex items-center gap-1.5 truncate font-medium text-slate-900">
+                          <p className="flex items-center gap-1.5 truncate font-medium text-texte">
                             <span className="truncate">
                               {u.prenom} {u.nom}
                             </span>
-                            {estSoiMeme && <span className="text-xs font-normal text-slate-400">(vous)</span>}
+                            {estSoiMeme && <span className="text-xs font-normal text-texte-4">(vous)</span>}
                             {/* Rappel en lecture seule : l'administrateur qui regarde les
                                 comptes ne doit pas ignorer qu'un technicien est absent.
                                 Dates uniquement — le motif n'appartient qu'a la page Absences. */}
@@ -351,11 +351,11 @@ export function UsersManagementPage() {
                               </Badge>
                             )}
                           </p>
-                          <p className="truncate text-xs text-slate-400">{u.email}</p>
+                          <p className="truncate text-xs text-texte-4">{u.email}</p>
                         </div>
                       </div>
                     </Td>
-                    <Td className="hidden text-slate-500 md:table-cell">{u.service ?? '—'}</Td>
+                    <Td className="hidden text-texte-4 md:table-cell">{u.service ?? '—'}</Td>
                     <Td>
                       <Select
                         value={u.role}
@@ -381,7 +381,7 @@ export function UsersManagementPage() {
                         <button
                           type="button"
                           onClick={() => ouvrirSpecialites(u)}
-                          className="rounded-lg px-2 py-1 text-left text-xs text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
+                          className="rounded-lg px-2 py-1 text-left text-xs text-texte-4 transition-colors hover:bg-surface-3 hover:text-texte-2"
                           aria-label={`Modifier les spécialités de ${u.prenom} ${u.nom}`}
                         >
                           {u.specialites && u.specialites.length > 0
@@ -389,10 +389,10 @@ export function UsersManagementPage() {
                             : 'Aucune — définir'}
                         </button>
                       ) : (
-                        <span className="text-xs text-slate-300">—</span>
+                        <span className="text-xs text-texte-4">—</span>
                       )}
                     </Td>
-                    <Td className="hidden text-xs text-slate-400 lg:table-cell">
+                    <Td className="hidden text-xs text-texte-4 lg:table-cell">
                       {tempsRelatif(u.dateCreation)}
                     </Td>
                     <Td className="text-right">
@@ -571,19 +571,19 @@ export function UsersManagementPage() {
             return (
               <label
                 key={categorie.id}
-                className="flex cursor-pointer items-center gap-3 rounded-lg border border-slate-200 px-3 py-2 transition-colors hover:bg-slate-50"
+                className="flex cursor-pointer items-center gap-3 rounded-lg border border-bordure px-3 py-2 transition-colors hover:bg-surface-2"
               >
                 <input
                   type="checkbox"
                   checked={coche}
                   onChange={() => basculerSpecialite(categorie.id)}
-                  className="size-4 rounded border-slate-300 text-primary-600 focus:ring-primary-400"
+                  className="size-4 rounded border-bordure-forte text-marque focus:ring-primary-400"
                 />
-                <span className="text-sm font-medium text-slate-700">{categorie.nom}</span>
+                <span className="text-sm font-medium text-texte-2">{categorie.nom}</span>
               </label>
             );
           })}
-          <p className="pt-1 text-xs text-slate-400">
+          <p className="pt-1 text-xs text-texte-4">
             Sans spécialité, ce technicien ne recevra que des affectations de repli (quand aucun
             spécialiste n'est disponible).
           </p>

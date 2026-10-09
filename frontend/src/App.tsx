@@ -26,7 +26,7 @@ import { rafraichirAccessToken } from './lib/apiClient';
 // Écran d'attente pendant la restauration de session (rafraîchissement silencieux).
 function SplashScreen() {
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-slate-50">
+    <div className="flex min-h-dvh items-center justify-center bg-surface-2">
       <div className="animate-fade-in flex flex-col items-center gap-4">
         <Logo />
         <Loader2 className="size-5 animate-spin text-primary-500" aria-label="Chargement…" />

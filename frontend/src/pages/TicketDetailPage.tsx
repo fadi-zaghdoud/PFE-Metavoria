@@ -73,17 +73,17 @@ function MessageBulle({ commentaire, estDemandeur }: { commentaire: Commentaire;
       <div
         className={cn(
           'min-w-0 flex-1 rounded-lg px-3.5 py-2.5',
-          estDemandeur ? 'bg-slate-100' : 'border border-slate-200 bg-white shadow-xs',
+          estDemandeur ? 'bg-surface-3' : 'border border-bordure bg-surface shadow-xs',
         )}
       >
         <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="font-medium text-slate-900">
+          <span className="font-medium text-texte">
             {auteur.prenom} {auteur.nom}
           </span>
           {!estDemandeur && <Badge variant="primary">Support</Badge>}
-          <span className="text-slate-400">{tempsRelatif(commentaire.dateCreation)}</span>
+          <span className="text-texte-4">{tempsRelatif(commentaire.dateCreation)}</span>
         </div>
-        <p className="mt-1.5 whitespace-pre-line text-sm leading-relaxed text-slate-700">
+        <p className="mt-1.5 whitespace-pre-line text-sm leading-relaxed text-texte-2">
           {commentaire.contenu}
         </p>
       </div>
@@ -142,10 +142,10 @@ function EvenementLigne({ evenement }: { evenement: EvenementTicket }) {
     ? `${evenement.auteur.prenom} ${evenement.auteur.nom}`
     : 'Système';
   return (
-    <div className="flex items-center justify-center gap-2 text-center text-xs text-slate-400">
+    <div className="flex items-center justify-center gap-2 text-center text-xs text-texte-4">
       <Icon className="size-3.5 shrink-0" aria-hidden />
       <span>
-        <span className="font-medium text-slate-500">{auteur}</span>{' '}
+        <span className="font-medium text-texte-4">{auteur}</span>{' '}
         {decrireEvenement(evenement)} · {tempsRelatif(evenement.dateCreation)}
       </span>
     </div>
@@ -158,7 +158,7 @@ function EtoilesLecture({ note }: { note: number }) {
       {[1, 2, 3, 4, 5].map((n) => (
         <Star
           key={n}
-          className={cn('size-5', n <= note ? 'fill-amber-400 text-amber-400' : 'text-slate-200')}
+          className={cn('size-5', n <= note ? 'fill-amber-400 text-amber-400' : 'text-decor-faible')}
           aria-hidden
         />
       ))}
@@ -212,7 +212,7 @@ function BlocSatisfaction({
                     'size-7 transition-colors',
                     n <= (survol || note)
                       ? 'fill-amber-400 text-amber-400'
-                      : 'text-slate-300 hover:text-amber-300',
+                      : 'text-decor hover:text-amber-300',
                   )}
                   aria-hidden
                 />
@@ -248,15 +248,15 @@ function BlocSatisfaction({
         <CardContent className="space-y-2.5">
           <div className="flex items-center gap-2.5">
             <EtoilesLecture note={ticket.satisfactionNote as number} />
-            <span className="text-sm font-medium text-slate-700">{ticket.satisfactionNote}/5</span>
+            <span className="text-sm font-medium text-texte-2">{ticket.satisfactionNote}/5</span>
           </div>
           {ticket.satisfactionCommentaire && (
-            <p className="whitespace-pre-line rounded-lg bg-slate-50 px-3 py-2 text-sm italic text-slate-600">
+            <p className="whitespace-pre-line rounded-lg bg-surface-2 px-3 py-2 text-sm italic text-texte-3">
               « {ticket.satisfactionCommentaire} »
             </p>
           )}
           {ticket.satisfactionDate && (
-            <p className="text-xs text-slate-400">Validé {tempsRelatif(ticket.satisfactionDate)}</p>
+            <p className="text-xs text-texte-4">Validé {tempsRelatif(ticket.satisfactionDate)}</p>
           )}
         </CardContent>
       </Card>
@@ -268,7 +268,7 @@ function BlocSatisfaction({
     <Card>
       <CardHeader title="Satisfaction du demandeur" />
       <CardContent>
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-texte-4">
           {ticket.statut === 'RESOLU'
             ? 'En attente de la validation du demandeur.'
             : 'Ticket clôturé sans évaluation du demandeur.'}
@@ -283,16 +283,16 @@ function TicketsSimilaires({ docs }: { docs: DetailSolutionIA['similaires'] }) {
   if (docs.length === 0) return null;
   return (
     <div>
-      <p className="text-xs text-slate-400">Tickets similaires</p>
+      <p className="text-xs text-texte-4">Tickets similaires</p>
       <ul className="mt-1 space-y-1">
         {docs.map((d) => (
           <li key={d.id} className="flex items-center gap-1.5">
             <Link
               to={`/tickets/${d.id}`}
-              className="min-w-0 truncate text-xs text-slate-600 hover:text-primary-700 hover:underline"
+              className="min-w-0 truncate text-xs text-texte-3 hover:text-marque-fort hover:underline"
             >
               <span className="font-mono">#{d.id}</span> {d.titre}
-              {d.categorie && <span className="text-slate-400"> · {d.categorie}</span>}
+              {d.categorie && <span className="text-texte-4"> · {d.categorie}</span>}
             </Link>
             {/* Provenance (K3) : badge « réel » pour une vraie résolution d'entreprise. */}
             {!d.synthetique && (
@@ -316,7 +316,9 @@ function TicketsSimilaires({ docs }: { docs: DetailSolutionIA['similaires'] }) {
 const SEUIL_CONFIANCE_AFFICHAGE_DEFAUT = 0.5;
 
 // Catégorie suggérée par l'IA : badge + confiance, avec deux variations —
-//  - sous le seuil → grisée + « à préciser » (incertaine, mais reste le top-1 RÉEL) ;
+//  - sous le seuil → grisée + « à préciser » (incertaine, mais reste le top-1 RÉEL). Grisée
+//    par la couleur (texte gris clair, sans fond, contour en pointillés) et non par la
+//    transparence : opacity-60 faisait tomber le texte à 2,77:1, sous le seuil WCAG AA ;
 //  - `avant` fourni et différent → « avant → après » (met en évidence la révision OCR).
 function CategorieIA({
   suggestion,
@@ -337,24 +339,26 @@ function CategorieIA({
       <div className="flex flex-wrap items-center gap-1.5">
         {different && (
           <>
-            <span className="text-xs text-slate-400 line-through">{avant}</span>
-            <span aria-hidden className="text-xs text-slate-400">
+            <span className="text-xs text-texte-4 line-through">{avant}</span>
+            <span aria-hidden className="text-xs text-texte-4">
               →
             </span>
           </>
         )}
         <Badge
           variant={!incertaine && surligne && different ? 'primary' : 'neutral'}
-          className={incertaine ? 'opacity-60' : undefined}
+          className={
+            incertaine ? 'border border-dashed border-bordure-survol bg-transparent text-texte-4' : undefined
+          }
         >
           {suggestion.contenu}
         </Badge>
         {confiance != null && (
-          <span className="text-xs text-slate-500">confiance {Math.round(confiance * 100)} %</span>
+          <span className="text-xs text-texte-4">confiance {Math.round(confiance * 100)} %</span>
         )}
       </div>
       {incertaine && (
-        <p className="mt-1 text-[11px] font-medium text-amber-600">⚠ Faible confiance — à préciser</p>
+        <p className="mt-1 text-[11px] font-medium text-alerte-texte">⚠ Faible confiance — à préciser</p>
       )}
     </>
   );
@@ -393,7 +397,7 @@ function PanneauSuggestionRAG({
       />
       <CardContent className="space-y-3">
         {statut === 'EN_COURS' && (
-          <div className="flex items-center gap-2 text-sm text-slate-500">
+          <div className="flex items-center gap-2 text-sm text-texte-4">
             <Loader2 className="size-4 animate-spin" aria-hidden />
             Génération en cours… (~15-30 s)
           </div>
@@ -401,14 +405,14 @@ function PanneauSuggestionRAG({
 
         {statut === 'ECHEC' && (
           <div className="space-y-2">
-            <p className="text-sm text-slate-500">Suggestion indisponible (service IA).</p>
+            <p className="text-sm text-texte-4">Suggestion indisponible (service IA).</p>
             {bouton('Réessayer')}
           </div>
         )}
 
         {statut === 'PRETE' && detail?.abstenu && (
           <div className="space-y-2.5">
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-texte-4">
               Aucune suggestion pertinente — les tickets retrouvés ne couvrent pas ce problème.
             </p>
             <TicketsSimilaires docs={detail.similaires} />
@@ -418,24 +422,24 @@ function PanneauSuggestionRAG({
 
         {statut === 'PRETE' && detail && !detail.abstenu && (
           <div className="space-y-3">
-            <p className="whitespace-pre-line text-sm leading-relaxed text-slate-700">
+            <p className="whitespace-pre-line text-sm leading-relaxed text-texte-2">
               {suggestion?.contenu}
             </p>
             {detail.sources.length > 0 && (
               <div>
-                <p className="text-xs text-slate-400">Sources</p>
+                <p className="text-xs text-texte-4">Sources</p>
                 <div className="mt-1 flex flex-wrap gap-1.5">
                   {detail.sources.map((s) => (
                     <Link
                       key={s.id}
                       to={`/tickets/${s.id}`}
-                      className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-xs text-slate-600 transition-colors hover:border-primary-300 hover:text-primary-700"
+                      className="inline-flex items-center gap-1 rounded-full border border-bordure bg-surface px-2 py-0.5 text-xs text-texte-3 transition-colors hover:border-primary-300 hover:text-marque-fort dark:hover:border-primary-400/60"
                     >
                       <span className="font-mono">#{s.id}</span>
                       <span className="max-w-[160px] truncate">{s.titre}</span>
                       {/* Provenance (K3) : la réponse s'ancre sur une vraie résolution d'entreprise. */}
                       {!s.synthetique && (
-                        <span className="rounded-full bg-emerald-100 px-1 text-[10px] font-medium text-emerald-700">
+                        <span className="rounded-full bg-succes-fond-2 px-1 text-[10px] font-medium text-succes-texte">
                           réel
                         </span>
                       )}
@@ -445,7 +449,7 @@ function PanneauSuggestionRAG({
               </div>
             )}
             <TicketsSimilaires docs={detail.similaires} />
-            <p className="text-[11px] leading-relaxed text-slate-400">
+            <p className="text-[11px] leading-relaxed text-texte-4">
               Suggestion non contraignante, ancrée sur des tickets résolus — à valider par le technicien.
             </p>
             {bouton('Régénérer')}
@@ -456,7 +460,7 @@ function PanneauSuggestionRAG({
           (peutSuggerer ? (
             bouton('Suggérer une résolution')
           ) : (
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-texte-4">
               Disponible pour le technicien assigné quand le ticket est en cours.
             </p>
           ))}
@@ -491,29 +495,29 @@ function EncartResumeFil({
   );
 
   return (
-    <div className="rounded-xl border border-primary-100 bg-primary-50/40 p-3">
+    <div className="rounded-xl border border-marque-fond-2 bg-marque-fond/40 p-3">
       <div className="flex items-center gap-2">
         <span className="flex size-6 items-center justify-center rounded-md bg-gradient-to-br from-primary-500 to-accent-600 text-white">
           <Sparkles className="size-3.5" aria-hidden />
         </span>
-        <h3 className="text-xs font-semibold text-slate-700">Résumé du fil (IA)</h3>
+        <h3 className="text-xs font-semibold text-texte-2">Résumé du fil (IA)</h3>
       </div>
       <div className="mt-2">
         {statut === 'EN_COURS' && (
-          <div className="flex items-center gap-2 text-sm text-slate-500">
+          <div className="flex items-center gap-2 text-sm text-texte-4">
             <Loader2 className="size-4 animate-spin" aria-hidden />
             Résumé en cours…
           </div>
         )}
         {statut === 'ECHEC' && (
           <div className="space-y-2">
-            <p className="text-sm text-slate-500">Résumé indisponible (service IA).</p>
+            <p className="text-sm text-texte-4">Résumé indisponible (service IA).</p>
             {peutResumer && bouton('Réessayer')}
           </div>
         )}
         {statut === 'PRETE' && (
           <div className="space-y-2">
-            <p className="whitespace-pre-line text-sm leading-relaxed text-slate-700">{resume?.contenu}</p>
+            <p className="whitespace-pre-line text-sm leading-relaxed text-texte-2">{resume?.contenu}</p>
             {peutResumer && bouton('Régénérer')}
           </div>
         )}
@@ -640,7 +644,7 @@ export function TicketDetailPage() {
         title="Ticket introuvable"
         description="Ce ticket n'existe pas ou vous n'y avez pas accès."
         action={
-          <Link to="/tickets" className="text-sm font-medium text-primary-600 hover:underline">
+          <Link to="/tickets" className="text-sm font-medium text-marque hover:underline">
             Retour à la liste
           </Link>
         }
@@ -914,7 +918,7 @@ export function TicketDetailPage() {
       <div className="mb-6">
         <Link
           to="/tickets"
-          className="mb-3 inline-flex items-center gap-1.5 text-sm text-slate-500 transition-colors hover:text-slate-900"
+          className="mb-3 inline-flex items-center gap-1.5 text-sm text-texte-4 transition-colors hover:text-texte"
         >
           <ArrowLeft className="size-4" aria-hidden />
           Tickets
@@ -922,12 +926,12 @@ export function TicketDetailPage() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2.5">
-              <span className="font-mono text-sm text-slate-400">#{ticket.id}</span>
+              <span className="font-mono text-sm text-texte-4">#{ticket.id}</span>
               <StatutBadge statut={ticket.statut} />
               <PrioriteLabel priorite={ticket.priorite} />
             </div>
-            <h1 className="mt-1.5 text-xl font-semibold tracking-tight text-slate-900">{ticket.titre}</h1>
-            <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-400">
+            <h1 className="mt-1.5 text-xl font-semibold tracking-tight text-texte">{ticket.titre}</h1>
+            <p className="mt-1 flex items-center gap-1.5 text-xs text-texte-4">
               <Clock className="size-3.5" aria-hidden />
               Créé {tempsRelatif(ticket.dateCreation)}
             </p>
@@ -947,7 +951,7 @@ export function TicketDetailPage() {
           <Card>
             <CardHeader title="Demande" />
             <CardContent>
-              <p className="whitespace-pre-line text-sm leading-relaxed text-slate-700">
+              <p className="whitespace-pre-line text-sm leading-relaxed text-texte-2">
                 {ticket.description}
               </p>
             </CardContent>
@@ -979,7 +983,7 @@ export function TicketDetailPage() {
                 />
               )}
               {fil.length === 0 && (
-                <p className="text-sm text-slate-400">Aucun message pour l'instant.</p>
+                <p className="text-sm text-texte-4">Aucun message pour l'instant.</p>
               )}
               {fil.map((el) =>
                 el.kind === 'message' ? (
@@ -996,7 +1000,7 @@ export function TicketDetailPage() {
 
             {/* Composer */}
             {peutCommenter ? (
-              <div className="border-t border-slate-100 p-4">
+              <div className="border-t border-bordure-faible p-4">
                 <Textarea
                   value={reponse}
                   onChange={(e) => setReponse(e.target.value)}
@@ -1012,8 +1016,8 @@ export function TicketDetailPage() {
                 </div>
               </div>
             ) : (
-              <div className="border-t border-slate-100 p-4">
-                <p className="text-xs text-slate-400">
+              <div className="border-t border-bordure-faible p-4">
+                <p className="text-xs text-texte-4">
                   Prenez le ticket en charge pour participer à la conversation.
                 </p>
               </div>
@@ -1038,7 +1042,7 @@ export function TicketDetailPage() {
             <CardHeader title="Propriétés" />
             <CardContent className="space-y-3.5">
               <div className="grid grid-cols-[90px_1fr] items-center gap-2">
-                <p className="text-xs text-slate-400">Statut</p>
+                <p className="text-xs text-texte-4">Statut</p>
                 {/* Lecture seule : le statut avance via les actions du cycle de vie (en-tête). */}
                 <div>
                   <StatutBadge statut={ticket.statut} />
@@ -1046,7 +1050,7 @@ export function TicketDetailPage() {
               </div>
 
               <div className="grid grid-cols-[90px_1fr] items-center gap-2">
-                <p className="text-xs text-slate-400">Priorité</p>
+                <p className="text-xs text-texte-4">Priorité</p>
                 {estGestionnaire ? (
                   <BoutonPropriete
                     visuel={<PrioriteIcone priorite={ticket.priorite} />}
@@ -1063,7 +1067,7 @@ export function TicketDetailPage() {
               </div>
 
               <div className="grid grid-cols-[90px_1fr] items-center gap-2">
-                <p className="text-xs text-slate-400">Assigné à</p>
+                <p className="text-xs text-texte-4">Assigné à</p>
                 {estAdmin ? (
                   /* Bouton plutôt que <select> : un <option> natif ne peut pas porter
                      d'image, et c'est le visage du technicien qu'on veut reconnaître ici.
@@ -1097,17 +1101,17 @@ export function TicketDetailPage() {
                 ) : ticket.technicien ? (
                   <div className="flex items-center gap-2">
                     <Avatar prenom={ticket.technicien.prenom} nom={ticket.technicien.nom} photoUrl={ticket.technicien.photoUrl} size="sm" />
-                    <span className="truncate text-sm text-slate-700">
+                    <span className="truncate text-sm text-texte-2">
                       {ticket.technicien.prenom} {ticket.technicien.nom}
                     </span>
                   </div>
                 ) : (
-                  <span className="text-sm text-slate-400">Non assigné</span>
+                  <span className="text-sm text-texte-4">Non assigné</span>
                 )}
               </div>
 
               <div className="grid grid-cols-[90px_1fr] items-center gap-2">
-                <p className="text-xs text-slate-400">Catégorie</p>
+                <p className="text-xs text-texte-4">Catégorie</p>
                 {(estAdmin || estTechnicienAssigne) && !estCloture ? (
                   /* Le libellé dit « Non classé » et non « Choisir une catégorie… » : ce
                      bouton affiche une VALEUR COURANTE, comme ses deux voisins (« Moyenne »,
@@ -1118,7 +1122,7 @@ export function TicketDetailPage() {
                     visuel={
                       ticket.categorie ? (
                         <span
-                          className="flex size-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500"
+                          className="flex size-8 shrink-0 items-center justify-center rounded-full bg-surface-3 text-texte-4"
                           aria-hidden
                         >
                           <Tag className="size-4" />
@@ -1140,14 +1144,14 @@ export function TicketDetailPage() {
                 ) : ticket.categorie ? (
                   <Badge variant="neutral">{ticket.categorie.nom}</Badge>
                 ) : (
-                  <span className="text-sm text-slate-400">Non classé</span>
+                  <span className="text-sm text-texte-4">Non classé</span>
                 )}
               </div>
 
               {ticket.dateCloture && (
                 <div className="grid grid-cols-[90px_1fr] items-center gap-2">
-                  <p className="text-xs text-slate-400">Clôturé</p>
-                  <span className="text-sm text-slate-600">{dateLongue(ticket.dateCloture)}</span>
+                  <p className="text-xs text-texte-4">Clôturé</p>
+                  <span className="text-sm text-texte-3">{dateLongue(ticket.dateCloture)}</span>
                 </div>
               )}
             </CardContent>
@@ -1159,12 +1163,12 @@ export function TicketDetailPage() {
             <CardContent className="flex items-center gap-3">
               <Avatar prenom={ticket.demandeur.prenom} nom={ticket.demandeur.nom} photoUrl={ticket.demandeur.photoUrl} />
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-slate-900">
+                <p className="truncate text-sm font-medium text-texte">
                   {ticket.demandeur.prenom} {ticket.demandeur.nom}
                 </p>
-                <p className="truncate text-xs text-slate-400">{ticket.demandeur.email}</p>
+                <p className="truncate text-xs text-texte-4">{ticket.demandeur.email}</p>
                 {ticket.demandeur.service && (
-                  <p className="mt-0.5 text-xs text-slate-500">{ticket.demandeur.service}</p>
+                  <p className="mt-0.5 text-xs text-texte-4">{ticket.demandeur.service}</p>
                 )}
               </div>
             </CardContent>
@@ -1175,7 +1179,7 @@ export function TicketDetailPage() {
             <CardHeader title="Pièces jointes" />
             <CardContent className="space-y-2.5">
               {ticket.piecesJointes.length === 0 ? (
-                <p className="text-sm text-slate-400">Aucune pièce jointe.</p>
+                <p className="text-sm text-texte-4">Aucune pièce jointe.</p>
               ) : (
                 <ul className="space-y-1.5">
                   {ticket.piecesJointes.map((pj) => (
@@ -1184,25 +1188,25 @@ export function TicketDetailPage() {
                         href={`${API_BASE_URL}/tickets/${ticket.id}/pieces-jointes/${pj.id}/download?token=${token ?? ''}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex items-center gap-2 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs transition-colors hover:border-primary-300 hover:bg-slate-50"
+                        className="flex items-center gap-2 rounded-lg border border-bordure px-2.5 py-1.5 text-xs transition-colors hover:border-primary-300 hover:bg-surface-2 dark:hover:border-primary-400/60"
                       >
-                        <Paperclip className="size-3.5 shrink-0 text-slate-400" aria-hidden />
-                        <span className="min-w-0 flex-1 truncate text-slate-700">{pj.nomFichier}</span>
+                        <Paperclip className="size-3.5 shrink-0 text-texte-4" aria-hidden />
+                        <span className="min-w-0 flex-1 truncate text-texte-2">{pj.nomFichier}</span>
                         {pj.texteExtrait && (
                           <Badge variant="primary" className="shrink-0">
                             texte extrait
                           </Badge>
                         )}
-                        <span className="shrink-0 text-slate-400">{formaterOctets(pj.taille)}</span>
+                        <span className="shrink-0 text-texte-4">{formaterOctets(pj.taille)}</span>
                       </a>
                       {pj.texteExtrait && (
                         <details className="group pl-1">
-                          <summary className="flex cursor-pointer list-none items-center gap-1 text-[11px] font-medium text-primary-600 hover:underline">
+                          <summary className="flex cursor-pointer list-none items-center gap-1 text-[11px] font-medium text-marque hover:underline">
                             <FileText className="size-3 shrink-0" aria-hidden />
                             <span className="group-open:hidden">Voir le texte extrait (OCR)</span>
                             <span className="hidden group-open:inline">Masquer le texte extrait</span>
                           </summary>
-                          <p className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-2 text-[11px] leading-relaxed text-slate-600">
+                          <p className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded-lg bg-surface-2 p-2 text-[11px] leading-relaxed text-texte-3">
                             {pj.texteExtrait}
                           </p>
                         </details>
@@ -1212,7 +1216,7 @@ export function TicketDetailPage() {
                 </ul>
               )}
               {peutJoindre && ticket.piecesJointes.length < MAX_PJ && (
-                <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs font-medium text-primary-600 hover:underline">
+                <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs font-medium text-marque hover:underline">
                   <Paperclip className="size-3.5" aria-hidden />
                   Ajouter une pièce jointe
                   <input
@@ -1228,7 +1232,7 @@ export function TicketDetailPage() {
           </Card>
 
           {/* Assistant IA — suggestions à la création (Greffe 1, glass-box : montre sa confiance) */}
-          <div className="relative overflow-hidden rounded-2xl border border-primary-200/70 bg-gradient-to-br from-primary-50/70 to-violet-50/50 p-4">
+          <div className="relative overflow-hidden rounded-2xl border border-marque-bordure/70 bg-gradient-to-br from-marque-fond/70 to-violet-50/50 dark:to-violet-500/10 p-4">
             <span
               aria-hidden
               className="pointer-events-none absolute -right-8 -top-8 size-24 rounded-full bg-gradient-to-br from-primary-400/20 to-transparent blur-2xl"
@@ -1237,7 +1241,7 @@ export function TicketDetailPage() {
               <span className="flex size-7 items-center justify-center rounded-lg bg-gradient-to-br from-primary-500 to-accent-600 text-white shadow-glow-sm ring-1 ring-inset ring-white/20">
                 <Sparkles className="size-4" aria-hidden />
               </span>
-              <h2 className="text-sm font-semibold text-slate-700">Assistant IA</h2>
+              <h2 className="text-sm font-semibold text-texte-2">Assistant IA</h2>
               <Badge variant="primary" className="ml-auto">
                 Suggestions
               </Badge>
@@ -1247,7 +1251,7 @@ export function TicketDetailPage() {
               <div className="relative mt-3 space-y-3">
                 {suggestionCategorie && (
                   <div>
-                    <p className="text-xs text-slate-400">Catégorie suggérée</p>
+                    <p className="text-xs text-texte-4">Catégorie suggérée</p>
                     <div className="mt-1">
                       <CategorieIA suggestion={suggestionCategorie} seuil={seuilAffichage} />
                     </div>
@@ -1255,12 +1259,12 @@ export function TicketDetailPage() {
                 )}
                 {suggestionPriorite && (
                   <div>
-                    <p className="text-xs text-slate-400">Priorité suggérée</p>
+                    <p className="text-xs text-texte-4">Priorité suggérée</p>
                     <div className="mt-1">
                       <PrioriteLabel priorite={suggestionPriorite.contenu as PrioriteTicket} />
                     </div>
                     {detailPriorite?.explication && (
-                      <p className="mt-1.5 text-xs leading-relaxed text-slate-600">
+                      <p className="mt-1.5 text-xs leading-relaxed text-texte-3">
                         {detailPriorite.explication}
                       </p>
                     )}
@@ -1270,15 +1274,15 @@ export function TicketDetailPage() {
                 {/* Bloc « après OCR » — la ré-évaluation après extraction du texte des pièces
                     jointes ; la différence avec la création est surlignée (valeur de l'OCR). */}
                 {(categorieApresOcr || prioriteApresOcr) && (
-                  <div className="rounded-xl border border-primary-200/70 bg-white/70 p-3">
-                    <p className="flex items-center gap-1.5 text-xs font-semibold text-primary-700">
+                  <div className="rounded-xl border border-marque-bordure/70 bg-surface/70 p-3">
+                    <p className="flex items-center gap-1.5 text-xs font-semibold text-marque-fort">
                       <Sparkles className="size-3.5" aria-hidden />
                       Révisé grâce à la pièce jointe
                     </p>
                     <div className="mt-2 space-y-2.5">
                       {categorieApresOcr && (
                         <div>
-                          <p className="text-xs text-slate-400">Catégorie</p>
+                          <p className="text-xs text-texte-4">Catégorie</p>
                           <div className="mt-1">
                             <CategorieIA
                               suggestion={categorieApresOcr}
@@ -1291,14 +1295,14 @@ export function TicketDetailPage() {
                       )}
                       {prioriteApresOcr && (
                         <div>
-                          <p className="text-xs text-slate-400">Priorité</p>
+                          <p className="text-xs text-texte-4">Priorité</p>
                           <div className="mt-1 flex flex-wrap items-center gap-1.5">
                             {prioriteDiffere && suggestionPriorite && (
                               <>
-                                <span className="text-xs text-slate-400 line-through">
+                                <span className="text-xs text-texte-4 line-through">
                                   {LABEL_PRIORITE[suggestionPriorite.contenu as PrioriteTicket]}
                                 </span>
-                                <span aria-hidden className="text-xs text-slate-400">
+                                <span aria-hidden className="text-xs text-texte-4">
                                   →
                                 </span>
                               </>
@@ -1306,7 +1310,7 @@ export function TicketDetailPage() {
                             <PrioriteLabel priorite={prioriteApresOcr.contenu as PrioriteTicket} />
                           </div>
                           {detailPrioriteApresOcr?.explication && (
-                            <p className="mt-1.5 text-xs leading-relaxed text-slate-600">
+                            <p className="mt-1.5 text-xs leading-relaxed text-texte-3">
                               {detailPrioriteApresOcr.explication}
                             </p>
                           )}
@@ -1316,12 +1320,12 @@ export function TicketDetailPage() {
                   </div>
                 )}
 
-                <p className="text-[11px] leading-relaxed text-slate-400">
+                <p className="text-[11px] leading-relaxed text-texte-4">
                   Suggestions non contraignantes — à valider ou corriger par le support.
                 </p>
               </div>
             ) : (
-              <p className="relative mt-2 text-xs leading-relaxed text-slate-500">
+              <p className="relative mt-2 text-xs leading-relaxed text-texte-4">
                 Aucune suggestion IA pour ce ticket (service indisponible à la création).
               </p>
             )}
@@ -1412,7 +1416,7 @@ export function TicketDetailPage() {
           cle: c.id,
           visuel: (
             <span
-              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500"
+              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-surface-3 text-texte-4"
               aria-hidden
             >
               <Tag className="size-4" />

@@ -4,7 +4,29 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
     <title>Smart Ticketing & Support Assistant</title>
+    <!--
+      Thème appliqué AVANT le premier rendu : sans ce script, la page s'afficherait un
+      instant en clair avant de basculer en sombre (flash du mauvais thème). Même clé et
+      mêmes valeurs que src/lib/theme.ts — les deux doivent rester alignés.
+    -->
+    <script>
+      (function () {
+        var preference = null;
+        try {
+          preference = localStorage.getItem('smart-ticketing:theme');
+        } catch (e) {}
+        var sombre =
+          preference === 'sombre' ||
+          (preference !== 'clair' &&
+            !!window.matchMedia &&
+            window.matchMedia('(prefers-color-scheme: dark)').matches);
+        var racine = document.documentElement;
+        if (sombre) racine.classList.add('dark');
+        racine.style.colorScheme = sombre ? 'dark' : 'light';
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

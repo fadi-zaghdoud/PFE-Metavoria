@@ -203,7 +203,7 @@ export function CategoriesManagementPage() {
       {!modeleDisponible && !chargement && (
         <Alert variant="warning" className="mb-4">
           <p className="font-medium">Statut IA indisponible</p>
-          <p className="mt-0.5 text-amber-700/90">
+          <p className="mt-0.5 text-alerte-texte/90">
             Le service IA est injoignable : la reconnaissance des catégories ne peut pas être vérifiée. La
             création et l'édition des descriptions restent possibles ; le renommage et la suppression sont
             bloqués par sécurité.
@@ -216,7 +216,7 @@ export function CategoriesManagementPage() {
       {modeleDisponible && aDesNonReconnues && !chargement && (
         <Alert variant="info" className="mb-4">
           <p className="font-medium">Certaines catégories ne sont pas encore reconnues par l'IA</p>
-          <p className="mt-0.5 text-sky-800/90">
+          <p className="mt-0.5 text-info-texte-fort/90">
             L'IA ne peut suggérer que les catégories qu'elle a apprises. Les autres restent utilisables
             manuellement : chaque ticket que les techniciens y classent devient un exemple.{' '}
             {nbApprenables > 0
@@ -225,7 +225,7 @@ export function CategoriesManagementPage() {
           </p>
           <Link
             to="/administration/ia"
-            className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-sky-900 underline underline-offset-2 hover:text-sky-950"
+            className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-info-texte-fort underline underline-offset-2 hover:text-info-texte-fort"
           >
             <Brain className="size-3.5" aria-hidden />
             Aller au réentraînement du modèle
@@ -276,11 +276,11 @@ export function CategoriesManagementPage() {
               categories.map((c) => {
                 const badge = BADGE_STATUT[c.statut];
                 return (
-                  <tr key={c.id} className="transition-colors hover:bg-slate-50/60">
+                  <tr key={c.id} className="transition-colors hover:bg-surface-2/60">
                     <Td>
-                      <p className="font-medium text-slate-900">{c.nom}</p>
+                      <p className="font-medium text-texte">{c.nom}</p>
                       {c.description && (
-                        <p className="mt-0.5 max-w-md truncate text-xs text-slate-400">{c.description}</p>
+                        <p className="mt-0.5 max-w-md truncate text-xs text-texte-4">{c.description}</p>
                       )}
                     </Td>
                     <Td>
@@ -288,8 +288,8 @@ export function CategoriesManagementPage() {
                         {badge.label}
                       </Badge>
                     </Td>
-                    <Td className="hidden tabular-nums text-slate-500 md:table-cell">{c.nLabelsValides}</Td>
-                    <Td className="hidden text-xs text-slate-400 lg:table-cell">
+                    <Td className="hidden tabular-nums text-texte-4 md:table-cell">{c.nLabelsValides}</Td>
+                    <Td className="hidden text-xs text-texte-4 lg:table-cell">
                       {tempsRelatif(c.dateCreation)}
                     </Td>
                     <Td className="text-right">

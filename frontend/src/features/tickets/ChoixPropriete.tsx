@@ -50,13 +50,13 @@ export function BoutonPropriete({
       disabled={disabled}
       onClick={onClick}
       aria-label={ariaLabel}
-      className="flex w-full min-w-0 items-center gap-2 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-left shadow-xs transition-colors hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+      className="flex w-full min-w-0 items-center gap-2 rounded-lg border border-bordure-forte bg-surface px-2 py-1.5 text-left shadow-xs transition-colors hover:border-bordure-survol hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-60"
     >
       {visuel}
-      <span className={cn('min-w-0 flex-1 truncate text-sm', vide ? 'text-slate-400' : 'text-slate-700')}>
+      <span className={cn('min-w-0 flex-1 truncate text-sm', vide ? 'text-texte-4' : 'text-texte-2')}>
         {libelle}
       </span>
-      <ChevronDown className="ml-auto size-4 shrink-0 text-slate-400" aria-hidden />
+      <ChevronDown className="ml-auto size-4 shrink-0 text-texte-4" aria-hidden />
     </button>
   );
 }
@@ -66,7 +66,7 @@ export function BoutonPropriete({
 export function PastilleVide() {
   return (
     <span
-      className="size-8 shrink-0 rounded-full border border-dashed border-slate-300"
+      className="size-8 shrink-0 rounded-full border border-dashed border-bordure-forte"
       aria-hidden
     />
   );
@@ -113,34 +113,34 @@ export function DialogChoix({
                 className={cn(
                   'flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition-colors',
                   'disabled:cursor-not-allowed disabled:opacity-60',
-                  actuel ? 'bg-primary-50 ring-1 ring-inset ring-primary-600/15' : 'hover:bg-slate-50',
+                  actuel ? 'bg-marque-fond ring-1 ring-inset ring-marque/15' : 'hover:bg-surface-2',
                 )}
               >
                 {o.visuel}
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium text-slate-900">
+                  <span className="block truncate text-sm font-medium text-texte">
                     {o.libelle}
                   </span>
                   {o.detail && (
-                    <span className="block truncate text-xs text-slate-400">{o.detail}</span>
+                    <span className="block truncate text-xs text-texte-4">{o.detail}</span>
                   )}
                 </span>
                 {o.annotation}
-                {actuel && <Check className="size-4 shrink-0 text-primary-600" aria-hidden />}
+                {actuel && <Check className="size-4 shrink-0 text-marque" aria-hidden />}
               </button>
             </li>
           );
         })}
 
         {options.length === 0 && (
-          <li className="px-2.5 py-6 text-center text-sm text-slate-400">{messageVide}</li>
+          <li className="px-2.5 py-6 text-center text-sm text-texte-4">{messageVide}</li>
         )}
       </ul>
 
       {actionRetrait}
 
       {enCours && (
-        <p className="mt-3 flex items-center justify-center gap-2 text-xs text-slate-400">
+        <p className="mt-3 flex items-center justify-center gap-2 text-xs text-texte-4">
           <Loader2 className="size-3.5 animate-spin" aria-hidden />
           Enregistrement…
         </p>

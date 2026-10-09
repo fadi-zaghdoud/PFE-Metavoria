@@ -20,13 +20,13 @@ export function Logo({ className, markOnly = false, light = false }: LogoProps) 
       </span>
       {!markOnly && (
         <span className="leading-tight">
-          <span className={cn('block text-sm font-semibold tracking-tight', light ? 'text-white' : 'text-slate-900')}>
+          <span className={cn('block text-sm font-semibold tracking-tight', light ? 'text-white' : 'text-texte')}>
             Smart Ticketing
           </span>
           <span
             className={cn(
               'block text-[10px] font-medium uppercase tracking-[0.16em]',
-              light ? 'text-white/50' : 'text-slate-400',
+              light ? 'text-white/50' : 'text-texte-4',
             )}
           >
             Metavoria

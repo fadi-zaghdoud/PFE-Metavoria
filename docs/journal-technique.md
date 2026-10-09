@@ -3585,3 +3585,132 @@ garantie** ; les deux cas retenus illustrent le mécanisme, ils ne le générali
   manifestes ont été calculés sur la copie Windows. Les empreintes n'étant jamais
   contrôlées à l'exécution, rien ne casse ; mais sous Linux, elles ne se vérifient pas.
   Non corrigé ici : renormaliser modifierait des fichiers versionnés hors du périmètre.
+
+---
+
+# Mode sombre — des jetons sémantiques, puis tous les écrans
+
+> Séance des **08 et 09/10/2026**, branche `mode-sombre-et-tableau-de-bord`, partie « mode
+> sombre » (le tableau de bord suit). Le 16/09, le mode sombre avait été **chiffré puis
+> écarté** (entrée « Passe interface — photo de profil, et le mode sombre chiffré puis
+> écarté ») : 549 couleurs en dur, aucune variante `dark:`, aucun jeton sémantique, et la
+> crainte qu'un écran oublié reste blanc en pleine démonstration. La dette en nommait le
+> préalable : une tokenisation sémantique. Consignes de la séance : **aucun changement
+> backend ni de comportement** ; le formulaire de création de ticket garde **exactement**
+> ses champs (les cas d'abstention de la démonstration en dépendent) ; les exports PDF et
+> Excel **restent clairs** ; et le mode sombre couvre **tous** les écrans — « un écran
+> oublié, illisible en sombre, est pire que pas de mode sombre du tout ».
+
+## Ce qui est livré
+
+- **Des jetons sémantiques** dans `index.css` : fonds (`fond`, `surface`, `surface-2` à
+  `-4`, `encre`), textes (`texte`, `texte-2` à `-4`, `decor`), bordures (`bordure-faible`
+  à `bordure-survol`), marque (`marque`, `marque-fort`, `marque-fond`…) et quatre états
+  (`succes`, `alerte`, `danger`, `info`), chacun décliné en `fond`, `fond-2`, `bordure`,
+  `accent`, `texte` et `texte-fort`. En clair, ils **pointent sur la palette d'origine**
+  (`slate-…`, `primary-…`) ; le bloc `.dark` les redéfinit.
+- **Le mécanisme** (`lib/theme.ts`, `lib/useTheme.ts`) : préférence à trois états —
+  système, clair, sombre — mémorisée dans `localStorage` (`smart-ticketing:theme`) ;
+  « système » efface la clé et suit `prefers-color-scheme` en direct ; les autres onglets
+  suivent par l'événement `storage`. Un **script en ligne dans `index.html`** pose la
+  classe `dark` avant le premier rendu : pas d'éclair du mauvais thème. `color-scheme` est
+  déclaré, pour les contrôles natifs (champs de date, listes, barres de défilement).
+- **La bascule** (`BasculeTheme`) : groupe de boutons radio ARIA, flèches du clavier. Dans
+  la barre du haut, sur les pages publiques et, **sous 640 px**, dans le menu latéral.
+- **La migration** : 551 classes dans 43 fichiers, par une **table de correspondance
+  explicite** (script de séance, hors dépôt), puis des corrections à la main : panneau de
+  marque des pages publiques (sombre dans les deux thèmes, jeton `texte-sur-encre`
+  constant), couleurs d'avatar (8 teintes, chacune avec son pendant sombre), surbrillances
+  et dégradés du détail de ticket.
+- **Deux garde-fous**, rejoués par un **nouveau job `frontend`** de la CI (`npm ci`, lint,
+  build, puis les deux scripts) :
+  - `npm run verifier:couleurs` refuse toute couleur « claire seulement » sans son pendant
+    `dark:` sur la même ligne ;
+  - `npm run verifier:contrastes` calcule le contraste WCAG des couples de jetons, dans les
+    deux thèmes, et échoue sous le seuil.
+
+## Les décisions, et leurs raisons `[établi en séance]`
+
+### Des jetons, pas des `dark:` posés fichier par fichier
+
+C'était la « voie propre » chiffrée le 16/09, et la consigne de la séance. Le garde-fou
+rend **vérifiable** ce qui avait motivé le refus du 16/09, la probabilité d'oublier un
+écran : avant la migration, il relevait **561** couleurs claires seulement ; après, **0**
+sur 67 fichiers, et la CI le rejoue à chaque proposition.
+
+### `accent` pour les icônes, `texte` pour les mots
+
+Les nuances 600 des états, employées comme texte, ne tenaient pas 4,5:1 en clair. Mesuré
+sur blanc : émeraude 3,67, ambre 3,19, ciel 4,02, rose 4,51 (mais 4,10 sur son fond
+`rose-50`). Les textes d'état passent en **700** (de 5,05 à 6,06 sur blanc) ; `accent`
+(600) reste réservé aux icônes, pour lesquelles le seuil est de 3:1.
+
+### Les écarts visibles en thème clair, tous dictés par une mesure
+
+Le clair reste celui d'avant, à ces exceptions près :
+
+| Élément | Avant → après | Contraste mesuré |
+| --- | --- | --- |
+| `texte-4` (textes secondaires) | `slate-500` → `oklch(54% 0.046 257.417)` | 4,45 sur le fond de page et 4,35 sur `slate-100` → 4,72 et 4,61 |
+| Textes d'état | 600 → 700 | voir ci-dessus |
+| Pastilles à texte blanc | `rose-500` → `rose-600` ; `primary-500` → `primary-600` | 3,76 → 4,51 ; 4,47 → 6,29 |
+| Badge « catégorie incertaine » | `opacity-60` → grisé par la couleur, contour en pointillés | 2,77 → conforme |
+| Copyright des pages publiques | `slate-500` → `slate-400`, sur le panneau sombre | 4,23 → 7,68 |
+| Quatre textes en `slate-300` | → `texte-4` | 1,48 → conforme |
+| Bandeau du tableau de bord | blanc à 60 % et 70 % → 85 % et 90 % | 3,01 et 3,57 → 4,55 et 4,91, sur l'arrêt le plus clair du dégradé |
+| `slate-800` | fusionné dans `texte` (`slate-900`), 4 emplois | — |
+
+Foncer `texte-4` a été validé en séance. Le badge incertain reste **grisé** : la mention
+« grisée » du README, de la page Paramètres et du registre des paramètres du backend reste
+donc exacte, sans toucher au backend.
+
+### En sombre, le contour des champs à 3,74:1
+
+Première valeur (`slate-700` sur `slate-900`) : **1,73:1**, des champs presque invisibles.
+`slate-500` : **3,74:1**, au-dessus du 3:1 attendu d'un contour de contrôle.
+
+### Sur téléphone, la bascule passe dans le menu
+
+Mesuré sur les captures à 390 px : avec la bascule dans la barre du haut, le titre de la
+page n'avait plus qu'environ 90 px et s'affichait « Tableau de … ». Sous 640 px, la
+bascule quitte la barre pour le menu latéral ; au-delà, elle reste dans la barre.
+
+### Les exports restent clairs, par construction
+
+`exportRapport.ts` porte sa propre palette, sans lien avec le CSS (constat du 16/09). Il
+n'est pas modifié, et le garde-fou l'exclut nommément.
+
+## Ce qui a été prouvé, et comment
+
+- **Hors navigateur** : `tsc -b` et build propres ; `oxlint` rend les 6 avertissements
+  `only-export-components` déjà présents sur `main`, aucun nouveau ; garde-fou à 0 ;
+  **52 couples** de jetons conformes dans les deux thèmes.
+- **Dans le navigateur, sur un projet compose séparé** (`st-demo` : volume neuf, données de
+  démonstration, comptes de test, un ticket affecté, commenté, avec sa suggestion). La base
+  de démonstration locale n'a pas été touchée. Edge sans interface, piloté par le protocole
+  DevTools, a capturé chaque écran **dans les deux thèmes** : 4 pages publiques, 12 écrans
+  administrateur, 3 écrans technicien, 5 écrans employé, 3 états flottants (notifications,
+  palette ⌘K, sélecteur de technicien) et 4 vues à 390 px, soit 62 captures. Sur chacune,
+  un audit mesure le contraste de **chaque texte rendu** contre son fond réel,
+  transparences composées et dégradés compris (jugés sur leur arrêt le plus défavorable) :
+  **9 856 textes, aucun laissé sans mesure**.
+  - **21 textes sous le seuil.** Vingt venaient du bandeau du tableau de bord, un défaut
+    **antérieur à la séance** (identique sur `main`), resté invisible tant que l'audit
+    ignorait les dégradés. Corrigé, puis remesuré sur le tableau de bord de l'employée dans
+    les deux thèmes : 0. Le dernier est la notification « Connexion réussie », capturée
+    pendant son animation (2,73) ; mesurée au repos : 5,05 en clair, 6,78 en sombre.
+- **Consignes vérifiées** : le diff de `CreateTicketPage.tsx` ne contient que des classes
+  de couleur (`git diff --word-diff`), les champs sont les mêmes ; `exportRapport.ts`,
+  `backend/`, `ml/` et `docker-compose.yml` sont inchangés.
+
+## Dettes assumées et documentées
+
+- **Le contour des champs reste à 1,48:1 en clair** (`slate-300` sur blanc), sous le 3:1
+  de WCAG 1.4.11. Il est d'origine ; le corriger changerait tous les champs du thème clair,
+  au-delà des écarts validés en séance.
+- **La contrainte d'ordonnancement du 16/09 n'a pas été tenue** : la passe page par page
+  (PR #15) a précédé le mode sombre, et les mêmes écrans ont été rouverts une seconde fois.
+- **L'audit dans le navigateur n'est pas dans la CI** : il demande la pile complète et des
+  données. La CI rejoue les deux garde-fous statiques, pas les captures.
+- **Les glyphes décoratifs** (`decor` : chevrons, séparateurs) restent sous 3:1 dans les
+  deux thèmes (1,48 et 2,36) : ils ne portent aucune information.

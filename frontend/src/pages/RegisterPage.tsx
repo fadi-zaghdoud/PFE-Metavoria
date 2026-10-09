@@ -78,7 +78,7 @@ export function RegisterPage() {
       pied={
         <>
           Déjà un compte ?{' '}
-          <Link to="/connexion" className="font-medium text-primary-600 hover:underline">
+          <Link to="/connexion" className="font-medium text-marque hover:underline">
             Se connecter
           </Link>
         </>
@@ -131,7 +131,7 @@ export function RegisterPage() {
         </Field>
 
         <div className="space-y-1.5">
-          <label htmlFor="motDePasse" className="block text-sm font-medium text-slate-700">
+          <label htmlFor="motDePasse" className="block text-sm font-medium text-texte-2">
             Mot de passe
           </label>
           <PasswordInput
@@ -144,7 +144,7 @@ export function RegisterPage() {
             onChange={(e) => setMotDePasse(e.target.value)}
           />
           {erreursChamps.motDePasse && (
-            <p className="text-xs text-rose-600" role="alert">
+            <p className="text-xs text-danger-texte" role="alert">
               {erreursChamps.motDePasse}
             </p>
           )}

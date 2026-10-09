@@ -35,7 +35,7 @@ export function SelecteurTechnicien({ ticket, techniciens, enCours, onChoisir, o
     // confier un ticket pour son retour. La mention évite de choisir à l'aveugle, elle
     // n'interdit rien.
     annotation: t.absenceJusquau ? (
-      <span className="shrink-0 rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20">
+      <span className="shrink-0 rounded-md bg-alerte-fond px-1.5 py-0.5 text-[11px] font-medium text-alerte-texte ring-1 ring-inset ring-alerte-accent/20">
         absent → {jourCourt(t.absenceJusquau)}
       </span>
     ) : undefined,
@@ -58,7 +58,7 @@ export function SelecteurTechnicien({ ticket, techniciens, enCours, onChoisir, o
             type="button"
             disabled={enCours}
             onClick={() => onChoisir(null)}
-            className="mt-2 flex w-full items-center gap-2 rounded-xl border-t border-slate-100 px-2.5 py-2.5 text-left text-sm font-medium text-slate-500 transition-colors hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className="mt-2 flex w-full items-center gap-2 rounded-xl border-t border-bordure-faible px-2.5 py-2.5 text-left text-sm font-medium text-texte-4 transition-colors hover:bg-danger-fond hover:text-danger-texte disabled:cursor-not-allowed disabled:opacity-60"
           >
             <UserMinus className="size-4 shrink-0" aria-hidden />
             Retirer l'affectation

@@ -67,16 +67,16 @@ function StatsAdmin() {
             {COMPOSITION.map(({ label, valeur, icon: Icon }) => (
               <div key={label} className="flex items-center gap-2.5">
                 <span
-                  className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500"
+                  className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-surface-3 text-texte-4"
                   aria-hidden
                 >
                   <Icon className="size-4" />
                 </span>
                 <div className="min-w-0">
-                  <p className="text-lg font-semibold leading-tight tabular-nums text-slate-900">
+                  <p className="text-lg font-semibold leading-tight tabular-nums text-texte">
                     {valeur}
                   </p>
-                  <p className="truncate text-xs text-slate-500">{label}</p>
+                  <p className="truncate text-xs text-texte-4">{label}</p>
                 </div>
               </div>
             ))}
@@ -92,7 +92,7 @@ function StatsAdmin() {
           actions={
             <Link
               to="/administration/utilisateurs"
-              className="inline-flex items-center gap-1 text-xs font-medium text-primary-600 transition-colors hover:text-primary-700 hover:underline"
+              className="inline-flex items-center gap-1 text-xs font-medium text-marque transition-colors hover:text-marque-fort hover:underline"
             >
               Tout voir <ArrowRight className="size-3.5" aria-hidden />
             </Link>
@@ -100,23 +100,23 @@ function StatsAdmin() {
         />
         <CardContent className="p-2">
           {stats ? (
-            <ul className="divide-y divide-slate-100">
+            <ul className="divide-y divide-bordure-faible">
               {stats.recents.map((u) => (
                 <li
                   key={u.id}
-                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-slate-50"
+                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-surface-2"
                 >
                   <Avatar prenom={u.prenom} nom={u.nom} photoUrl={u.photoUrl} />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-slate-900">
+                    <p className="truncate text-sm font-medium text-texte">
                       {u.prenom} {u.nom}
                     </p>
-                    <p className="truncate text-xs text-slate-400">{u.email}</p>
+                    <p className="truncate text-xs text-texte-4">{u.email}</p>
                   </div>
                   <Badge variant={u.role === 'ADMINISTRATEUR' ? 'primary' : 'neutral'}>
                     {LABELS_ROLE[u.role]}
                   </Badge>
-                  <span className="hidden text-xs text-slate-400 sm:block">
+                  <span className="hidden text-xs text-texte-4 sm:block">
                     {tempsRelatif(u.dateCreation)}
                   </span>
                 </li>
@@ -160,13 +160,13 @@ export function DashboardPage() {
         <span aria-hidden className="absolute -bottom-24 left-1/3 size-56 rounded-full bg-accent-400/20 blur-3xl" />
         <div className="relative flex flex-wrap items-end justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-xs font-medium uppercase tracking-wider text-white/60">
+            <p className="text-xs font-medium uppercase tracking-wider text-white/85">
               {dateLongue(new Date())}
             </p>
             <h1 className="mt-1.5 text-2xl font-semibold tracking-tight md:text-3xl">
               Bonjour, {utilisateur.prenom} 👋
             </h1>
-            <p className="mt-2 max-w-lg text-sm leading-relaxed text-white/70">
+            <p className="mt-2 max-w-lg text-sm leading-relaxed text-white/90">
               {DESCRIPTIONS[utilisateur.role]}
             </p>
           </div>
@@ -184,7 +184,7 @@ export function DashboardPage() {
 
       {estAdmin && (
         <div>
-          <h2 className="mb-3 text-sm font-semibold text-slate-900">Utilisateurs</h2>
+          <h2 className="mb-3 text-sm font-semibold text-texte">Utilisateurs</h2>
           <StatsAdmin />
         </div>
       )}

@@ -216,8 +216,8 @@ export function AbsencesPage() {
             className={[
               'rounded-lg px-3 py-1.5 text-xs font-medium transition-colors',
               periode === f.valeur
-                ? 'bg-primary-500 text-white'
-                : 'bg-white text-slate-500 ring-1 ring-slate-200 hover:bg-slate-50',
+                ? 'bg-primary-600 text-white'
+                : 'bg-surface text-texte-4 ring-1 ring-bordure hover:bg-surface-2',
             ].join(' ')}
           >
             {f.label}
@@ -258,20 +258,20 @@ export function AbsencesPage() {
               </thead>
               <tbody>
                 {absences.map((a) => (
-                  <tr key={a.id} className="transition-colors hover:bg-slate-50">
-                    <Td className="font-medium text-slate-700">
+                  <tr key={a.id} className="transition-colors hover:bg-surface-2">
+                    <Td className="font-medium text-texte-2">
                       {a.technicien.prenom} {a.technicien.nom}
                     </Td>
-                    <Td className="tabular-nums text-slate-600">
+                    <Td className="tabular-nums text-texte-3">
                       {formaterJour(a.dateDebut)} → {formaterJour(a.dateFin)}
                     </Td>
-                    <Td className="hidden tabular-nums text-slate-500 sm:table-cell">
+                    <Td className="hidden tabular-nums text-texte-4 sm:table-cell">
                       {a.dureeJours} j
                     </Td>
                     <Td>
-                      <span className="text-slate-600">{LABEL_MOTIF[a.motif]}</span>
+                      <span className="text-texte-3">{LABEL_MOTIF[a.motif]}</span>
                       {a.commentaire && (
-                        <span className="block text-xs text-slate-400" title={a.commentaire}>
+                        <span className="block text-xs text-texte-4" title={a.commentaire}>
                           {a.commentaire}
                         </span>
                       )}
@@ -281,7 +281,7 @@ export function AbsencesPage() {
                         {STATUT_BADGE[a.statut].label}
                       </Badge>
                     </Td>
-                    <Td className="hidden text-slate-500 lg:table-cell">
+                    <Td className="hidden text-texte-4 lg:table-cell">
                       {a.creePar.prenom} {a.creePar.nom}
                     </Td>
                     <Td className="text-right">
@@ -337,7 +337,7 @@ export function AbsencesPage() {
 
           {!enEdition && (
             <div>
-              <label htmlFor="abs-tech" className="mb-1 block text-xs font-medium text-slate-500">
+              <label htmlFor="abs-tech" className="mb-1 block text-xs font-medium text-texte-4">
                 Technicien
               </label>
               <select
@@ -346,7 +346,7 @@ export function AbsencesPage() {
                 onChange={(e) =>
                   setBrouillon((b) => ({ ...b, technicienId: e.target.value ? Number(e.target.value) : '' }))
                 }
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100"
+                className="w-full rounded-lg border border-bordure bg-surface px-3 py-2 text-sm text-texte-2 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-marque-fond-2"
               >
                 <option value="">Choisir…</option>
                 {techniciens.map((t) => (
@@ -360,7 +360,7 @@ export function AbsencesPage() {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label htmlFor="abs-debut" className="mb-1 block text-xs font-medium text-slate-500">
+              <label htmlFor="abs-debut" className="mb-1 block text-xs font-medium text-texte-4">
                 Du
               </label>
               <Input
@@ -371,7 +371,7 @@ export function AbsencesPage() {
               />
             </div>
             <div>
-              <label htmlFor="abs-fin" className="mb-1 block text-xs font-medium text-slate-500">
+              <label htmlFor="abs-fin" className="mb-1 block text-xs font-medium text-texte-4">
                 Au (inclus)
               </label>
               <Input
@@ -384,14 +384,14 @@ export function AbsencesPage() {
           </div>
 
           <div>
-            <label htmlFor="abs-motif" className="mb-1 block text-xs font-medium text-slate-500">
+            <label htmlFor="abs-motif" className="mb-1 block text-xs font-medium text-texte-4">
               Motif
             </label>
             <select
               id="abs-motif"
               value={brouillon.motif}
               onChange={(e) => setBrouillon((b) => ({ ...b, motif: e.target.value as MotifAbsence }))}
-              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100"
+              className="w-full rounded-lg border border-bordure bg-surface px-3 py-2 text-sm text-texte-2 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-marque-fond-2"
             >
               {MOTIFS_ABSENCE.map((m) => (
                 <option key={m} value={m}>
@@ -402,7 +402,7 @@ export function AbsencesPage() {
           </div>
 
           <div>
-            <label htmlFor="abs-commentaire" className="mb-1 block text-xs font-medium text-slate-500">
+            <label htmlFor="abs-commentaire" className="mb-1 block text-xs font-medium text-texte-4">
               Commentaire (facultatif)
             </label>
             <Input
@@ -433,7 +433,7 @@ export function AbsencesPage() {
           </>
         }
       >
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-texte-4">
           Le technicien redeviendra immédiatement candidat à l'affectation automatique s'il n'a pas
           d'autre absence en cours.
         </p>

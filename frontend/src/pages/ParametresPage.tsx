@@ -218,24 +218,24 @@ export function ParametresPage() {
                       className={[
                         'rounded-xl border p-4 text-left transition-all disabled:opacity-60',
                         actif
-                          ? 'border-primary-400 bg-primary-50/60 ring-2 ring-primary-200'
-                          : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50',
+                          ? 'border-primary-400 bg-marque-fond/60 ring-2 ring-marque-bordure'
+                          : 'border-bordure hover:border-bordure-forte hover:bg-surface-2',
                       ].join(' ')}
                     >
-                      <span className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                      <span className="flex items-center gap-2 text-sm font-semibold text-texte">
                         {mode.valeur === 'AUTO' ? (
                           <Sparkles className="size-4 text-primary-500" aria-hidden />
                         ) : (
-                          <UserCog className="size-4 text-slate-400" aria-hidden />
+                          <UserCog className="size-4 text-texte-4" aria-hidden />
                         )}
                         {mode.titre}
                         {actif && (
-                          <span className="ml-auto rounded-full bg-primary-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                          <span className="ml-auto rounded-full bg-primary-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
                             Actif
                           </span>
                         )}
                       </span>
-                      <span className="mt-1.5 block text-xs leading-relaxed text-slate-500">
+                      <span className="mt-1.5 block text-xs leading-relaxed text-texte-4">
                         {mode.detail}
                       </span>
                     </button>
@@ -252,7 +252,7 @@ export function ParametresPage() {
                     {nonAssignes} ticket{nonAssignes > 1 ? 's' : ''} non assigné
                     {nonAssignes > 1 ? 's' : ''} — ce changement ne les affecte pas
                   </p>
-                  <p className="mt-0.5 text-amber-700/90">
+                  <p className="mt-0.5 text-alerte-texte/90">
                     L'affectation automatique ne s'applique qu'aux tickets créés à partir de
                     maintenant. Les tickets déjà en attente doivent être{' '}
                     <Link to="/tickets?nonAssignes=true" className="font-medium underline">
@@ -263,8 +263,8 @@ export function ParametresPage() {
                 </Alert>
               )}
 
-              <p className="flex items-start gap-2 text-xs text-slate-500">
-                <Info className="mt-0.5 size-3.5 shrink-0 text-slate-400" aria-hidden />
+              <p className="flex items-start gap-2 text-xs text-texte-4">
+                <Info className="mt-0.5 size-3.5 shrink-0 text-texte-4" aria-hidden />
                 <span>
                   L'affectation manuelle reste disponible dans les deux modes : un administrateur
                   peut toujours corriger l'attribution d'un ticket.
@@ -295,11 +295,11 @@ export function ParametresPage() {
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <label
                     htmlFor="seuil-affichage"
-                    className="text-sm font-semibold text-slate-800"
+                    className="text-sm font-semibold text-texte"
                   >
                     Affichage d'une catégorie incertaine
                   </label>
-                  <span className="text-sm font-semibold tabular-nums text-primary-700">
+                  <span className="text-sm font-semibold tabular-nums text-marque-fort">
                     {Math.round(seuilAffichageLocal * 100)} %
                   </span>
                 </div>
@@ -316,7 +316,7 @@ export function ParametresPage() {
                   className="mt-3 w-full accent-primary-600 disabled:opacity-60"
                 />
 
-                <p className="mt-2 text-xs leading-relaxed text-slate-500">
+                <p className="mt-2 text-xs leading-relaxed text-texte-4">
                   Sous ce seuil, la catégorie proposée est grisée et marquée « à préciser ».
                   Elle reste affichée : le modèle exprime son doute par une confiance basse,
                   pas en changeant de catégorie.
@@ -324,8 +324,8 @@ export function ParametresPage() {
 
                 {/* Découplage ASSUMÉ, énoncé plutôt que laissé à deviner : l'affectation
                     automatique conserve son propre seuil, en dur côté serveur. */}
-                <p className="mt-1.5 flex items-start gap-2 text-xs leading-relaxed text-slate-500">
-                  <Info className="mt-0.5 size-3.5 shrink-0 text-slate-400" aria-hidden />
+                <p className="mt-1.5 flex items-start gap-2 text-xs leading-relaxed text-texte-4">
+                  <Info className="mt-0.5 size-3.5 shrink-0 text-texte-4" aria-hidden />
                   <span>
                     Ce réglage ne change <strong>que l'affichage</strong>. L'affectation
                     automatique décide avec son propre seuil, fixé à 50 % dans le code : abaisser
@@ -354,18 +354,18 @@ export function ParametresPage() {
                 )}
               </div>
 
-              <hr className="border-slate-200" />
+              <hr className="border-bordure" />
 
               {/* ── 2. Porte d'abstention du RAG ─────────────────────────────── */}
               <div>
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-sm font-semibold text-slate-800">
+                  <span className="text-sm font-semibold text-texte">
                     Porte d'abstention des suggestions
                   </span>
                   <span
                     className={[
                       'rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide',
-                      porteActive ? 'bg-primary-500 text-white' : 'bg-slate-200 text-slate-600',
+                      porteActive ? 'bg-primary-600 text-white' : 'bg-surface-4 text-texte-3',
                     ].join(' ')}
                   >
                     {!porteActive
@@ -376,7 +376,7 @@ export function ParametresPage() {
                   </span>
                 </div>
 
-                <p className="mt-2 text-xs leading-relaxed text-slate-500">
+                <p className="mt-2 text-xs leading-relaxed text-texte-4">
                   Avant de générer une suggestion, le système note la proximité du meilleur
                   ticket passé et s'abstient sous ce seuil.{' '}
                   <strong>Ce qu'elle fait</strong> : écarter tôt les cas sans correspondance, ce
@@ -388,8 +388,8 @@ export function ParametresPage() {
                 {/* Asymétrie réelle du mécanisme (hybrid.score_abstention note docs[0], la
                     génération reçoit les 3 documents) : un administrateur doit la connaître
                     avant de régler, elle peut faire bloquer une suggestion qui aboutissait. */}
-                <p className="mt-1.5 flex items-start gap-2 text-xs leading-relaxed text-slate-500">
-                  <Info className="mt-0.5 size-3.5 shrink-0 text-slate-400" aria-hidden />
+                <p className="mt-1.5 flex items-start gap-2 text-xs leading-relaxed text-texte-4">
+                  <Info className="mt-0.5 size-3.5 shrink-0 text-texte-4" aria-hidden />
                   <span>
                     <strong>À savoir avant de régler</strong> : la porte juge sur{' '}
                     <strong>un seul candidat</strong>, le mieux classé, alors que la rédaction en
@@ -409,17 +409,17 @@ export function ParametresPage() {
                     {porteActive ? 'Désactiver la porte' : 'Activer la porte'}
                   </Button>
                   {!porteActive && (
-                    <span className="text-xs text-slate-400">
+                    <span className="text-xs text-texte-4">
                       Fermée : le système génère toujours une suggestion.
                     </span>
                   )}
                 </div>
 
                 {porteActive && (
-                  <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                  <div className="mt-4 rounded-xl border border-bordure bg-surface-2/70 p-3">
                     <label
                       htmlFor="seuil-porte"
-                      className="text-xs font-semibold text-slate-700"
+                      className="text-xs font-semibold text-texte-2"
                     >
                       Seuil d'abstention — entre 5 % et 95 %
                     </label>
@@ -435,14 +435,14 @@ export function ParametresPage() {
                         onChange={(e) => setSeuilPorteLocal(Number(e.target.value))}
                         className="min-w-[12rem] flex-1 accent-primary-600 disabled:opacity-60"
                       />
-                      <span className="text-sm font-semibold tabular-nums text-primary-700">
+                      <span className="text-sm font-semibold tabular-nums text-marque-fort">
                         {seuilPorteLocal === null ? '—' : `${Math.round(seuilPorteLocal * 100)} %`}
                       </span>
                     </div>
 
                     {/* AUCUNE valeur n'est recommandée, et l'écran doit le dire : nous
                         n'avons pas de calibration transférable (cf. J5). */}
-                    <p className="mt-2 flex items-start gap-2 text-xs leading-relaxed text-amber-700">
+                    <p className="mt-2 flex items-start gap-2 text-xs leading-relaxed text-alerte-texte">
                       <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
                       <span>
                         Aucune valeur n'est recommandée : nous n'avons pas de calibration
@@ -451,7 +451,7 @@ export function ParametresPage() {
                     </p>
 
                     {seuilPorteLocal === null ? (
-                      <p className="mt-3 text-xs font-medium text-slate-500">
+                      <p className="mt-3 text-xs font-medium text-texte-4">
                         Déplacez le curseur pour choisir un seuil, puis enregistrez.
                       </p>
                     ) : (
@@ -479,8 +479,8 @@ export function ParametresPage() {
                 )}
 
                 {/* Coût mémoire, dit avant la bascule plutôt que découvert après. */}
-                <p className="mt-3 flex items-start gap-2 text-xs leading-relaxed text-slate-500">
-                  <Info className="mt-0.5 size-3.5 shrink-0 text-slate-400" aria-hidden />
+                <p className="mt-3 flex items-start gap-2 text-xs leading-relaxed text-texte-4">
+                  <Info className="mt-0.5 size-3.5 shrink-0 text-texte-4" aria-hidden />
                   <span>
                     Ouvrir la porte fait charger un modèle supplémentaire au premier usage :
                     environ <strong>3,5 s</strong> une fois, puis <strong>+2,4 Gio</strong> de
@@ -490,11 +490,11 @@ export function ParametresPage() {
                 </p>
               </div>
 
-              <p className="flex items-start gap-2 text-xs text-slate-500">
-                <Settings className="mt-0.5 size-3.5 shrink-0 text-slate-300" aria-hidden />
+              <p className="flex items-start gap-2 text-xs text-texte-4">
+                <Settings className="mt-0.5 size-3.5 shrink-0 text-decor" aria-hidden />
                 <span>
                   Le réentraînement du modèle se pilote depuis{' '}
-                  <Link to="/administration/ia" className="font-medium text-primary-600 underline">
+                  <Link to="/administration/ia" className="font-medium text-marque underline">
                     Modèle IA
                   </Link>
                   . Chaque modification de ces réglages est enregistrée au journal d'audit.

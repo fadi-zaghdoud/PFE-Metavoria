@@ -7,8 +7,8 @@ export function Skeleton({ className, ...props }: HTMLAttributes<HTMLDivElement>
   return (
     <div
       className={cn(
-        'relative overflow-hidden rounded-md bg-slate-200/70',
-        'after:absolute after:inset-0 after:-translate-x-full after:bg-gradient-to-r after:from-transparent after:via-white/70 after:to-transparent after:animate-[shimmer_1.6s_infinite]',
+        'relative overflow-hidden rounded-md bg-surface-4/70',
+        'after:absolute after:inset-0 after:-translate-x-full after:bg-gradient-to-r after:from-transparent after:via-reflet after:to-transparent after:animate-[shimmer_1.6s_infinite]',
         className,
       )}
       {...props}

@@ -630,9 +630,9 @@ désactivation d'un compte, qui coupe la connexion et vise un départ :
 
 L'absence en cours est rappelée par une pastille **Absent** dans la liste des utilisateurs,
 par une mention « absent jusqu'au … » dans le sélecteur de technicien d'un ticket, et par
-une puce sur le graphique de charge du tableau de bord. Le **motif** n'est visible que sur
-la page Absences : le graphique de charge est consultable par tous les techniciens, et un
-arrêt maladie est une donnée de santé.
+une pastille « absent jusqu'au … » dans la section Techniciens du tableau de bord. Le
+**motif** n'est visible que sur la page Absences : le tableau de bord ne le reçoit jamais,
+car un arrêt maladie est une donnée de santé.
 
 ### Comment le technicien est choisi
 
@@ -814,7 +814,8 @@ alertes automatiques sur échecs répétés · durée de conservation réglable 
   liste paginée avec recherche côté serveur (titre, description, catégorie, demandeur, numéro)
 - ✅ **Tableau de bord et rapports** (§6.4) : tickets à affecter, ouverts et résolus, temps
   moyen de résolution, délai de 1re prise en charge avec son effectif, satisfaction,
-  répartitions par statut, priorité, catégorie et technicien ; filtres par période,
+  répartitions par statut, priorité et catégorie, activité de chaque technicien (tickets
+  ouverts, résolus, temps moyen) ; filtres par période,
   technicien, catégorie et service ; export PDF et Excel
 - ✅ **Affectation automatique** (§6.2) : interrupteur manuel/automatique persistant,
   spécialités technicien ↔ catégorie, **gestion des absences** (congé, maladie, formation)

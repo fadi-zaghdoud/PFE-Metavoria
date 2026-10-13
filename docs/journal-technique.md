@@ -4212,3 +4212,106 @@ reconstruite depuis le code du groupe 2 (aucune migration à appliquer).
   fois, au relancement du navigateur entre les deux thèmes.
 - **La carte « Module IA » est plus courte que « À traiter »** : un vide sous les trois
   chiffres, sur grand écran.
+
+---
+
+# Tableau de bord v1.1 — groupe 4 : les techniciens
+
+> Séance du **13/10/2026** (groupe 3 commité en `9ab0357`, validé).
+> Consigne : une liste avec avatar à initiales et nombre de tickets, sans barres ; seulement
+> les techniciens actifs sur la période, triés par nombre de tickets, les autres résumés en
+> une ligne (« 5 sans activité ») ; les initiales, pas de photos. Décision D7 : la section
+> nomme des collègues — l'administrateur voit l'équipe, un technicien sa seule ligne, un
+> employé rien.
+
+## Ce qui est livré
+
+- **`GET /api/tableau-de-bord/techniciens`**, réservé au support (l'employé reçoit 403). Pour
+  chaque technicien actif sur la période : ses tickets ouverts à la fin de la période, ses
+  tickets résolus sur la période et leur temps moyen de résolution, la date de fin d'une
+  absence en cours ; puis le nombre de comptes techniciens sans activité. Un technicien n'y
+  reçoit que sa propre ligne, quel que soit le filtre demandé. Ni adresse e-mail, ni motif
+  d'absence.
+- **Tests** : 6 tests d'intégration de plus (22 au total) :
+  - les définitions et le tri ;
+  - « ouverts » au dernier jour de la période ;
+  - ni e-mail ni motif d'absence dans la réponse ;
+  - la ligne unique du technicien, même quand il demande celle d'un collègue ;
+  - le refus fait à l'employée ;
+  - les filtres de technicien et de service.
+- **Section « Techniciens »** (administrateur), à la place des barres « Charge par
+  technicien » :
+  - une liste : avatar à initiales, nom, « 236 résolus · 47,4 h en moyenne » et, à droite,
+    les tickets ouverts — l'en-tête de la colonne dit « ouverts », ou « ouverts au 31/08 »
+    pour une période passée ;
+  - trois lignes, puis « 6 autres actifs · 1 sans activité » ; « N autres actifs » déplie la
+    liste, « Réduire la liste » la replie ;
+  - une infobulle par ligne, au survol et au focus clavier : ce que mesure chaque nombre ;
+  - une absence en cours : la pastille « absent jusqu'au 13/10 ».
+- **Section « Mon activité »** (technicien) : son nom, puis trois lignes — tickets ouverts,
+  résolus, temps moyen de résolution —, ou « Aucune activité sur la période ».
+- **Exports** : la « Charge par technicien » laisse place à la liste de l'écran — feuille
+  « Techniciens » de l'Excel, section du PDF —, avec sa définition. Le technicien y trouve
+  « Mon activité » ; l'employé, plus rien : son export nommait jusqu'ici tous les techniciens.
+  Au passage, un titre de section ne reste plus seul en bas de page du PDF (c'était déjà le
+  cas de « Charge par technicien »).
+
+## Les décisions, et leurs raisons `[établi en séance]`
+
+- **Les définitions** :
+  - au **technicien actuel** du ticket : l'historique des affectations n'est pas reconstitué ;
+  - **ouverts** : ses tickets non résolus à la fin de la période — la définition de la carte
+    « Ouverts », ventilée par technicien. Sur une période qui finit aujourd'hui, c'est sa
+    charge du moment ;
+  - **résolus** et **temps moyen** : ceux des cartes du haut, ventilés par technicien ;
+    l'effectif de la moyenne est le nombre de résolus, affiché à côté ;
+  - **actif sur la période** : au moins un ticket ouvert à sa fin ou résolu en son cours —
+    autrement dit, un ticket qu'il a détenu, ouvert, à un moment de la période ;
+  - **sans activité** : les comptes techniciens actifs, non désactivés, sans aucun de ces
+    tickets. Un administrateur ou un compte désactivé n'apparaissent que s'ils ont une
+    activité.
+- **Le tri** : par tickets ouverts, puis par résolus — l'ordre de la colonne « en cours » de
+  la maquette.
+- **« ouverts » plutôt que « en cours »**, l'en-tête de la maquette : « En cours » est aussi
+  un statut, affiché sous la carte « Ouverts ». La colonne compte les tickets en attente ET
+  en cours : sur la base locale, 27 + 26 + 25 + 2 + 2 = 82 tickets, contre 46 tickets « en
+  cours » (et 36 en attente). Le même mot pour deux nombres, sur le même écran, se lirait comme une erreur. Avec
+  « ouverts », la colonne et la carte se recoupent : 82 + 54 tickets sans technicien = 136.
+- **Trois lignes avant « N autres actifs »**, comme la maquette : à cinq, la carte dépassait
+  ses voisines (priorités, satisfaction) d'environ 150 px, et la rangée gardait deux vides.
+- **La vue du technicien en trois lignes** plutôt qu'en une ligne de liste : seule, la ligne
+  laissait la carte aux deux tiers vide.
+- **L'absence** : la date de fin seulement, comme l'ancien graphique de charge ; le motif ne
+  quitte jamais l'administration des absences.
+
+## Ce qui a été prouvé, et comment
+
+- **Backend** : typage, lint, 127 tests unitaires ; **22 tests d'intégration verts** sur la
+  base jetable.
+- **Sur la base locale, en lecture seule**, par le code réel du service :
+  - 12 mois : 9 techniciens actifs, 1 sans activité — Technicien Support 1 (27 ouverts,
+    236 résolus, 47,4 h), Support 2 (26, 238, 48,8 h), Support 3 (25, 249, 48 h), puis
+    « test test » (2, 7) et Fadi Zaghdoud (2, 1) ;
+  - plage de démonstration (31/05 → 09/06/2026) : 3 actifs, 7 sans activité — Support 1
+    (22 ouverts, 26 résolus, 45 h), Support 3 (19, 32, 56,4 h), Support 2 (17, 27, 42,7 h) ;
+  - un technicien qui demande la ligne d'un collègue reçoit la sienne.
+- **Frontend** : build, `oxlint` (les 6 avertissements de `main`), `verifier:couleurs` sur
+  85 fichiers, `verifier:contrastes`.
+- **Dans le navigateur** (`st-demo`, deux thèmes, trois rôles, mobile, survols) : 40 relevés,
+  **5 218 textes, aucun sous le seuil**, aucun secteur sous 3:1, aucune adresse e-mail,
+  aucun point décimal ; pas de section chez l'employée ; « ouverts au 31/08 » sur une période
+  passée. **États simulés** — la réponse du seul point d'accès des techniciens remplacée
+  dans le navigateur, aucune base lue ni écrite pour eux : 8 techniciens repliés puis
+  dépliés, un nom très long, une absence, un technicien sans activité.
+- **Exports** téléchargés pour les trois rôles et relus : l'Excel en vrais nombres (47,4),
+  le PDF à virgule (« 47,4 »), la mention d'absence sans motif, aucune adresse e-mail.
+
+## Dettes assumées et documentées
+
+- **Le technicien actuel, pas l'historique** : un ticket réaffecté compte entièrement chez
+  son dernier technicien, y compris sur une période passée.
+- **Les comptes de test de la base locale** (« Tech Evt », « Tech Sat »…) sont actifs sur
+  12 mois : un ticket résolu chacun, en 0 min. Ce sont de vraies données ; une base
+  reconstruite ne les a pas.
+- **La liste dépliée allonge la rangée** : à huit techniciens, les cartes voisines
+  s'étirent d'autant. Le repli reste l'état par défaut.

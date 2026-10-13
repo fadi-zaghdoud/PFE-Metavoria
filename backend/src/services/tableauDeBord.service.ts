@@ -6,6 +6,7 @@ import {
 import type { TableauDeBordQueryDto } from '../validators/tableauDeBord.validator';
 import { ValidationError } from '../utils/AppError';
 import type { Acteur } from './ticket.service';
+import { dateDuJour } from './absence.disponibilite';
 import {
   arrondiHeures,
   resoudrePeriode,
@@ -126,6 +127,36 @@ export const tableauDeBordService = {
       sansTechnicien: comptes.sans_technicien,
       sansPriseEnCharge: { total: comptes.sans_prise_en_charge, tickets: sansPriseEnCharge },
       plusAnciens: { total: comptes.ouverts, tickets: plusAnciens },
+    };
+  },
+
+  // Techniciens actifs sur la période — au moins un ticket ouvert à sa fin ou résolu en son
+  // cours —, les plus chargés d'abord ; les comptes techniciens sans activité ne sont que
+  // comptés. Décision D7 : la section nomme des collègues, donc un technicien n'y reçoit que
+  // sa propre ligne, quel que soit le filtre demandé. La période est celle des autres
+  // sections (même périmètre), pour que « Tout » parte du même premier ticket.
+  async techniciens(acteur: Acteur, q: TableauDeBordQueryDto) {
+    const perimetre = perimetreDe(acteur, q);
+    const periode = await periodeDe(perimetre, q);
+    const lignes = await tableauDeBordRepository.techniciens(
+      { ...perimetre, technicienId: acteur.role === 'TECHNICIEN' ? acteur.id : q.technicienId },
+      periode.du,
+      periode.au,
+      dateDuJour(new Date()),
+    );
+    const actifs = lignes.filter((l) => l.ouverts + l.resolus > 0);
+    return {
+      periode,
+      techniciens: actifs.map((l) => ({
+        id: l.id,
+        prenom: l.prenom,
+        nom: l.nom,
+        ouverts: l.ouverts,
+        resolus: l.resolus,
+        tempsResolution: { heures: arrondiHeures(l.heures_resolution), n: l.resolus },
+        absenceJusquau: l.absence_jusquau,
+      })),
+      sansActivite: lignes.length - actifs.length,
     };
   },
 

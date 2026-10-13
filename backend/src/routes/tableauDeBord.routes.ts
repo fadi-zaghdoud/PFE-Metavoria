@@ -21,3 +21,10 @@ tableauDeBordRouter.get(
 );
 // « À traiter » : le présent, sans période ; un employé y voit ses tickets ouverts.
 tableauDeBordRouter.get('/a-traiter', asyncHandler(tableauDeBordController.aTraiter));
+// Activité des techniciens : le support seul. L'administrateur voit l'équipe, un technicien
+// sa seule ligne (le service l'impose) ; un employé n'y a pas accès.
+tableauDeBordRouter.get(
+  '/techniciens',
+  requireRole('TECHNICIEN', 'ADMINISTRATEUR'),
+  asyncHandler(tableauDeBordController.techniciens),
+);

@@ -63,6 +63,26 @@ export interface ATraiterTableau {
   plusAnciens: { total: number; tickets: TicketATraiter[] };
 }
 
+// Activité d'un technicien sur la période, au technicien actuel du ticket. Ni e-mail, ni
+// motif d'absence : le nom, les effectifs, la date de fin d'une absence en cours.
+export interface TechnicienTableau {
+  id: number;
+  prenom: string;
+  nom: string;
+  ouverts: number; // tickets non résolus à la fin de la période
+  resolus: number; // tickets résolus dans la période
+  tempsResolution: Moyenne;
+  absenceJusquau: string | null; // AAAA-MM-JJ
+}
+
+// Les techniciens actifs, les plus chargés d'abord ; les comptes sans activité ne sont que
+// comptés. Réservé au support : un technicien n'y reçoit que sa propre ligne.
+export interface TechniciensTableau {
+  periode: PeriodeTableau;
+  techniciens: TechnicienTableau[];
+  sansActivite: number;
+}
+
 export interface FiltresTableau {
   du?: string;
   au?: string;
@@ -89,6 +109,8 @@ export const tableauDeBordApi = {
     apiRequest<TendanceTableau>(`/tableau-de-bord/tendance${requete(filtres)}`, { token }),
   ia: (filtres: FiltresTableau, token: string) =>
     apiRequest<IaTableau>(`/tableau-de-bord/ia${requete(filtres)}`, { token }),
+  techniciens: (filtres: FiltresTableau, token: string) =>
+    apiRequest<TechniciensTableau>(`/tableau-de-bord/techniciens${requete(filtres)}`, { token }),
   // Sans période : seules la catégorie, le technicien et le service sont transmis.
   aTraiter: ({ categorieId, technicienId, service }: FiltresTableau, token: string) =>
     apiRequest<ATraiterTableau>(`/tableau-de-bord/a-traiter${requete({ categorieId, technicienId, service })}`, {

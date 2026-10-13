@@ -1,6 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { motion } from 'motion/react';
 import { ArrowRight, CheckCircle2, Clock, Download, FileText, Hand, Inbox, X } from 'lucide-react';
 import { ticketsApi } from '../tickets/ticketsApi';
 import { utilisateursApi } from '../utilisateurs/utilisateursApi';
@@ -9,7 +8,7 @@ import { PASTILLE_STATUT } from '../tickets/statutCouleurs';
 import { useAuthStore } from '../../store/authStore';
 import type { Categorie, PrioriteTicket } from '../../types/ticket';
 import type { Utilisateur } from '../../types/auth';
-import { Card, CardContent, CardHeader } from '../../components/ui/Card';
+import { Card } from '../../components/ui/Card';
 import { Input, Select } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { Skeleton } from '../../components/ui/Skeleton';
@@ -24,6 +23,7 @@ import { CarteIndicateur } from './graphiques/CarteIndicateur';
 import { CourbeTendance, LegendeTendance } from './graphiques/CourbeTendance';
 import { SectionIA } from './graphiques/SectionIA';
 import { SectionATraiter } from './graphiques/SectionATraiter';
+import { ColonneOuverts, SectionTechniciens } from './graphiques/SectionTechniciens';
 import { calculerVariation } from './graphiques/variation';
 import { COULEUR_PRIORITE, partsCategories, type PartGraphique } from './graphiques/couleurs';
 import { SelecteurPeriode } from './SelecteurPeriode';
@@ -34,10 +34,10 @@ import { useChargement } from './useChargement';
 // Jauge des priorités : de Faible, à gauche, à Critique, à droite.
 const PRIORITES_JAUGE: PrioriteTicket[] = ['FAIBLE', 'MOYENNE', 'HAUTE', 'CRITIQUE'];
 
-// Trois sources, chargées en parallèle sur les mêmes bornes : les indicateurs et la courbe
-// (points d'accès du tableau de bord), et les répartitions, la satisfaction et la charge
-// (/tickets/statistiques, inchangé : période sur la date de création). Fonctions définies
-// hors du composant, donc stables pour `useChargement`.
+// Sources chargées en parallèle sur les mêmes bornes : les points d'accès du tableau de bord
+// (indicateurs, courbe, module IA, « À traiter », techniciens) et /tickets/statistiques,
+// inchangé, pour les répartitions et la satisfaction (période sur la date de création).
+// Fonctions définies hors du composant, donc stables pour `useChargement`.
 const chargerStatistiques = (f: FiltresTableau, token: string) =>
   ticketsApi.statistiques(
     { dateDebut: f.du, dateFin: f.au, categorieId: f.categorieId, technicienId: f.technicienId, service: f.service },
@@ -47,91 +47,7 @@ const chargerIndicateurs = tableauDeBordApi.indicateurs;
 const chargerTendance = tableauDeBordApi.tendance;
 const chargerIa = tableauDeBordApi.ia;
 const chargerATraiter = tableauDeBordApi.aTraiter;
-
-interface DonneeBarre {
-  label: string;
-  value: number;
-  couleur: string;
-  // Clé de rendu. Indispensable pour la charge par technicien : deux homonymes
-  // partageraient le même libellé, et React confondrait leurs lignes (le risque a
-  // augmenté depuis que les techniciens sans ticket ouvert sont eux aussi affichés).
-  cle?: string;
-  // Mention discrète à droite du libellé (ex. « absent jusqu au 20/08 »).
-  annotation?: string;
-}
-
-// Graphique en barres horizontales : balayage animé à l'apparition, remplissage en
-// aplat, survol de ligne. Chaque barre porte son libellé et sa valeur. Ne sert plus qu'à la
-// charge par technicien, jusqu'à l'arrivée de la liste des techniciens (groupe 4).
-function CarteBarres({
-  titre,
-  description,
-  donnees,
-  index = 0,
-  className,
-}: {
-  titre: string;
-  description?: string;
-  donnees: DonneeBarre[];
-  index?: number;
-  className?: string;
-}) {
-  const max = Math.max(1, ...donnees.map((d) => d.value));
-  const vide = donnees.every((d) => d.value === 0);
-  return (
-    <Card
-      className={cn('animate-fade-up overflow-hidden', className)}
-      style={{ animationDelay: `${index * 80}ms` }}
-    >
-      <CardHeader title={titre} description={description} />
-      <CardContent className="@container space-y-0.5">
-        {vide ? (
-          <p className="py-6 text-center text-sm text-texte-4">Aucune donnée sur la période.</p>
-        ) : (
-          donnees.map((d, i) => (
-            <div
-              key={d.cle ?? d.label}
-              className="group -mx-2 flex items-center gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-surface-2"
-            >
-              {/* La colonne de libellés s'élargit avec LA CARTE, pas avec l'écran : en
-                  bandeau pleine largeur, « Youssef Mansour » et « Nadia Khelifi » tenaient
-                  dans 96 px fixes pendant que la barre disposait de toute la place. Le
-                  seuil (56 rem de conteneur) ne se déclenche que sur la carte pleine
-                  largeur — en deux colonnes, la carte fait ~35 rem et garde 96 px, pour ne
-                  pas rogner les barres. `truncate` reste le filet pour les noms extrêmes,
-                  avec le nom complet en infobulle. */}
-              <span
-                className="flex w-24 shrink-0 items-center gap-1 text-xs font-medium text-texte-4 @4xl:w-44"
-                title={d.annotation ? `${d.label} — ${d.annotation}` : d.label}
-              >
-                <span className="truncate">{d.label}</span>
-                {d.annotation && (
-                  <span
-                    className="shrink-0 rounded bg-alerte-fond-2 px-1 text-[10px] font-semibold text-alerte-texte"
-                    aria-label={d.annotation}
-                  >
-                    abs.
-                  </span>
-                )}
-              </span>
-              <div className="relative h-2.5 flex-1 overflow-hidden rounded-full bg-surface-3">
-                <motion.div
-                  className={cn('h-full rounded-full', d.couleur)}
-                  initial={{ width: '0%' }}
-                  animate={{ width: `${d.value === 0 ? 0 : Math.max(4, (d.value / max) * 100)}%` }}
-                  transition={{ duration: 0.7, delay: 0.1 + i * 0.05, ease: [0.16, 1, 0.3, 1] }}
-                />
-              </div>
-              <span className="w-8 text-right text-xs font-semibold tabular-nums text-texte-2">
-                {nombreFr(d.value)}
-              </span>
-            </div>
-          ))
-        )}
-      </CardContent>
-    </Card>
-  );
-}
+const chargerTechniciens = tableauDeBordApi.techniciens;
 
 function ChampFiltre({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -141,14 +57,6 @@ function ChampFiltre({ label, children }: { label: string; children: ReactNode }
     </div>
   );
 }
-
-// « 2026-08-20 » -> « 20/08 ». Découpe de chaîne et non new Date(...) : construire une
-// date à partir du jour seul la placerait à minuit UTC et pourrait afficher la veille
-// dans un fuseau à décalage négatif.
-const jourCourt = (jour: string) => {
-  const [, mois, j] = jour.split('-');
-  return mois && j ? `${j}/${mois}` : jour;
-};
 
 // Statuts des tickets ouverts aujourd'hui, sous la carte « Ouverts » — aux couleurs qu'ils
 // ont sur tous les écrans. Chez l'administrateur, « nouveaux » mène aux tickets sans
@@ -242,16 +150,20 @@ export function TableauDeBord() {
   const ia = useChargement(params, estSupport ? token : null, essai, chargerIa);
   // « À traiter » : sans période, donc sans rechargement quand elle change.
   const aTraiter = useChargement(filtres, token, essai, chargerATraiter);
+  // Techniciens : le support seul (D7) ; le serveur ne rend à un technicien que sa ligne.
+  const equipe = useChargement(params, estSupport ? token : null, essai, chargerTechniciens);
   const stats = statistiques.donnees;
   const ind = indicateurs.donnees;
-  const erreur = statistiques.erreur || indicateurs.erreur || tendance.erreur || ia.erreur || aTraiter.erreur;
+  const erreur =
+    statistiques.erreur || indicateurs.erreur || tendance.erreur || ia.erreur || aTraiter.erreur || equipe.erreur;
   // Rechargement : l'image précédente reste, atténuée, le temps que tout soit arrivé.
   const attenue =
     (statistiques.enChargement && stats !== null) ||
     (indicateurs.enChargement && ind !== null) ||
     (tendance.enChargement && tendance.donnees !== null) ||
     (ia.enChargement && ia.donnees !== null) ||
-    (aTraiter.enChargement && aTraiter.donnees !== null);
+    (aTraiter.enChargement && aTraiter.donnees !== null) ||
+    (equipe.enChargement && equipe.donnees !== null);
 
   function choisirPeriode(nouveau: ChoixPeriode) {
     // Passer à « Dates » part des bornes affichées, plutôt que d'un champ vide.
@@ -296,6 +208,11 @@ export function TableauDeBord() {
     return parts.join(' · ');
   }
 
+  // Les exports reprennent les sections de l'écran : la liste des techniciens n'y figure que
+  // pour le support, comme à l'écran (D7).
+  const equipeExport = estSupport && equipe.donnees ? { donnees: equipe.donnees, vueEquipe: estAdmin } : null;
+  const exportPret = stats !== null && ind !== null && (!estSupport || equipe.donnees !== null);
+
   // Import dynamique : les librairies d'export (jsPDF, write-excel-file) ne sont
   // chargées qu'au moment de l'export, pour ne pas alourdir le bundle principal.
   async function exporterExcel() {
@@ -303,7 +220,7 @@ export function TableauDeBord() {
     setExportEnCours('excel');
     try {
       const { exporterStatistiquesExcel } = await import('./exportRapport');
-      await exporterStatistiquesExcel(stats, ind, descriptionFiltres());
+      await exporterStatistiquesExcel(stats, ind, equipeExport, descriptionFiltres());
     } finally {
       setExportEnCours(null);
     }
@@ -314,7 +231,7 @@ export function TableauDeBord() {
     setExportEnCours('pdf');
     try {
       const { exporterStatistiquesPdf } = await import('./exportRapport');
-      exporterStatistiquesPdf(stats, ind, descriptionFiltres());
+      exporterStatistiquesPdf(stats, ind, equipeExport, descriptionFiltres());
     } finally {
       setExportEnCours(null);
     }
@@ -327,27 +244,6 @@ export function TableauDeBord() {
     valeur: stats?.repartitionPriorite.find((r) => r.priorite === p)?.count ?? 0,
     ...COULEUR_PRIORITE[p],
   }));
-  const chargeComplete = (stats?.chargeParTechnicien ?? []).map((r) => ({
-    cle: String(r.technicienId),
-    label: r.technicien,
-    value: r.count,
-    couleur: 'bg-serie-accent',
-    annotation: r.absenceJusquau ? `absent jusqu'au ${jourCourt(r.absenceJusquau)}` : undefined,
-  }));
-
-  // Un technicien à 0 ne veut pas dire la même chose selon qu'un filtre est actif ou non.
-  // SANS FILTRE, c'est une information utile : de la capacité disponible, et précisément
-  // celui qu'une affectation automatique doit préférer (§6.2). AVEC UN FILTRE, le même 0
-  // ne dit plus « disponible » mais « aucun ticket correspondant » — filtrer sur un
-  // technicien donnait 10 barres dont 9 vides. On les masque alors, en annonçant combien.
-  //
-  // Le tri se fait ICI et non côté serveur, volontairement : `chargeCourante` renvoie la
-  // liste de TOUS les techniciens actifs par un findMany non filtré, parce que la même
-  // fonction alimente l'affectation automatique, qui a besoin des techniciens à 0. Les
-  // COMPTES, eux, respectent bien le filtre. Y toucher casserait le §6.2.
-  const chargeMasquees = filtresActifs ? chargeComplete.filter((d) => d.value === 0).length : 0;
-  const dataCharge = chargeMasquees > 0 ? chargeComplete.filter((d) => d.value > 0) : chargeComplete;
-
   return (
     <div className="space-y-6">
       {/* En-tête : période, filtres existants, exports. */}
@@ -432,7 +328,7 @@ export function TableauDeBord() {
             <Button
               variant="secondary"
               size="sm"
-              disabled={!stats || !ind || exportEnCours !== null}
+              disabled={!exportPret || exportEnCours !== null}
               loading={exportEnCours === 'excel'}
               onClick={exporterExcel}
             >
@@ -442,7 +338,7 @@ export function TableauDeBord() {
             <Button
               variant="secondary"
               size="sm"
-              disabled={!stats || !ind || exportEnCours !== null}
+              disabled={!exportPret || exportEnCours !== null}
               loading={exportEnCours === 'pdf'}
               onClick={exporterPdf}
             >
@@ -563,7 +459,7 @@ export function TableauDeBord() {
           </CarteGraphique>
         </div>
 
-        {/* Priorités, satisfaction ; charge par technicien jusqu'au groupe 4. */}
+        {/* Priorités, satisfaction ; techniciens pour le support. */}
         <div className={cn('grid grid-cols-1 gap-4 md:grid-cols-2', estSupport && 'xl:grid-cols-3')}>
           <CarteGraphique titre="Par priorité">
             {stats ? (
@@ -583,20 +479,18 @@ export function TableauDeBord() {
               <EnAttente erreur={statistiques.erreur} hauteur="h-[220px]" />
             )}
           </CarteGraphique>
-          {estSupport && stats && (
-            <CarteBarres
-              titre="Charge par technicien"
-              description={
-                chargeMasquees > 0
-                  ? `Tickets ouverts assignés · ${chargeMasquees} technicien${
-                      chargeMasquees > 1 ? 's' : ''
-                    } sans ticket sur ce filtre`
-                  : 'Tickets ouverts assignés'
-              }
-              donnees={dataCharge}
-              index={1}
+          {estSupport && (
+            <CarteGraphique
+              titre={estAdmin ? 'Techniciens' : 'Mon activité'}
+              action={estAdmin && equipe.donnees ? <ColonneOuverts periode={equipe.donnees.periode} /> : undefined}
               className="md:col-span-2 xl:col-span-1"
-            />
+            >
+              {equipe.donnees ? (
+                <SectionTechniciens donnees={equipe.donnees} vueEquipe={estAdmin} />
+              ) : (
+                <EnAttente erreur={equipe.erreur} hauteur="h-[220px]" />
+              )}
+            </CarteGraphique>
           )}
         </div>
 

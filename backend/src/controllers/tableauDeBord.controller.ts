@@ -29,4 +29,9 @@ export const tableauDeBordController = {
     const q = tableauDeBordQuerySchema.parse(req.query);
     res.status(200).json(await tableauDeBordService.aTraiter(acteur(req), q));
   },
+
+  async techniciens(req: Request, res: Response) {
+    const q = tableauDeBordQuerySchema.parse(req.query);
+    res.status(200).json(await tableauDeBordService.techniciens(acteur(req), q));
+  },
 };

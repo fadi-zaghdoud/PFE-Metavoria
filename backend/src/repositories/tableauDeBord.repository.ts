@@ -29,12 +29,13 @@ const filtre = (p: Perimetre) => Prisma.sql`
   AND (${p.categorieId ?? null}::int IS NULL OR tk.categorie_id = ${p.categorieId ?? null}::int)
   AND (${p.service ?? null}::text IS NULL OR d.service = ${p.service ?? null}::text)`;
 
-// Les tickets du périmètre, avec leur date de création, de résolution et de 1re prise en
-// charge. `clos` repère les statuts Résolu et Clôturé : un tel ticket sans date de
-// résolution connue n'est compté ni ouvert, ni résolu dans une période.
+// Les tickets du périmètre, avec leur technicien, leur date de création, de résolution et de
+// 1re prise en charge. `clos` repère les statuts Résolu et Clôturé : un tel ticket sans date
+// de résolution connue n'est compté ni ouvert, ni résolu dans une période.
 const ticketsDuPerimetre = (p: Perimetre) => Prisma.sql`
   SELECT
     tk.id,
+    tk.technicien_id AS technicien,
     tk.date_creation AS cree,
     COALESCE(
       (SELECT max(e.date_creation) FROM evenements_ticket e
@@ -79,6 +80,18 @@ export interface TicketATraiter {
   priorite: 'FAIBLE' | 'MOYENNE' | 'HAUTE' | 'CRITIQUE';
   dateCreation: string;
   joursOuvert: number;
+}
+
+// Ni adresse e-mail, ni motif d'absence : seuls le nom et la date de fin d'une absence en
+// cours sortent d'ici (MALADIE est une donnée de santé).
+export interface LigneTechnicien {
+  id: number;
+  prenom: string;
+  nom: string;
+  ouverts: number;
+  resolus: number;
+  heures_resolution: number | null;
+  absence_jusquau: string | null;
 }
 
 export const tableauDeBordRepository = {
@@ -184,6 +197,43 @@ export const tableauDeBordRepository = {
         AND (${sansPriseEnCharge} = false OR tk.statut IN ('NOUVEAU', 'EN_ATTENTE'))
       ORDER BY tk.date_creation ASC, tk.id ASC
       LIMIT ${limite}`;
+  },
+
+  // Activité de chaque technicien sur la période, au technicien ACTUEL du ticket :
+  //   - ouverts = ses tickets non résolus à la fin de la période (la définition de la carte
+  //     « Ouverts », ventilée par technicien) ;
+  //   - résolus = ses tickets résolus dans la période, avec leur temps moyen de résolution.
+  // Actif = au moins un ticket ouvert ou résolu, c'est-à-dire un ticket détenu, ouvert, à un
+  // moment de la période. Les lignes rendues : les comptes techniciens actifs, même sans
+  // activité (le service les compte à part), et tout autre détenteur d'activité — un
+  // administrateur, un compte désactivé. `jour` (fuseau métier) date l'absence en cours.
+  async techniciens(p: Perimetre, du: string, au: string, jour: string): Promise<LigneTechnicien[]> {
+    return prisma.$queryRaw<LigneTechnicien[]>`
+      WITH t AS (${ticketsDuPerimetre(p)}),
+      activite AS (
+        SELECT technicien AS id,
+          count(*) FILTER (
+            WHERE cree < ${au}::date + 1 AND NOT (resolu IS NULL AND clos)
+              AND (resolu IS NULL OR resolu >= ${au}::date + 1))::int AS ouverts,
+          count(*) FILTER (WHERE resolu >= ${du}::date AND resolu < ${au}::date + 1)::int AS resolus,
+          (avg(extract(epoch FROM resolu - cree))
+            FILTER (WHERE resolu >= ${du}::date AND resolu < ${au}::date + 1) / 3600)::float8 AS heures_resolution
+        FROM t
+        WHERE technicien IS NOT NULL
+        GROUP BY technicien
+      )
+      SELECT u.id, u.prenom, u.nom,
+             COALESCE(a.ouverts, 0)::int AS ouverts,
+             COALESCE(a.resolus, 0)::int AS resolus,
+             a.heures_resolution,
+             (SELECT to_char(ab.date_fin, 'YYYY-MM-DD') FROM absences ab
+               WHERE ab.technicien_id = u.id AND ab.date_debut <= ${jour}::date AND ab.date_fin >= ${jour}::date
+               ORDER BY ab.date_fin DESC LIMIT 1) AS absence_jusquau
+      FROM utilisateurs u
+      LEFT JOIN activite a ON a.id = u.id
+      WHERE (${p.technicienId ?? null}::int IS NULL OR u.id = ${p.technicienId ?? null}::int)
+        AND ((u.role = 'TECHNICIEN' AND u.actif) OR COALESCE(a.ouverts, 0) + COALESCE(a.resolus, 0) > 0)
+      ORDER BY ouverts DESC, resolus DESC, u.prenom, u.nom, u.id`;
   },
 
   // Tickets créés et résolus par tranche (jour, semaine du lundi, mois), toutes les tranches

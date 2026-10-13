@@ -1,10 +1,11 @@
 import writeXlsxFile from 'write-excel-file/browser';
 import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import autoTable, { type RowInput } from 'jspdf-autotable';
 import type { StatistiquesTickets } from '../../types/ticket';
 import { LABEL_PRIORITE, LABEL_STATUT } from '../tickets/ticket-ui';
 import { nombreFr } from '../../lib/format';
-import type { IndicateursTableau } from './tableauDeBordApi';
+import { jourLisible } from './periodes';
+import type { IndicateursTableau, TechnicienTableau, TechniciensTableau } from './tableauDeBordApi';
 
 const COULEUR_MARQUE = '#4f46e5';
 const nomFichier = (ext: string) => `rapport-tickets-${new Date().toISOString().slice(0, 10)}.${ext}`;
@@ -52,6 +53,35 @@ const DEFINITIONS = [
   'Temps de résolution : de la création à la résolution. 1re prise en charge : de la création à la première prise en charge.',
   'Ouverts : tickets non résolus à la fin de la période. Satisfaction et répartitions : tickets créés dans la période.',
 ];
+const DEFINITION_TECHNICIENS =
+  'Techniciens : au technicien actuel du ticket — ouverts à la fin de la période, résolus et temps moyen sur la période.';
+
+// La section des techniciens, telle qu'à l'écran : le support seul la reçoit (D7) ; un
+// technicien n'y a que sa propre ligne, sous le titre « Mon activité ».
+export interface EquipeExport {
+  donnees: TechniciensTableau;
+  vueEquipe: boolean;
+}
+
+const definitions = (equipe: EquipeExport | null) => (equipe ? [...DEFINITIONS, DEFINITION_TECHNICIENS] : DEFINITIONS);
+
+// Le nom, et la date de fin d'une absence en cours — jamais son motif.
+const nomTechnicien = (t: TechnicienTableau) =>
+  t.absenceJusquau
+    ? `${t.prenom} ${t.nom} (absent jusqu'au ${jourLisible(t.absenceJusquau, { day: '2-digit', month: '2-digit', year: 'numeric' })})`
+    : `${t.prenom} ${t.nom}`;
+
+// Ce qui suit la liste : les comptes sans activité (vue de l'équipe), ou l'état vide.
+function mentionEquipe({ donnees, vueEquipe }: EquipeExport): string | null {
+  if (donnees.techniciens.length === 0 && !vueEquipe) return 'Aucune activité sur la période.';
+  const parts: string[] = [];
+  if (donnees.techniciens.length === 0) parts.push('Aucun technicien actif sur la période.');
+  if (vueEquipe && donnees.sansActivite > 0) {
+    const n = donnees.sansActivite;
+    parts.push(`${nombreFr(n)} technicien${n > 1 ? 's' : ''} sans activité sur la période.`);
+  }
+  return parts.length ? parts.join(' ') : null;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Export Excel (.xlsx) — deux feuilles : Synthèse (KPI) et Répartitions.
@@ -62,6 +92,7 @@ const entete = (value: string) =>
 export async function exporterStatistiquesExcel(
   stats: StatistiquesTickets,
   indicateurs: IndicateursTableau,
+  equipe: EquipeExport | null,
   resumeFiltres: string,
 ) {
   const dateStr = new Date().toLocaleString('fr-FR');
@@ -79,7 +110,7 @@ export async function exporterStatistiquesExcel(
     ]),
     [],
     [{ value: 'Définitions', fontWeight: 'bold' } as const],
-    ...DEFINITIONS.map((d) => [{ value: d, color: '#64748b' } as const]),
+    ...definitions(equipe).map((d) => [{ value: d, color: '#64748b' } as const]),
   ];
 
   const nombre = (n: number) => ({ value: n, type: Number }) as const;
@@ -93,22 +124,39 @@ export async function exporterStatistiquesExcel(
     [entete('Catégorie'), entete('Nombre')],
     ...stats.repartitionCategorie.map((r) => [{ value: r.categorie }, nombre(r.count)]),
     [],
-    [entete('Technicien'), entete('Tickets ouverts')],
-    ...stats.chargeParTechnicien.map((r) => [
-      { value: r.absenceJusquau ? `${r.technicien} (absent jusqu'au ${r.absenceJusquau})` : r.technicien },
-      nombre(r.count),
-    ]),
-    [],
     [entete('Satisfaction'), entete('Nombre')],
     ...[...stats.repartitionSatisfaction]
       .reverse()
       .map((r) => [{ value: `${r.note} étoile${r.note > 1 ? 's' : ''}` }, nombre(r.count)]),
   ];
 
-  await writeXlsxFile([
+  const feuilles = [
     { data: synthese, sheet: 'Synthèse', columns: [{ width: 40 }, { width: 14 }, { width: 20 }] },
     { data: repartitions, sheet: 'Répartitions', columns: [{ width: 28 }, { width: 18 }] },
-  ]).toFile(nomFichier('xlsx'));
+  ];
+  if (equipe) {
+    const mention = mentionEquipe(equipe);
+    feuilles.push({
+      data: [
+        [
+          entete('Technicien'),
+          entete('Ouverts en fin de période'),
+          entete('Résolus sur la période'),
+          entete('Temps moyen de résolution (h)'),
+        ],
+        ...equipe.donnees.techniciens.map((t) => [
+          { value: nomTechnicien(t) },
+          cellule(t.ouverts),
+          cellule(t.resolus),
+          cellule(t.tempsResolution.heures, '0.0'),
+        ]),
+        ...(mention ? [[], [{ value: mention, color: '#64748b' } as const]] : []),
+      ],
+      sheet: equipe.vueEquipe ? 'Techniciens' : 'Mon activité',
+      columns: [{ width: 40 }, { width: 24 }, { width: 22 }, { width: 28 }],
+    });
+  }
+  await writeXlsxFile(feuilles).toFile(nomFichier('xlsx'));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -117,6 +165,7 @@ export async function exporterStatistiquesExcel(
 export function exporterStatistiquesPdf(
   stats: StatistiquesTickets,
   indicateurs: IndicateursTableau,
+  equipe: EquipeExport | null,
   resumeFiltres: string,
 ) {
   const doc = new jsPDF();
@@ -142,13 +191,23 @@ export function exporterStatistiquesPdf(
   });
   doc.setFontSize(8);
   doc.setTextColor(100, 116, 139);
-  doc.text(doc.splitTextToSize(DEFINITIONS.join(' '), 182), 14, finalY() + 5);
-  const apresDefinitions = finalY() + 14;
+  const lignesDefinitions: string[] = doc.splitTextToSize(definitions(equipe).join(' '), 182);
+  doc.text(lignesDefinitions, 14, finalY() + 5);
+  // L'écart d'origine (14 mm) vaut pour les définitions de base ; chaque ligne en plus — la
+  // définition des techniciens — décale la suite d'autant.
+  const lignesEnPlus = lignesDefinitions.length - doc.splitTextToSize(DEFINITIONS.join(' '), 182).length;
+  const apresDefinitions = finalY() + 14 + lignesEnPlus * (doc.getLineHeight() / doc.internal.scaleFactor);
 
   let premiere = true;
-  const section = (titre: string, tete: string[], corps: string[][]) => {
-    const y = premiere ? apresDefinitions : finalY() + 8;
+  const section = (titre: string, tete: string[], corps: RowInput[]) => {
+    let y = premiere ? apresDefinitions : finalY() + 8;
     premiere = false;
+    // Un titre ne reste jamais seul en bas de page : sans la place d'un en-tête de tableau et
+    // de quelques lignes sous lui, il passe à la page suivante avec son tableau.
+    if (y > doc.internal.pageSize.getHeight() - 40) {
+      doc.addPage();
+      y = 20;
+    }
     doc.setFontSize(11);
     doc.setTextColor(30, 41, 59);
     doc.text(titre, 14, y);
@@ -170,15 +229,24 @@ export function exporterStatistiquesPdf(
     ['Catégorie', 'Nombre'],
     stats.repartitionCategorie.map((r) => [r.categorie, pdf(r.count)]),
   );
-  section(
-    'Charge par technicien',
-    ['Technicien', 'Tickets ouverts'],
-    // Même mention qu'à l'écran : sans elle, l'export contredirait le tableau de bord.
-    stats.chargeParTechnicien.map((r) => [
-      r.absenceJusquau ? `${r.technicien} (absent jusqu'au ${r.absenceJusquau})` : r.technicien,
-      pdf(r.count),
-    ]),
-  );
+  if (equipe) {
+    const mention = mentionEquipe(equipe);
+    section(
+      equipe.vueEquipe ? 'Techniciens' : 'Mon activité',
+      ['Technicien', 'Ouverts (fin de période)', 'Résolus', 'Temps moyen (h)'],
+      [
+        ...equipe.donnees.techniciens.map((t) => [
+          nomTechnicien(t),
+          pdf(t.ouverts),
+          pdf(t.resolus),
+          pdf(t.tempsResolution.heures),
+        ]),
+        ...(mention
+          ? [[{ content: mention, colSpan: 4, styles: { textColor: [100, 116, 139] as [number, number, number] } }]]
+          : []),
+      ],
+    );
+  }
   if (stats.nombreEvaluations > 0) {
     section(
       'Répartition des évaluations',

@@ -439,6 +439,7 @@ Scripts utiles :
 | `npm run typecheck` | Vérifie les types sans compiler |
 | `npm run lint` / `lint:fix` | Vérifie / corrige le style de code (ESLint) |
 | `npm test` | Lance les tests unitaires (voir « Lancer les tests ») |
+| `npm run test:integration` | Lance les tests SQL sur une base de test dédiée (voir « Lancer les tests ») |
 | `npm run prisma:studio` | Ouvre Prisma Studio (interface de la base de données) |
 | `npm run prisma:migrate` | Crée et applique une nouvelle migration |
 
@@ -456,8 +457,8 @@ Le serveur de dev Vite proxifie automatiquement les appels `/api` vers `http://l
 ## Lancer les tests
 
 Ce sont les commandes de l'intégration continue (`.github/workflows/ci.yml`), rejouées à
-chaque push et à chaque pull request vers `main`. Aucune ne demande de base de données,
-de modèle lourd ni de Docker.
+chaque push et à chaque pull request vers `main`. Aucune ne demande de modèle lourd ; seuls
+les tests d'intégration du backend demandent une base de données — jetable.
 
 ### Backend — typage, lint, tests unitaires
 
@@ -482,6 +483,25 @@ DATABASE_URL=postgresql://ci:ci@localhost:5432/ci \
 JWT_SECRET=ci-factice-aucun-secret-ci-factice-aucun-secret \
 npm test
 ```
+
+### Backend — tests d'intégration (SQL)
+
+Les points d'accès du tableau de bord (`/api/tableau-de-bord/…`) agrègent en SQL : leurs
+tests (`src/**/*.itest.ts`) interrogent une **vraie** base PostgreSQL, y écrivent un jeu de
+données aux dates choisies, puis la vident. Leur garde **refuse toute base dont le nom ne
+finit pas par `_test`**, avant la moindre requête : sans `DATABASE_URL` explicite, ils
+liraient `backend/.env`, qui pointe sur la base de développement.
+
+```bash
+docker run -d --name st-test-db -e POSTGRES_USER=test -e POSTGRES_PASSWORD=test   -e POSTGRES_DB=smart_ticketing_test -p 55434:5432 pgvector/pgvector:pg17
+export DATABASE_URL=postgresql://test:test@localhost:55434/smart_ticketing_test
+npx prisma migrate deploy
+npm run test:integration
+docker rm -f st-test-db        # la base ne sert qu'aux tests
+```
+
+En CI, le job `backend-integration` crée la même base comme service du job, applique les
+migrations et lance ces tests.
 
 ### Module IA — pytest
 
@@ -822,9 +842,9 @@ alertes automatiques sur échecs répétés · durée de conservation réglable 
 - ✅ **Données de démonstration** chargeables depuis un clone propre (profil `demo`) : 852 tickets
   synthétiques aux numéros fixes, base de connaissances du RAG, réentraînement — voir
   « Données de démonstration »
-- ✅ **Intégration continue** (GitHub Actions) : typage, lint et tests du backend, suite rapide
-  pytest du module IA, lint, build et garde-fous du thème du frontend, rejoués à chaque
-  push et pull request vers `main`
+- ✅ **Intégration continue** (GitHub Actions) : typage, lint et tests du backend, tests SQL
+  sur une base éphémère, suite rapide pytest du module IA, lint, build et garde-fous du
+  thème du frontend, rejoués à chaque push et pull request vers `main`
 
 **Non retenu au périmètre** — écarté par écrit, annexe B du
 [plan de travail](docs/plan-de-travail-esprit.md) :

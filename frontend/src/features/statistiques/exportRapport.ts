@@ -4,6 +4,7 @@ import autoTable from 'jspdf-autotable';
 import type { StatistiquesTickets } from '../../types/ticket';
 import { LABEL_PRIORITE, LABEL_STATUT } from '../tickets/ticket-ui';
 import { nombreFr } from '../../lib/format';
+import type { IndicateursTableau } from './tableauDeBordApi';
 
 const COULEUR_MARQUE = '#4f46e5';
 const nomFichier = (ext: string) => `rapport-tickets-${new Date().toISOString().slice(0, 10)}.${ext}`;
@@ -19,13 +20,50 @@ const pdf = (v: number | null, decimales = 1) =>
 const cellule = (v: number | null, format = '0') =>
   v == null ? ({ value: '—' } as const) : ({ value: v, type: Number, format } as const);
 
+// Synthèse : les quatre indicateurs de l'écran, mêmes définitions (journal technique), avec
+// la valeur de la période précédente — absente (« — ») quand elle n'a pas de données — et
+// l'effectif des moyennes. La satisfaction vient des tickets créés dans la période.
+type Ligne = { libelle: string; valeur: number | null; precedent: number | null; decimal?: boolean };
+function lignesSynthese(stats: StatistiquesTickets, i: IndicateursTableau): Ligne[] {
+  return [
+    { libelle: 'Tickets résolus sur la période', valeur: i.resolus.valeur, precedent: i.resolus.precedent },
+    {
+      libelle: 'Temps moyen de résolution (h)',
+      valeur: i.tempsResolution.heures,
+      precedent: i.tempsResolution.precedent?.heures ?? null,
+      decimal: true,
+    },
+    { libelle: '   sur (tickets résolus)', valeur: i.tempsResolution.n, precedent: i.tempsResolution.precedent?.n ?? null },
+    { libelle: 'Tickets ouverts en fin de période', valeur: i.ouverts.valeur, precedent: i.ouverts.precedent },
+    {
+      libelle: 'Délai moyen de 1re prise en charge (h)',
+      valeur: i.priseEnCharge.heures,
+      precedent: i.priseEnCharge.precedent?.heures ?? null,
+      decimal: true,
+    },
+    { libelle: '   sur (tickets pris en charge)', valeur: i.priseEnCharge.n, precedent: i.priseEnCharge.precedent?.n ?? null },
+    { libelle: 'Satisfaction moyenne (/5)', valeur: stats.satisfactionMoyenne, precedent: null, decimal: true },
+    { libelle: "Nombre d'évaluations", valeur: stats.nombreEvaluations, precedent: null },
+  ];
+}
+
+const DEFINITIONS = [
+  'Résolus : tickets dont la résolution tombe dans la période (dernier passage à « Résolu », sinon clôture).',
+  'Temps de résolution : de la création à la résolution. 1re prise en charge : de la création à la première prise en charge.',
+  'Ouverts : tickets non résolus à la fin de la période. Satisfaction et répartitions : tickets créés dans la période.',
+];
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Export Excel (.xlsx) — deux feuilles : Synthèse (KPI) et Répartitions.
 // ─────────────────────────────────────────────────────────────────────────────
 const entete = (value: string) =>
   ({ value, fontWeight: 'bold', color: '#ffffff', backgroundColor: COULEUR_MARQUE, align: 'left' }) as const;
 
-export async function exporterStatistiquesExcel(stats: StatistiquesTickets, resumeFiltres: string) {
+export async function exporterStatistiquesExcel(
+  stats: StatistiquesTickets,
+  indicateurs: IndicateursTableau,
+  resumeFiltres: string,
+) {
   const dateStr = new Date().toLocaleString('fr-FR');
 
   const synthese = [
@@ -33,13 +71,15 @@ export async function exporterStatistiquesExcel(stats: StatistiquesTickets, resu
     [{ value: `Généré le ${dateStr}`, color: '#64748b' } as const],
     [{ value: resumeFiltres ? `Filtres : ${resumeFiltres}` : 'Aucun filtre appliqué', color: '#64748b' } as const],
     [],
-    [entete('Indicateur'), entete('Valeur')],
-    [{ value: 'Tickets ouverts' }, cellule(stats.ticketsOuverts)],
-    [{ value: 'Résolus / clôturés' }, cellule(stats.ticketsResolus + stats.ticketsClotures)],
-    [{ value: 'Temps de résolution moyen (h)' }, cellule(stats.tempsResolutionMoyenHeures, '0.0')],
-    [{ value: 'Délai de prise en charge moyen (h)' }, cellule(stats.delaiPriseEnChargeMoyenHeures, '0.0')],
-    [{ value: 'Satisfaction moyenne (/5)' }, cellule(stats.satisfactionMoyenne, '0.0')],
-    [{ value: "Nombre d'évaluations" }, cellule(stats.nombreEvaluations)],
+    [entete('Indicateur'), entete('Période'), entete('Période précédente')],
+    ...lignesSynthese(stats, indicateurs).map((l) => [
+      { value: l.libelle },
+      cellule(l.valeur, l.decimal ? '0.0' : '0'),
+      cellule(l.precedent, l.decimal ? '0.0' : '0'),
+    ]),
+    [],
+    [{ value: 'Définitions', fontWeight: 'bold' } as const],
+    ...DEFINITIONS.map((d) => [{ value: d, color: '#64748b' } as const]),
   ];
 
   const nombre = (n: number) => ({ value: n, type: Number }) as const;
@@ -66,7 +106,7 @@ export async function exporterStatistiquesExcel(stats: StatistiquesTickets, resu
   ];
 
   await writeXlsxFile([
-    { data: synthese, sheet: 'Synthèse', columns: [{ width: 36 }, { width: 16 }] },
+    { data: synthese, sheet: 'Synthèse', columns: [{ width: 40 }, { width: 14 }, { width: 20 }] },
     { data: repartitions, sheet: 'Répartitions', columns: [{ width: 28 }, { width: 18 }] },
   ]).toFile(nomFichier('xlsx'));
 }
@@ -74,7 +114,11 @@ export async function exporterStatistiquesExcel(stats: StatistiquesTickets, resu
 // ─────────────────────────────────────────────────────────────────────────────
 // Export PDF — titre, filtres appliqués, tableaux stylés et pagination.
 // ─────────────────────────────────────────────────────────────────────────────
-export function exporterStatistiquesPdf(stats: StatistiquesTickets, resumeFiltres: string) {
+export function exporterStatistiquesPdf(
+  stats: StatistiquesTickets,
+  indicateurs: IndicateursTableau,
+  resumeFiltres: string,
+) {
   const doc = new jsPDF();
   const dateStr = new Date().toLocaleString('fr-FR');
   const teteStyle = { fillColor: [79, 70, 229] as [number, number, number], textColor: 255, fontStyle: 'bold' as const };
@@ -91,21 +135,20 @@ export function exporterStatistiquesPdf(stats: StatistiquesTickets, resumeFiltre
 
   autoTable(doc, {
     startY: resumeFiltres ? 37 : 31,
-    head: [['Indicateur', 'Valeur']],
-    body: [
-      ['Tickets ouverts', pdf(stats.ticketsOuverts)],
-      ['Résolus / clôturés', pdf(stats.ticketsResolus + stats.ticketsClotures)],
-      ['Temps de résolution moyen (h)', pdf(stats.tempsResolutionMoyenHeures)],
-      ['Délai de prise en charge moyen (h)', pdf(stats.delaiPriseEnChargeMoyenHeures)],
-      ['Satisfaction moyenne (/5)', pdf(stats.satisfactionMoyenne)],
-      ["Nombre d'évaluations", pdf(stats.nombreEvaluations)],
-    ],
+    head: [['Indicateur', 'Période', 'Période précédente']],
+    body: lignesSynthese(stats, indicateurs).map((l) => [l.libelle, pdf(l.valeur), pdf(l.precedent)]),
     headStyles: teteStyle,
     styles: { fontSize: 9 },
   });
+  doc.setFontSize(8);
+  doc.setTextColor(100, 116, 139);
+  doc.text(doc.splitTextToSize(DEFINITIONS.join(' '), 182), 14, finalY() + 5);
+  const apresDefinitions = finalY() + 14;
 
+  let premiere = true;
   const section = (titre: string, tete: string[], corps: string[][]) => {
-    const y = finalY() + 8;
+    const y = premiere ? apresDefinitions : finalY() + 8;
+    premiere = false;
     doc.setFontSize(11);
     doc.setTextColor(30, 41, 59);
     doc.text(titre, 14, y);

@@ -4015,3 +4015,112 @@ CSS compilé y sont toutes définies.
   **antérieures à Recharts** et hors du périmètre : non corrigées ici.
 - **Les fichiers exportés sont datés en UTC** (`toISOString`) : peu après minuit, heure
   locale, ils portent la date de la veille. Antérieur à la séance, non corrigé.
+
+---
+
+# Tableau de bord v1.1 — groupe 2 : le socle, l'en-tête, les cartes et la courbe
+
+> Séances des **12 et 13/10/2026** (groupe 1 commité en `8a94e0f`, validé dans le
+> navigateur). Périmètre fixé par la consigne du 10/10 : périodes, points d'accès en
+> lecture seule, tests SQL et leur job CI, en-tête à boutons de période, quatre cartes,
+> courbe en aires, exports alignés.
+
+## Ce qui est livré
+
+- **Backend, en lecture seule et additif** — `GET /api/tableau-de-bord/indicateurs` et
+  `/tendance`, montés à côté des routes existantes ; `/tickets/statistiques` est inchangé,
+  aucune migration :
+  - `tableauDeBord.periode.ts`, fonctions pures : jours entiers en UTC, bornes comprises ;
+    période précédente de même durée, finissant la veille ; « Tout » depuis le premier
+    ticket, sans période précédente ; granularité jour jusqu'à 45 jours, semaine (du
+    lundi) jusqu'à un an, mois au-delà ;
+  - `tableauDeBord.repository.ts` : toutes les agrégations **en SQL**, selon les
+    définitions D3 ; les tranches vides de la courbe sont produites par
+    `generate_series` ;
+  - le service applique le périmètre du rôle — un employé ne voit que ses tickets — et ne
+    donne la valeur précédente que si elle a un effectif.
+- **Tests** : 9 tests unitaires des périodes (`npm test`, 127 au total) et **9 tests
+  d'intégration** (`npm run test:integration`) sur une vraie base PostgreSQL, à partir d'un
+  jeu de 7 tickets aux dates choisies. Chaque attendu se recalcule à la main : résolution
+  par l'événement ou, à défaut, par la clôture ; ticket résolu sans date ; stock d'ouverts
+  à la fin de la période précédente ; 1re prise en charge ; périmètre de l'employée ;
+  filtres ; « Tout » ; tranches quotidiennes et hebdomadaires ; refus des paramètres
+  invalides. La garde refuse toute base dont le nom ne finit pas par « _test ».
+- **CI** : un job `backend-integration` crée une base `pgvector:pg17` éphémère, applique
+  les migrations et lance ces tests.
+- **En-tête** : boutons de période (7 j, 30 j, 90 j, 12 mois — par défaut —, Tout, Dates),
+  les filtres existants, les exports, et une ligne qui dit la période et ce à quoi elle est
+  comparée.
+- **Quatre cartes** : Résolus, Temps de résolution, Ouverts, 1re prise en charge — icône,
+  valeur en grand, variation fléchée **seulement** si la période précédente a des données ;
+  vert pour une amélioration, rouge pour une dégradation (plus de résolus est mieux ; plus
+  d'ouverts ou un délai plus long, pire) ; effectif des moyennes sous la valeur.
+- **Statuts** : la mention sous « Ouverts » (nouveaux, en attente, en cours), aux couleurs
+  des badges. Chez l'administrateur, « nouveaux » mène aux tickets sans technicien.
+- **Courbe** : créés en aire légère, résolus en ligne, une seule échelle, réticule et
+  infobulle donnant les deux séries de la tranche.
+- **Exports alignés** : la synthèse reprend les quatre indicateurs de l'écran, avec la
+  valeur de la période précédente et les effectifs, puis une note des définitions.
+- **Retirés**, leurs remplaçants arrivés : les quatre anciennes cartes (dont « À affecter »
+  et « Satisfaction moyenne »), les barres « Tickets par statut », l'ancien panneau de
+  filtres.
+
+## Les décisions, et leurs raisons `[établi en séance]`
+
+- **Bornes calculées par l'interface, période précédente et granularité par le serveur.**
+  Les boutons deviennent des jours (`du`, `au`) ; les mêmes bornes vont aux nouveaux points
+  d'accès et à `/tickets/statistiques`, dont l'anneau, la jauge et la satisfaction
+  dépendent. Une seule source de bornes, donc des cartes et des répartitions sur la même
+  période.
+- **Bornes transmises en jours, converties par Postgres** (`'2026-05-31'::date`). Une date
+  JavaScript passerait par le fuseau du pilote `pg` et décalerait les bornes d'un fuseau à
+  l'autre ; un jour, non.
+- **Statuts seulement si la période finit aujourd'hui.** Le statut d'une date passée n'est
+  pas reconstituable : les tickets synthétiques n'ont pas d'historique d'événements. Pour
+  une période passée, la carte dit plutôt la date du stock (« au 9 juin 2026 »).
+- **« À affecter » remplacé par la mention.** Dans ce cycle de vie, un ticket Nouveau n'a
+  pas de technicien : la mention, avec son lien, porte la même information. La règle
+  « un bloc ne disparaît qu'à l'arrivée de son remplaçant » est tenue ; le groupe 3 y
+  ajoutera le compteur de « À traiter ».
+- **Pas de variation sur un zéro** : le pourcentage d'un zéro ne veut rien dire, le
+  serveur ne donne pas la valeur précédente sans effectif, et l'interface n'affiche rien.
+- **Satisfaction et répartitions sur les tickets créés dans la période**, le périmètre
+  de `/tickets/statistiques`, inchangé ; écrit dans la note des définitions de l'export.
+
+## Un bogue trouvé par les tests d'intégration
+
+La première exécution a échoué sur `resolus.precedent` : le service renvoyait, comme valeur
+de la période précédente, celle de la période **en cours** (`precedent(l.resolus, …)` au
+lieu de `l.resolus_prec`). La carte « Résolus » aurait affiché « 0 % » partout. Corrigé ;
+c'est exactement le défaut qu'un test sur un jeu de données calculé à la main existe pour
+attraper.
+
+## Ce qui a été prouvé, et comment
+
+- **Backend** : typage, lint ; 127 tests unitaires ; **9 tests d'intégration verts** sur une
+  base jetable (`st-test-db`), migrations appliquées par `migrate deploy`.
+- **Sur la base locale, en lecture seule** : le code réel du service, exécuté dans une
+  session `default_transaction_read_only=on` vérifiée avant toute requête, redonne les
+  chiffres de la plage de démonstration — 85 résolus contre 80, 48,6 h contre 51,7 h,
+  87 ouverts contre 82, prise en charge « — » — et, sur 12 mois, 735 résolus et
+  136 ouverts dont 54 nouveaux, 36 en attente et 46 en cours.
+- **Frontend** : build, `oxlint` (les 6 avertissements de `main`), `verifier:couleurs` sur
+  82 fichiers, `verifier:contrastes` ; formulaire de création et détail de ticket toujours
+  identiques à `v1.0` hors classes.
+- **Dans le navigateur** (`st-demo`, frontend et backend reconstruits) — administrateur,
+  technicien, employée, mobile, période « 30 j », survol de chaque graphique, deux thèmes :
+  26 relevés, **2 192 textes**, graduations des axes SVG comprises — le banc lit désormais
+  leur `fill` —, **aucun sous le seuil** ; aucun secteur sous 3:1 ; aucune adresse e-mail,
+  aucun point décimal.
+- **Exports** relus après téléchargement : mêmes chiffres qu'à l'écran, virgule dans le PDF,
+  nombres dans l'Excel.
+
+## Dettes assumées et documentées
+
+- **Le job CI ne tourne que sur une pull request vers `main`** (déclencheurs du workflow) :
+  sa première exécution réelle aura lieu à l'ouverture de la PR, à l'étape 4. Les mêmes
+  commandes ont été jouées en local, sur la même image.
+- **Tranches partielles** : la première et la dernière semaine (ou le dernier mois) d'une
+  période ne sont pas complètes ; leur point peut paraître creux.
+- **Barres « Charge par technicien »** : jusqu'au groupe 4.
+- **Sur écran étroit**, le bouton « Réinitialiser » fait passer les exports à la ligne.

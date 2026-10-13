@@ -1,31 +1,15 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
-import {
-  CheckCircle2,
-  Clock,
-  Download,
-  FileText,
-  Inbox,
-  SlidersHorizontal,
-  Star,
-  UserPlus,
-  X,
-} from 'lucide-react';
+import { CheckCircle2, Clock, Download, FileText, Hand, Inbox, X } from 'lucide-react';
 import { ticketsApi } from '../tickets/ticketsApi';
 import { utilisateursApi } from '../utilisateurs/utilisateursApi';
-import { LABEL_PRIORITE, LABEL_STATUT } from '../tickets/ticket-ui';
+import { LABEL_PRIORITE } from '../tickets/ticket-ui';
 import { PASTILLE_STATUT } from '../tickets/statutCouleurs';
 import { useAuthStore } from '../../store/authStore';
-import type {
-  Categorie,
-  FiltresStatistiques,
-  PrioriteTicket,
-  StatistiquesTickets,
-} from '../../types/ticket';
+import type { Categorie, PrioriteTicket } from '../../types/ticket';
 import type { Utilisateur } from '../../types/auth';
 import { Card, CardContent, CardHeader } from '../../components/ui/Card';
-import { StatCard } from '../../components/ui/StatCard';
 import { Input, Select } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { Skeleton } from '../../components/ui/Skeleton';
@@ -36,10 +20,29 @@ import { CarteGraphique } from './graphiques/CarteGraphique';
 import { AnneauCategories } from './graphiques/AnneauCategories';
 import { JaugePriorites } from './graphiques/JaugePriorites';
 import { SectionSatisfaction } from './graphiques/SectionSatisfaction';
+import { CarteIndicateur } from './graphiques/CarteIndicateur';
+import { CourbeTendance, LegendeTendance } from './graphiques/CourbeTendance';
+import { calculerVariation } from './graphiques/variation';
 import { COULEUR_PRIORITE, partsCategories, type PartGraphique } from './graphiques/couleurs';
+import { SelecteurPeriode } from './SelecteurPeriode';
+import { bornesPour, intervalleLisible, jourLisible, PERIODE_PAR_DEFAUT, type ChoixPeriode } from './periodes';
+import { tableauDeBordApi, type FiltresTableau, type IndicateursTableau } from './tableauDeBordApi';
+import { useChargement } from './useChargement';
 
 // Jauge des priorités : de Faible, à gauche, à Critique, à droite.
 const PRIORITES_JAUGE: PrioriteTicket[] = ['FAIBLE', 'MOYENNE', 'HAUTE', 'CRITIQUE'];
+
+// Trois sources, chargées en parallèle sur les mêmes bornes : les indicateurs et la courbe
+// (points d'accès du tableau de bord), et les répartitions, la satisfaction et la charge
+// (/tickets/statistiques, inchangé : période sur la date de création). Fonctions définies
+// hors du composant, donc stables pour `useChargement`.
+const chargerStatistiques = (f: FiltresTableau, token: string) =>
+  ticketsApi.statistiques(
+    { dateDebut: f.du, dateFin: f.au, categorieId: f.categorieId, technicienId: f.technicienId, service: f.service },
+    token,
+  );
+const chargerIndicateurs = tableauDeBordApi.indicateurs;
+const chargerTendance = tableauDeBordApi.tendance;
 
 interface DonneeBarre {
   label: string;
@@ -54,7 +57,8 @@ interface DonneeBarre {
 }
 
 // Graphique en barres horizontales : balayage animé à l'apparition, remplissage en
-// aplat, survol de ligne. Chaque barre porte son libellé et sa valeur.
+// aplat, survol de ligne. Chaque barre porte son libellé et sa valeur. Ne sert plus qu'à la
+// charge par technicien, jusqu'à l'arrivée de la liste des techniciens (groupe 4).
 function CarteBarres({
   titre,
   description,
@@ -115,7 +119,7 @@ function CarteBarres({
                 />
               </div>
               <span className="w-8 text-right text-xs font-semibold tabular-nums text-texte-2">
-                {d.value}
+                {nombreFr(d.value)}
               </span>
             </div>
           ))
@@ -142,24 +146,60 @@ const jourCourt = (jour: string) => {
   return mois && j ? `${j}/${mois}` : jour;
 };
 
+// Statuts des tickets ouverts aujourd'hui, sous la carte « Ouverts » — aux couleurs qu'ils
+// ont sur tous les écrans. Chez l'administrateur, « nouveaux » mène aux tickets sans
+// technicien : c'est ce que disait la carte « À affecter », qu'elle remplace (dans ce cycle
+// de vie, un ticket Nouveau n'a pas de technicien ; l'assignation le fait passer En attente).
+function MentionStatuts({
+  statuts,
+  lienAffecter,
+}: {
+  statuts: NonNullable<IndicateursTableau['ouverts']['statuts']>;
+  lienAffecter: boolean;
+}) {
+  const nouveaux = `${nombreFr(statuts.NOUVEAU)} nouveau${statuts.NOUVEAU > 1 ? 'x' : ''}`;
+  return (
+    <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <span className="inline-flex items-center gap-1.5">
+        <span className={cn('size-1.5 rounded-full', PASTILLE_STATUT.NOUVEAU)} aria-hidden />
+        {lienAffecter && statuts.NOUVEAU > 0 ? (
+          <Link
+            to="/tickets?vue=non-assignes"
+            className="text-marque underline-offset-2 hover:underline"
+            title="Tickets sans technicien, à affecter"
+          >
+            {nouveaux}
+          </Link>
+        ) : (
+          nouveaux
+        )}
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <span className={cn('size-1.5 rounded-full', PASTILLE_STATUT.EN_ATTENTE)} aria-hidden />
+        {nombreFr(statuts.EN_ATTENTE)} en attente
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <span className={cn('size-1.5 rounded-full', PASTILLE_STATUT.EN_COURS)} aria-hidden />
+        {nombreFr(statuts.EN_COURS)} en cours
+      </span>
+    </p>
+  );
+}
+
+const pluriel = (n: number, mot: string) => `${nombreFr(n)} ${mot}${n > 1 ? 's' : ''}`;
+
 export function TableauDeBord() {
   const token = useAuthStore((s) => s.token);
   const utilisateur = useAuthStore((s) => s.utilisateur);
   const estAdmin = utilisateur?.role === 'ADMINISTRATEUR';
   const estSupport = utilisateur?.role === 'TECHNICIEN' || estAdmin;
 
-  const [filtres, setFiltres] = useState<FiltresStatistiques>({});
-  // Dernier résultat reçu, avec la requête qui l'a produit. Tant que la réponse à de
-  // nouveaux filtres n'est pas arrivée, l'écran garde l'image précédente, atténuée — ni
-  // squelette, ni saut de mise en page.
-  const [essai, setEssai] = useState(0);
-  const [resultat, setResultat] = useState<{
-    cle: string;
-    stats: StatistiquesTickets | null;
-    erreur: boolean;
-  } | null>(null);
+  const [choix, setChoix] = useState<ChoixPeriode>(PERIODE_PAR_DEFAUT);
+  const [dates, setDates] = useState<{ du?: string; au?: string }>({});
+  const [filtres, setFiltres] = useState<Pick<FiltresTableau, 'categorieId' | 'technicienId' | 'service'>>({});
   const [categories, setCategories] = useState<Categorie[]>([]);
   const [techniciens, setTechniciens] = useState<Utilisateur[]>([]);
+  const [essai, setEssai] = useState(0);
   const [exportEnCours, setExportEnCours] = useState<'excel' | 'pdf' | null>(null);
 
   // Données des filtres : catégories pour tous, techniciens pour l'administrateur.
@@ -177,32 +217,50 @@ export function TableauDeBord() {
     }
   }, [token, estAdmin]);
 
-  const cleRequete = `${JSON.stringify(filtres)}#${essai}`;
-  useEffect(() => {
-    if (!token) return;
-    let actif = true;
-    ticketsApi
-      .statistiques(filtres, token)
-      .then((s) => actif && setResultat({ cle: cleRequete, stats: s, erreur: false }))
-      .catch(() => actif && setResultat({ cle: cleRequete, stats: null, erreur: true }));
-    return () => {
-      actif = false;
-    };
-  }, [token, filtres, cleRequete]);
-  const stats = resultat?.stats ?? null;
-  const erreur = resultat?.erreur === true && resultat.cle === cleRequete;
-  const enChargement = resultat !== null && resultat.cle !== cleRequete;
+  const params: FiltresTableau = { ...bornesPour(choix, dates), ...filtres };
+  const statistiques = useChargement(params, token, essai, chargerStatistiques);
+  const indicateurs = useChargement(params, token, essai, chargerIndicateurs);
+  const tendance = useChargement(params, token, essai, chargerTendance);
+  const stats = statistiques.donnees;
+  const ind = indicateurs.donnees;
+  const erreur = statistiques.erreur || indicateurs.erreur || tendance.erreur;
+  // Rechargement : l'image précédente reste, atténuée, le temps que tout soit arrivé.
+  const attenue =
+    (statistiques.enChargement && stats !== null) ||
+    (indicateurs.enChargement && ind !== null) ||
+    (tendance.enChargement && tendance.donnees !== null);
 
-  function maj(patch: Partial<FiltresStatistiques>) {
+  function choisirPeriode(nouveau: ChoixPeriode) {
+    // Passer à « Dates » part des bornes affichées, plutôt que d'un champ vide.
+    if (nouveau === 'dates' && !dates.du && !dates.au) setDates(bornesPour(choix, {}));
+    setChoix(nouveau);
+  }
+  function maj(patch: Partial<typeof filtres>) {
     setFiltres((f) => ({ ...f, ...patch }));
   }
-  const filtresActifs = Object.values(filtres).some((v) => v !== undefined && v !== '');
+  const filtresActifs =
+    choix !== PERIODE_PAR_DEFAUT || Object.values(filtres).some((v) => v !== undefined && v !== '');
+  function reinitialiser() {
+    setChoix(PERIODE_PAR_DEFAUT);
+    setDates({});
+    setFiltres({});
+  }
 
-  // Résumé lisible des filtres actifs (noms résolus), repris dans les exports.
+  const periode = ind?.periode;
+  const precedente = periode?.precedente
+    ? intervalleLisible(periode.precedente.du, periode.precedente.au)
+    : undefined;
+  const sansComparaison =
+    ind !== null &&
+    ind.resolus.precedent === null &&
+    ind.tempsResolution.precedent === null &&
+    ind.ouverts.precedent === null &&
+    ind.priseEnCharge.precedent === null;
+
+  // Résumé lisible de la période et des filtres (noms résolus), repris dans les exports.
   function descriptionFiltres(): string {
     const parts: string[] = [];
-    if (filtres.dateDebut || filtres.dateFin)
-      parts.push(`Période : ${filtres.dateDebut ?? '…'} → ${filtres.dateFin ?? '…'}`);
+    if (periode) parts.push(`Période : ${intervalleLisible(periode.du, periode.au)}`);
     if (filtres.categorieId) {
       const c = categories.find((x) => x.id === filtres.categorieId);
       parts.push(`Catégorie : ${c?.nom ?? filtres.categorieId}`);
@@ -218,41 +276,27 @@ export function TableauDeBord() {
   // Import dynamique : les librairies d'export (jsPDF, write-excel-file) ne sont
   // chargées qu'au moment de l'export, pour ne pas alourdir le bundle principal.
   async function exporterExcel() {
-    if (!stats) return;
+    if (!stats || !ind) return;
     setExportEnCours('excel');
     try {
       const { exporterStatistiquesExcel } = await import('./exportRapport');
-      await exporterStatistiquesExcel(stats, descriptionFiltres());
+      await exporterStatistiquesExcel(stats, ind, descriptionFiltres());
     } finally {
       setExportEnCours(null);
     }
   }
 
   async function exporterPdf() {
-    if (!stats) return;
+    if (!stats || !ind) return;
     setExportEnCours('pdf');
     try {
       const { exporterStatistiquesPdf } = await import('./exportRapport');
-      exporterStatistiquesPdf(stats, descriptionFiltres());
+      exporterStatistiquesPdf(stats, ind, descriptionFiltres());
     } finally {
       setExportEnCours(null);
     }
   }
 
-  // « À affecter » — tickets NOUVEAU. Dans ce cycle de vie, NOUVEAU équivaut à « sans
-  // technicien » : l'assignation fait passer à EN_ATTENTE, la désassignation ramène à
-  // NOUVEAU. Vérifié sur les 870 tickets de la base — aucun NOUVEAU assigné, aucun ticket
-  // ouvert non-NOUVEAU sans technicien. Dérivé ici plutôt que demandé au backend, laissé
-  // hors périmètre de cette passe : si l'invariant devait tomber, c'est un compteur
-  // explicite côté serveur qu'il faudrait, pas un correctif ici.
-  const aAffecter = stats?.repartitionStatut.find((r) => r.statut === 'NOUVEAU')?.count ?? 0;
-  const resolusEtClotures = (stats?.ticketsResolus ?? 0) + (stats?.ticketsClotures ?? 0);
-
-  const dataStatut = (stats?.repartitionStatut ?? []).map((r) => ({
-    label: LABEL_STATUT[r.statut],
-    value: r.count,
-    couleur: PASTILLE_STATUT[r.statut],
-  }));
   const partsCategorie = partsCategories(stats?.repartitionCategorie ?? [], categories);
   const partsPriorite: PartGraphique[] = PRIORITES_JAUGE.map((p) => ({
     cle: p,
@@ -283,31 +327,34 @@ export function TableauDeBord() {
 
   return (
     <div className="space-y-6">
-      {/* Panneau de filtres */}
+      {/* En-tête : période, filtres existants, exports. */}
       <Card className="animate-fade-up p-4">
         <div className="flex flex-wrap items-end gap-3">
-          <span className="mr-1 hidden items-center gap-1.5 self-center text-xs font-semibold uppercase tracking-wide text-texte-4 sm:inline-flex">
-            <SlidersHorizontal className="size-3.5" aria-hidden />
-            Filtres
-          </span>
-          <ChampFiltre label="Du">
-            <Input
-              type="date"
-              value={filtres.dateDebut ?? ''}
-              onChange={(e) => maj({ dateDebut: e.target.value || undefined })}
-              aria-label="Date de début"
-              className="w-40"
-            />
+          <ChampFiltre label="Période">
+            <SelecteurPeriode valeur={choix} onChange={choisirPeriode} />
           </ChampFiltre>
-          <ChampFiltre label="Au">
-            <Input
-              type="date"
-              value={filtres.dateFin ?? ''}
-              onChange={(e) => maj({ dateFin: e.target.value || undefined })}
-              aria-label="Date de fin"
-              className="w-40"
-            />
-          </ChampFiltre>
+          {choix === 'dates' && (
+            <>
+              <ChampFiltre label="Du">
+                <Input
+                  type="date"
+                  value={dates.du ?? ''}
+                  onChange={(e) => setDates((d) => ({ ...d, du: e.target.value || undefined }))}
+                  aria-label="Date de début"
+                  className="w-40"
+                />
+              </ChampFiltre>
+              <ChampFiltre label="Au">
+                <Input
+                  type="date"
+                  value={dates.au ?? ''}
+                  onChange={(e) => setDates((d) => ({ ...d, au: e.target.value || undefined }))}
+                  aria-label="Date de fin"
+                  className="w-40"
+                />
+              </ChampFiltre>
+            </>
+          )}
           <ChampFiltre label="Catégorie">
             <Select
               value={filtres.categorieId != null ? String(filtres.categorieId) : ''}
@@ -352,7 +399,7 @@ export function TableauDeBord() {
             </ChampFiltre>
           )}
           {filtresActifs && (
-            <Button variant="ghost" size="sm" onClick={() => setFiltres({})}>
+            <Button variant="ghost" size="sm" onClick={reinitialiser}>
               <X className="size-3.5" aria-hidden />
               Réinitialiser
             </Button>
@@ -362,7 +409,7 @@ export function TableauDeBord() {
             <Button
               variant="secondary"
               size="sm"
-              disabled={!stats || exportEnCours !== null}
+              disabled={!stats || !ind || exportEnCours !== null}
               loading={exportEnCours === 'excel'}
               onClick={exporterExcel}
             >
@@ -372,7 +419,7 @@ export function TableauDeBord() {
             <Button
               variant="secondary"
               size="sm"
-              disabled={!stats || exportEnCours !== null}
+              disabled={!stats || !ind || exportEnCours !== null}
               loading={exportEnCours === 'pdf'}
               onClick={exporterPdf}
             >
@@ -381,6 +428,16 @@ export function TableauDeBord() {
             </Button>
           </div>
         </div>
+        {periode && (
+          <p className="mt-3 text-xs text-texte-4">
+            Période : {intervalleLisible(periode.du, periode.au)}
+            {periode.precedente
+              ? sansComparaison
+                ? ' · la période précédente ne contient pas de données : pas de variation'
+                : ` · comparée à la période précédente, ${precedente}`
+              : ' · depuis le premier ticket, sans période précédente'}
+          </p>
+        )}
       </Card>
 
       {erreur && (
@@ -396,130 +453,106 @@ export function TableauDeBord() {
         </Alert>
       )}
 
-      <div className={cn('space-y-6 transition-opacity duration-200', enChargement && 'opacity-60')}>
-      {/* Indicateurs clés */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {stats ? (
-          <>
-            {/* Réservée à l'ADMINISTRATEUR : lui seul peut affecter un ticket
-                (ticket.service.affecter refuse tout autre rôle). Montrer ce chiffre à un
-                technicien lui désignerait une tâche qu'il ne peut pas accomplir. */}
-            {estAdmin && (
-              // `h-full` des DEUX côtés : la grille étire le lien, pas la carte qu'il
-              // enveloppe. Sans cela, « À affecter » était visiblement plus courte que
-              // ses trois voisines — celle dont la mention tient sur deux lignes impose
-              // la hauteur de la rangée.
-              <Link
-                to="/tickets?vue=non-assignes"
-                className="block h-full"
-                title="Ouvrir la liste des tickets non assignés"
-              >
-                <StatCard
-                  label="À affecter"
-                  value={aAffecter}
-                  hint={aAffecter > 0 ? 'Aucun technicien assigné' : 'Rien en attente'}
-                  icon={UserPlus}
-                  tone={aAffecter > 0 ? 'danger' : 'success'}
-                  index={0}
-                  className="h-full"
-                />
-              </Link>
-            )}
-            {/* Chez l'administrateur, le cumul résolus + clôturés descend en mention sous
-                les tickets ouverts : l'information reste à l'écran, et sa carte cède la
-                place au seul chiffre qui appelle une décision. Les autres rôles, qui n'ont
-                pas « À affecter », gardent la carte dédiée — la rangée fait quatre dans
-                les deux cas, sans cellule vide. */}
-            <StatCard
-              label="Tickets ouverts"
-              value={stats.ticketsOuverts}
-              hint={estAdmin ? `${nombreFr(resolusEtClotures)} résolus ou clôturés` : undefined}
-              icon={Inbox}
-              tone="warning"
-              index={estAdmin ? 1 : 0}
-            />
-            {!estAdmin && (
-              <StatCard
-                label="Résolus / clôturés"
-                value={resolusEtClotures}
-                icon={CheckCircle2}
-                tone="success"
+      <div className={cn('space-y-6 transition-opacity duration-200', attenue && 'opacity-60')}>
+        {/* Indicateurs clés (définitions : journal technique). */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {ind ? (
+            <>
+              <CarteIndicateur
+                libelle="Résolus"
+                icone={CheckCircle2}
+                valeur={nombreFr(ind.resolus.valeur)}
+                variation={calculerVariation(ind.resolus.valeur, ind.resolus.precedent, true)}
+                periodePrecedente={precedente}
+                detail="sur la période"
+                index={0}
+              />
+              <CarteIndicateur
+                libelle="Temps de résolution"
+                icone={Clock}
+                valeur={dureeHeuresFr(ind.tempsResolution.heures)}
+                variation={calculerVariation(
+                  ind.tempsResolution.heures,
+                  ind.tempsResolution.precedent?.heures ?? null,
+                  false,
+                )}
+                periodePrecedente={precedente}
+                detail={
+                  ind.tempsResolution.n > 0
+                    ? `moyenne sur ${pluriel(ind.tempsResolution.n, 'ticket')} résolu${ind.tempsResolution.n > 1 ? 's' : ''}`
+                    : 'Aucun ticket résolu sur la période'
+                }
                 index={1}
               />
+              <CarteIndicateur
+                libelle="Ouverts"
+                icone={Inbox}
+                valeur={nombreFr(ind.ouverts.valeur)}
+                variation={calculerVariation(ind.ouverts.valeur, ind.ouverts.precedent, false)}
+                periodePrecedente={precedente}
+                detail={
+                  ind.ouverts.statuts ? (
+                    <MentionStatuts statuts={ind.ouverts.statuts} lienAffecter={estAdmin} />
+                  ) : (
+                    `au ${jourLisible(ind.periode.au)}`
+                  )
+                }
+                index={2}
+              />
+              <CarteIndicateur
+                libelle="1re prise en charge"
+                icone={Hand}
+                valeur={dureeHeuresFr(ind.priseEnCharge.heures)}
+                variation={calculerVariation(
+                  ind.priseEnCharge.heures,
+                  ind.priseEnCharge.precedent?.heures ?? null,
+                  false,
+                )}
+                periodePrecedente={precedente}
+                detail={
+                  ind.priseEnCharge.n > 0
+                    ? `délai moyen sur ${pluriel(ind.priseEnCharge.n, 'ticket')}`
+                    : 'Aucune enregistrée'
+                }
+                index={3}
+              />
+            </>
+          ) : erreur ? null : (
+            Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-[150px] rounded-2xl" />)
+          )}
+        </div>
+
+        {/* Tendance et catégories. */}
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+          <CarteGraphique titre="Tickets créés et résolus" action={<LegendeTendance />} className="xl:col-span-2">
+            {tendance.donnees ? (
+              <CourbeTendance points={tendance.donnees.points} granularite={tendance.donnees.periode.granularite} />
+            ) : (
+              <Skeleton className="h-[260px] rounded-xl" />
             )}
-            {/* Le délai ne se calcule que sur les tickets portant un événement
-                PRISE_EN_CHARGE — 6 sur 870 tant que la traçabilité reste plus récente que
-                le corpus. La mention annonce donc son effectif, exactement comme
-                « 185 évaluations » qualifie la satisfaction deux cartes plus loin : le
-                lecteur juge lui-même du poids de la moyenne. */}
-            <StatCard
-              label="Résolution moyenne"
-              value={dureeHeuresFr(stats.tempsResolutionMoyenHeures)}
-              hint={
-                stats.delaiPriseEnChargeMoyenHeures != null
-                  ? `1re prise en charge : ${dureeHeuresFr(stats.delaiPriseEnChargeMoyenHeures)} sur ${nombreFr(
-                      stats.nombrePrisesEnCharge,
-                    )} ticket${stats.nombrePrisesEnCharge > 1 ? 's' : ''}`
-                  : undefined
-              }
-              icon={Clock}
-              tone="primary"
-              index={2}
-            />
-            <StatCard
-              label="Satisfaction moyenne"
-              value={stats.satisfactionMoyenne ?? '—'}
-              decimals={1}
-              suffix=" / 5"
-              hint={`${nombreFr(stats.nombreEvaluations)} évaluation${stats.nombreEvaluations > 1 ? 's' : ''}`}
-              icon={Star}
-              tone="warning"
-              index={3}
-            />
-          </>
-        ) : erreur ? null : (
-          Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-[116px] rounded-2xl" />
-          ))
-        )}
-      </div>
-
-      {/* Graphiques : catégories, priorités, satisfaction (groupe 1). */}
-      {stats ? (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          </CarteGraphique>
           <CarteGraphique titre="Par catégorie">
-            <AnneauCategories parts={partsCategorie} />
-          </CarteGraphique>
-          <CarteGraphique titre="Par priorité">
-            <JaugePriorites parts={partsPriorite} />
-          </CarteGraphique>
-          <CarteGraphique titre="Satisfaction" className="md:col-span-2 xl:col-span-1">
-            <SectionSatisfaction
-              moyenne={stats.satisfactionMoyenne}
-              nombre={stats.nombreEvaluations}
-              repartition={stats.repartitionSatisfaction}
-            />
+            {stats ? <AnneauCategories parts={partsCategorie} /> : <Skeleton className="h-[290px] rounded-xl" />}
           </CarteGraphique>
         </div>
-      ) : erreur ? null : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-[330px] rounded-2xl" />
-          ))}
-        </div>
-      )}
 
-      {/* Barres conservées jusqu'à l'arrivée de leurs remplaçants : la mention des statuts
-          sous la carte « Ouverts » (groupe 2), la liste des techniciens (groupe 4). */}
-      {stats && (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <CarteBarres
-            titre="Tickets par statut"
-            donnees={dataStatut}
-            index={0}
-            className={estSupport ? undefined : 'lg:col-span-2'}
-          />
-          {estSupport && (
+        {/* Priorités, satisfaction ; charge par technicien jusqu'au groupe 4. */}
+        <div className={cn('grid grid-cols-1 gap-4 md:grid-cols-2', estSupport && 'xl:grid-cols-3')}>
+          <CarteGraphique titre="Par priorité">
+            {stats ? <JaugePriorites parts={partsPriorite} /> : <Skeleton className="h-[220px] rounded-xl" />}
+          </CarteGraphique>
+          <CarteGraphique titre="Satisfaction">
+            {stats ? (
+              <SectionSatisfaction
+                moyenne={stats.satisfactionMoyenne}
+                nombre={stats.nombreEvaluations}
+                repartition={stats.repartitionSatisfaction}
+              />
+            ) : (
+              <Skeleton className="h-[220px] rounded-xl" />
+            )}
+          </CarteGraphique>
+          {estSupport && stats && (
             <CarteBarres
               titre="Charge par technicien"
               description={
@@ -531,10 +564,10 @@ export function TableauDeBord() {
               }
               donnees={dataCharge}
               index={1}
+              className="md:col-span-2 xl:col-span-1"
             />
           )}
         </div>
-      )}
       </div>
     </div>
   );

@@ -4131,3 +4131,84 @@ reconstruite depuis le code du groupe 2 (aucune migration à appliquer).
   période ne sont pas complètes ; leur point peut paraître creux.
 - **Barres « Charge par technicien »** : jusqu'au groupe 4.
 - **Sur écran étroit**, le bouton « Réinitialiser » fait passer les exports à la ligne.
+
+---
+
+# Tableau de bord v1.1 — groupe 3 : le module IA et « À traiter »
+
+> Séance du **13/10/2026** (groupe 2 commité en `e6fe638`, puis `97ecc36`, validé).
+> Consigne : le module IA en anneau de progression, toujours avec « x sur n », plus trois
+> petits chiffres — suggestions générées, abstentions, corrections collectées ; « À traiter »
+> avec le compteur des tickets sans technicien, puis la liste des tickets à pastilles de
+> statut.
+
+## Ce qui est livré
+
+- **`GET /api/tableau-de-bord/ia`**, réservé au support (technicien, administrateur ;
+  l'employé reçoit 403 — décision D7) : sur la période, les catégories proposées (acceptées,
+  corrigées, en attente) et les solutions du RAG (générées, abstentions, échecs).
+- **`GET /api/tableau-de-bord/a-traiter`**, sans période : les comptes des tickets ouverts
+  (dont sans technicien, et sans prise en charge) et deux listes, les cinq plus anciens
+  sans prise en charge et les cinq plus anciens ouverts, avec leur ancienneté en jours.
+- **Tests** : 7 tests d'intégration de plus (16 au total), sur un jeu de données propre :
+  chaque sort d'une suggestion ; une suggestion hors période ; le filtre de service ; le
+  refus fait à l'employée ; l'ordre et la limite des listes (six nouveaux pour en montrer
+  cinq) ; le périmètre de l'employée ; le filtre de technicien ; l'absence d'effet de la
+  période. Les fichiers d'intégration s'exécutent désormais un par un
+  (`--test-concurrency=1`) : chacun vide la même base.
+- **Section « Module IA »** :
+  - l'anneau de progression de la part acceptée, au centre « 75 % » — ou « — » sans
+    proposition tranchée —, à côté « 3 sur 4 tranchées · 8 en attente » ;
+  - trois petits chiffres, avec une définition au survol ;
+  - le nombre de générations en échec, seulement s'il y en a.
+- **Section « À traiter »** — « Mes tickets ouverts » pour un employé :
+  - le compteur des tickets sans technicien, en alerte (lien vers les tickets à affecter
+    chez l'administrateur), ou « Aucun ticket sans technicien » ;
+  - deux onglets, « Sans prise en charge » et « Plus anciens », avec leur total ;
+  - chaque ticket avec son numéro, son titre, son ancienneté et sa pastille ; puis « Les 5
+    plus anciens sur 90 ».
+
+## Les décisions, et leurs raisons `[établi en séance]`
+
+- **Définitions du module IA** :
+  - **catégorie proposée** : une suggestion de classification, toutes origines confondues —
+    à la création ou après la lecture d'une pièce jointe ;
+  - **tranchée** : acceptée ou corrigée par un technicien, à la résolution, à la clôture ou
+    par une recatégorisation. La part acceptée porte sur les tranchées seules, l'effectif à
+    côté ; les propositions en attente sont comptées à part, jamais dans le pourcentage ;
+  - **correction collectée** : une catégorie proposée puis corrigée — le désaccord dont le
+    réentraînement tire le plus. `labelsValides()` en compte davantage (tout ticket réel
+    résolu avec une catégorie) : ce n'est pas le même nombre, et l'écran ne les mélange pas ;
+  - **abstention** : le RAG s'est abstenu, faute de ticket assez proche — un résultat
+    valide. **Échec** : le service était indisponible ;
+  - période : la **date de la suggestion**.
+- **« À traiter » ignore la période** : c'est le présent. « Sans prise en charge » se lit au
+  statut (Nouveau, En attente) — prendre en charge est la seule voie vers « En cours », et
+  les tickets synthétiques n'ont pas d'événements ; « sans technicien » se lit à
+  l'affectation.
+- **La piste de l'anneau de progression est un décor**, pas une donnée : sa classe `piste`
+  l'écarte du contrôle de contraste des marques, dans le banc d'audit.
+
+## Ce qui a été prouvé, et comment
+
+- **Backend** : typage, lint ; **16 tests d'intégration verts** sur la base jetable.
+- **Sur la base locale, en lecture seule**, par le code réel du service : 12 catégories
+  proposées, 4 tranchées dont 3 acceptées — **75 %, « 3 sur 4 »** —, 8 en attente ;
+  6 suggestions générées, 1 abstention, aucun échec ; **1 correction**. « À traiter » :
+  136 ouverts, **54 sans technicien**, 90 sans prise en charge ; le plus ancien, #670,
+  ouvert depuis 178 jours.
+- **Frontend** : build, `oxlint` (les 6 avertissements de `main`), `verifier:couleurs`
+  sur 84 fichiers, `verifier:contrastes`.
+- **Dans le navigateur** (`st-demo`, deux thèmes, trois rôles, mobile, survols) : 26 relevés,
+  **2 772 textes, aucun sous le seuil**, aucun secteur sous 3:1, aucune adresse e-mail,
+  aucun point décimal.
+
+## Dettes assumées et documentées
+
+- **L'infobulle de l'anneau de progression n'a pas été exercée par le banc** : la base de
+  `st-demo` n'a aucune catégorie tranchée, l'anneau n'y montre que sa piste. Sur la base
+  locale (3 sur 4), elle est à voir dans le navigateur.
+- **Le banc attend désormais 30 s le port de débogage d'Edge** : 10 s n'ont pas suffi une
+  fois, au relancement du navigateur entre les deux thèmes.
+- **La carte « Module IA » est plus courte que « À traiter »** : un vide sous les trois
+  chiffres, sur grand écran.

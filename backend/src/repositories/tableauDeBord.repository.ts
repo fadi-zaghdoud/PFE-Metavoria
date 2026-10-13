@@ -62,6 +62,25 @@ export interface LigneIndicateurs {
   existants_prec: number; // tickets créés avant la fin de la période précédente
 }
 
+export interface LigneIa {
+  proposees: number;
+  acceptees: number;
+  corrigees: number;
+  en_attente: number;
+  generees: number;
+  abstentions: number;
+  echecs: number;
+}
+
+export interface TicketATraiter {
+  id: number;
+  titre: string;
+  statut: StatutOuvert;
+  priorite: 'FAIBLE' | 'MOYENNE' | 'HAUTE' | 'CRITIQUE';
+  dateCreation: string;
+  joursOuvert: number;
+}
+
 export const tableauDeBordRepository = {
   // Premier jour de création du périmètre (« Tout »), ou null s'il est vide.
   async premierJour(p: Perimetre): Promise<string | null> {
@@ -111,6 +130,60 @@ export const tableauDeBordRepository = {
       GROUP BY tk.statut`;
     const compte = (s: StatutOuvert) => lignes.find((l) => l.statut === s)?.n ?? 0;
     return { NOUVEAU: compte('NOUVEAU'), EN_ATTENTE: compte('EN_ATTENTE'), EN_COURS: compte('EN_COURS') };
+  },
+
+  // Module IA sur la période (date de la suggestion) et le périmètre (ticket concerné) :
+  //   - catégories proposées (suggestions CLASSIFICATION, toutes origines) et leur sort —
+  //     acceptée ou corrigée quand le technicien a tranché (résolution, clôture ou
+  //     recatégorisation), en attente sinon ;
+  //   - solutions du RAG : générées, abstentions (le modèle s'est abstenu, résultat valide),
+  //     échecs (service indisponible).
+  async ia(p: Perimetre, du: string, au: string): Promise<LigneIa> {
+    const [ligne] = await prisma.$queryRaw<LigneIa[]>`
+      SELECT
+        count(*) FILTER (WHERE s.type_suggestion = 'CLASSIFICATION')::int AS proposees,
+        count(*) FILTER (WHERE s.type_suggestion = 'CLASSIFICATION' AND s.validee_par_technicien IS TRUE)::int AS acceptees,
+        count(*) FILTER (WHERE s.type_suggestion = 'CLASSIFICATION' AND s.validee_par_technicien IS FALSE)::int AS corrigees,
+        count(*) FILTER (WHERE s.type_suggestion = 'CLASSIFICATION' AND s.validee_par_technicien IS NULL)::int AS en_attente,
+        count(*) FILTER (
+          WHERE s.type_suggestion = 'SOLUTION' AND s.statut = 'PRETE'
+            AND COALESCE((s.details ->> 'abstenu')::boolean, false) = false)::int AS generees,
+        count(*) FILTER (
+          WHERE s.type_suggestion = 'SOLUTION' AND s.statut = 'PRETE'
+            AND (s.details ->> 'abstenu')::boolean IS TRUE)::int AS abstentions,
+        count(*) FILTER (WHERE s.type_suggestion = 'SOLUTION' AND s.statut = 'ECHEC')::int AS echecs
+      FROM suggestions_ia s
+      JOIN tickets tk ON tk.id = s.ticket_id
+      JOIN utilisateurs d ON d.id = tk.demandeur_id
+      WHERE ${filtre(p)} AND s.date_creation >= ${du}::date AND s.date_creation < ${au}::date + 1`;
+    return ligne;
+  },
+
+  // « À traiter » — le présent, sans période : les comptes des tickets ouverts, puis les
+  // plus anciens de deux listes. « Sans prise en charge » se lit au STATUT (Nouveau ou En
+  // attente) : prendre en charge est la seule voie vers « En cours », et les tickets
+  // synthétiques n'ont pas d'événements. « Sans technicien » se lit à l'affectation.
+  async comptesATraiter(p: Perimetre): Promise<{ ouverts: number; sans_technicien: number; sans_prise_en_charge: number }> {
+    const [ligne] = await prisma.$queryRaw<{ ouverts: number; sans_technicien: number; sans_prise_en_charge: number }[]>`
+      SELECT count(*)::int AS ouverts,
+             count(*) FILTER (WHERE tk.technicien_id IS NULL)::int AS sans_technicien,
+             count(*) FILTER (WHERE tk.statut IN ('NOUVEAU', 'EN_ATTENTE'))::int AS sans_prise_en_charge
+      FROM tickets tk JOIN utilisateurs d ON d.id = tk.demandeur_id
+      WHERE ${filtre(p)} AND tk.statut IN ('NOUVEAU', 'EN_ATTENTE', 'EN_COURS')`;
+    return ligne;
+  },
+
+  async plusAnciensOuverts(p: Perimetre, sansPriseEnCharge: boolean, limite: number): Promise<TicketATraiter[]> {
+    return prisma.$queryRaw<TicketATraiter[]>`
+      SELECT tk.id, tk.titre, tk.statut::text AS statut, tk.priorite::text AS priorite,
+             to_char(tk.date_creation, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "dateCreation",
+             floor(extract(epoch FROM (now() AT TIME ZONE 'UTC') - tk.date_creation) / 86400)::int AS "joursOuvert"
+      FROM tickets tk JOIN utilisateurs d ON d.id = tk.demandeur_id
+      WHERE ${filtre(p)}
+        AND tk.statut IN ('NOUVEAU', 'EN_ATTENTE', 'EN_COURS')
+        AND (${sansPriseEnCharge} = false OR tk.statut IN ('NOUVEAU', 'EN_ATTENTE'))
+      ORDER BY tk.date_creation ASC, tk.id ASC
+      LIMIT ${limite}`;
   },
 
   // Tickets créés et résolus par tranche (jour, semaine du lundi, mois), toutes les tranches

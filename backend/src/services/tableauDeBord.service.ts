@@ -36,6 +36,8 @@ async function periodeDe(perimetre: Perimetre, q: TableauDeBordQueryDto): Promis
   }
 }
 
+const TICKETS_PAR_LISTE = 5;
+
 const UNITE_SQL: Record<Granularite, 'day' | 'week' | 'month'> = {
   jour: 'day',
   semaine: 'week',
@@ -88,6 +90,42 @@ export const tableauDeBordService = {
           l.prises_en_charge_prec,
         ),
       },
+    };
+  },
+
+  // Module IA sur la période. Les effectifs sont TOUJOURS rendus : l'interface n'affiche
+  // jamais une part sans le nombre sur lequel elle porte.
+  async ia(acteur: Acteur, q: TableauDeBordQueryDto) {
+    const perimetre = perimetreDe(acteur, q);
+    const periode = await periodeDe(perimetre, q);
+    const l = await tableauDeBordRepository.ia(perimetre, periode.du, periode.au);
+    return {
+      periode,
+      categories: {
+        proposees: l.proposees,
+        tranchees: l.acceptees + l.corrigees,
+        acceptees: l.acceptees,
+        corrigees: l.corrigees,
+        enAttente: l.en_attente,
+      },
+      solutions: { generees: l.generees, abstentions: l.abstentions, echecs: l.echecs },
+    };
+  },
+
+  // « À traiter » : le présent, sans période — les filtres de catégorie, de technicien et de
+  // service s'appliquent. Cinq tickets par liste, les plus anciens d'abord.
+  async aTraiter(acteur: Acteur, q: TableauDeBordQueryDto) {
+    const perimetre = perimetreDe(acteur, q);
+    const [comptes, sansPriseEnCharge, plusAnciens] = await Promise.all([
+      tableauDeBordRepository.comptesATraiter(perimetre),
+      tableauDeBordRepository.plusAnciensOuverts(perimetre, true, TICKETS_PAR_LISTE),
+      tableauDeBordRepository.plusAnciensOuverts(perimetre, false, TICKETS_PAR_LISTE),
+    ]);
+    return {
+      ouverts: comptes.ouverts,
+      sansTechnicien: comptes.sans_technicien,
+      sansPriseEnCharge: { total: comptes.sans_prise_en_charge, tickets: sansPriseEnCharge },
+      plusAnciens: { total: comptes.ouverts, tickets: plusAnciens },
     };
   },
 

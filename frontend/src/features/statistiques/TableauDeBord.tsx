@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { CheckCircle2, Clock, Download, FileText, Hand, Inbox, X } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Clock, Download, FileText, Hand, Inbox, X } from 'lucide-react';
 import { ticketsApi } from '../tickets/ticketsApi';
 import { utilisateursApi } from '../utilisateurs/utilisateursApi';
 import { LABEL_PRIORITE } from '../tickets/ticket-ui';
@@ -22,6 +22,8 @@ import { JaugePriorites } from './graphiques/JaugePriorites';
 import { SectionSatisfaction } from './graphiques/SectionSatisfaction';
 import { CarteIndicateur } from './graphiques/CarteIndicateur';
 import { CourbeTendance, LegendeTendance } from './graphiques/CourbeTendance';
+import { SectionIA } from './graphiques/SectionIA';
+import { SectionATraiter } from './graphiques/SectionATraiter';
 import { calculerVariation } from './graphiques/variation';
 import { COULEUR_PRIORITE, partsCategories, type PartGraphique } from './graphiques/couleurs';
 import { SelecteurPeriode } from './SelecteurPeriode';
@@ -43,6 +45,8 @@ const chargerStatistiques = (f: FiltresTableau, token: string) =>
   );
 const chargerIndicateurs = tableauDeBordApi.indicateurs;
 const chargerTendance = tableauDeBordApi.tendance;
+const chargerIa = tableauDeBordApi.ia;
+const chargerATraiter = tableauDeBordApi.aTraiter;
 
 interface DonneeBarre {
   label: string;
@@ -234,14 +238,20 @@ export function TableauDeBord() {
   const statistiques = useChargement(params, token, essai, chargerStatistiques);
   const indicateurs = useChargement(params, token, essai, chargerIndicateurs);
   const tendance = useChargement(params, token, essai, chargerTendance);
+  // Module IA : le support seul (D7) — pour un employé, rien n'est demandé.
+  const ia = useChargement(params, estSupport ? token : null, essai, chargerIa);
+  // « À traiter » : sans période, donc sans rechargement quand elle change.
+  const aTraiter = useChargement(filtres, token, essai, chargerATraiter);
   const stats = statistiques.donnees;
   const ind = indicateurs.donnees;
-  const erreur = statistiques.erreur || indicateurs.erreur || tendance.erreur;
+  const erreur = statistiques.erreur || indicateurs.erreur || tendance.erreur || ia.erreur || aTraiter.erreur;
   // Rechargement : l'image précédente reste, atténuée, le temps que tout soit arrivé.
   const attenue =
     (statistiques.enChargement && stats !== null) ||
     (indicateurs.enChargement && ind !== null) ||
-    (tendance.enChargement && tendance.donnees !== null);
+    (tendance.enChargement && tendance.donnees !== null) ||
+    (ia.enChargement && ia.donnees !== null) ||
+    (aTraiter.enChargement && aTraiter.donnees !== null);
 
   function choisirPeriode(nouveau: ChoixPeriode) {
     // Passer à « Dates » part des bornes affichées, plutôt que d'un champ vide.
@@ -588,6 +598,33 @@ export function TableauDeBord() {
               className="md:col-span-2 xl:col-span-1"
             />
           )}
+        </div>
+
+        {/* Module IA (support) et « À traiter ». */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {estSupport && (
+            <CarteGraphique titre="Module IA">
+              {ia.donnees ? <SectionIA donnees={ia.donnees} /> : <EnAttente erreur={ia.erreur} hauteur="h-[200px]" />}
+            </CarteGraphique>
+          )}
+          <CarteGraphique
+            titre={estSupport ? 'À traiter' : 'Mes tickets ouverts'}
+            className={estSupport ? undefined : 'lg:col-span-2'}
+            action={
+              <Link
+                to="/tickets"
+                className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-marque transition-colors hover:text-marque-fort hover:underline"
+              >
+                Tout voir <ArrowRight className="size-3.5" aria-hidden />
+              </Link>
+            }
+          >
+            {aTraiter.donnees ? (
+              <SectionATraiter donnees={aTraiter.donnees} lienAffecter={estAdmin} />
+            ) : (
+              <EnAttente erreur={aTraiter.erreur} hauteur="h-[260px]" />
+            )}
+          </CarteGraphique>
         </div>
       </div>
     </div>

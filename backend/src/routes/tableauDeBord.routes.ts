@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { tableauDeBordController } from '../controllers/tableauDeBord.controller';
-import { requireAuth } from '../middlewares/auth.middleware';
+import { requireAuth, requireRole } from '../middlewares/auth.middleware';
 import { asyncHandler } from '../utils/asyncHandler';
 
 export const tableauDeBordRouter = Router();
@@ -12,3 +12,12 @@ tableauDeBordRouter.use(requireAuth);
 
 tableauDeBordRouter.get('/indicateurs', asyncHandler(tableauDeBordController.indicateurs));
 tableauDeBordRouter.get('/tendance', asyncHandler(tableauDeBordController.tendance));
+// Performance du module IA : le support seul (technicien, administrateur) — un employé n'a
+// pas à juger les propositions faites sur les tickets des autres.
+tableauDeBordRouter.get(
+  '/ia',
+  requireRole('TECHNICIEN', 'ADMINISTRATEUR'),
+  asyncHandler(tableauDeBordController.ia),
+);
+// « À traiter » : le présent, sans période ; un employé y voit ses tickets ouverts.
+tableauDeBordRouter.get('/a-traiter', asyncHandler(tableauDeBordController.aTraiter));

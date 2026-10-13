@@ -19,4 +19,14 @@ export const tableauDeBordController = {
     const q = tableauDeBordQuerySchema.parse(req.query);
     res.status(200).json(await tableauDeBordService.tendance(acteur(req), q));
   },
+
+  async ia(req: Request, res: Response) {
+    const q = tableauDeBordQuerySchema.parse(req.query);
+    res.status(200).json(await tableauDeBordService.ia(acteur(req), q));
+  },
+
+  async aTraiter(req: Request, res: Response) {
+    const q = tableauDeBordQuerySchema.parse(req.query);
+    res.status(200).json(await tableauDeBordService.aTraiter(acteur(req), q));
+  },
 };

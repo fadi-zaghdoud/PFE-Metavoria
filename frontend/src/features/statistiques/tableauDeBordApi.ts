@@ -38,6 +38,31 @@ export interface TendanceTableau {
   points: { debut: string; crees: number; resolus: number }[];
 }
 
+// Module IA sur la période — réservé au support. Les effectifs accompagnent toujours les
+// parts : « tranchées » = acceptées + corrigées par un technicien.
+export interface IaTableau {
+  periode: PeriodeTableau;
+  categories: { proposees: number; tranchees: number; acceptees: number; corrigees: number; enAttente: number };
+  solutions: { generees: number; abstentions: number; echecs: number };
+}
+
+export interface TicketATraiter {
+  id: number;
+  titre: string;
+  statut: 'NOUVEAU' | 'EN_ATTENTE' | 'EN_COURS';
+  priorite: 'FAIBLE' | 'MOYENNE' | 'HAUTE' | 'CRITIQUE';
+  dateCreation: string;
+  joursOuvert: number;
+}
+
+// « À traiter » : le présent, sans période.
+export interface ATraiterTableau {
+  ouverts: number;
+  sansTechnicien: number;
+  sansPriseEnCharge: { total: number; tickets: TicketATraiter[] };
+  plusAnciens: { total: number; tickets: TicketATraiter[] };
+}
+
 export interface FiltresTableau {
   du?: string;
   au?: string;
@@ -62,4 +87,11 @@ export const tableauDeBordApi = {
     apiRequest<IndicateursTableau>(`/tableau-de-bord/indicateurs${requete(filtres)}`, { token }),
   tendance: (filtres: FiltresTableau, token: string) =>
     apiRequest<TendanceTableau>(`/tableau-de-bord/tendance${requete(filtres)}`, { token }),
+  ia: (filtres: FiltresTableau, token: string) =>
+    apiRequest<IaTableau>(`/tableau-de-bord/ia${requete(filtres)}`, { token }),
+  // Sans période : seules la catégorie, le technicien et le service sont transmis.
+  aTraiter: ({ categorieId, technicienId, service }: FiltresTableau, token: string) =>
+    apiRequest<ATraiterTableau>(`/tableau-de-bord/a-traiter${requete({ categorieId, technicienId, service })}`, {
+      token,
+    }),
 };

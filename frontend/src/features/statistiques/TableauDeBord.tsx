@@ -188,6 +188,19 @@ function MentionStatuts({
 
 const pluriel = (n: number, mot: string) => `${nombreFr(n)} ${mot}${n > 1 ? 's' : ''}`;
 
+// Emplacement d'une section sans ses données : un squelette pendant le chargement, une
+// mention sobre en cas d'échec — jamais un squelette qui attend indéfiniment. L'encart du
+// haut propose de réessayer.
+function EnAttente({ erreur, hauteur }: { erreur: boolean; hauteur: string }) {
+  return erreur ? (
+    <p className={cn('flex items-center justify-center text-center text-sm text-texte-4', hauteur)}>
+      Données indisponibles.
+    </p>
+  ) : (
+    <Skeleton className={cn('rounded-xl', hauteur)} />
+  );
+}
+
 export function TableauDeBord() {
   const token = useAuthStore((s) => s.token);
   const utilisateur = useAuthStore((s) => s.utilisateur);
@@ -528,18 +541,26 @@ export function TableauDeBord() {
             {tendance.donnees ? (
               <CourbeTendance points={tendance.donnees.points} granularite={tendance.donnees.periode.granularite} />
             ) : (
-              <Skeleton className="h-[260px] rounded-xl" />
+              <EnAttente erreur={tendance.erreur} hauteur="h-[260px]" />
             )}
           </CarteGraphique>
           <CarteGraphique titre="Par catégorie">
-            {stats ? <AnneauCategories parts={partsCategorie} /> : <Skeleton className="h-[290px] rounded-xl" />}
+            {stats ? (
+              <AnneauCategories parts={partsCategorie} />
+            ) : (
+              <EnAttente erreur={statistiques.erreur} hauteur="h-[290px]" />
+            )}
           </CarteGraphique>
         </div>
 
         {/* Priorités, satisfaction ; charge par technicien jusqu'au groupe 4. */}
         <div className={cn('grid grid-cols-1 gap-4 md:grid-cols-2', estSupport && 'xl:grid-cols-3')}>
           <CarteGraphique titre="Par priorité">
-            {stats ? <JaugePriorites parts={partsPriorite} /> : <Skeleton className="h-[220px] rounded-xl" />}
+            {stats ? (
+              <JaugePriorites parts={partsPriorite} />
+            ) : (
+              <EnAttente erreur={statistiques.erreur} hauteur="h-[220px]" />
+            )}
           </CarteGraphique>
           <CarteGraphique titre="Satisfaction">
             {stats ? (
@@ -549,7 +570,7 @@ export function TableauDeBord() {
                 repartition={stats.repartitionSatisfaction}
               />
             ) : (
-              <Skeleton className="h-[220px] rounded-xl" />
+              <EnAttente erreur={statistiques.erreur} hauteur="h-[220px]" />
             )}
           </CarteGraphique>
           {estSupport && stats && (

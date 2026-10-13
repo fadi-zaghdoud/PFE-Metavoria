@@ -4095,6 +4095,13 @@ lieu de `l.resolus_prec`). La carte « Résolus » aurait affiché « 0 % » par
 c'est exactement le défaut qu'un test sur un jeu de données calculé à la main existe pour
 attraper.
 
+**Un second défaut, vu par l'utilisateur dans son navigateur** : son API tournait encore sur
+l'image d'avant le groupe 2, les nouveaux points d'accès répondaient 404 — et la carte de la
+courbe gardait alors un squelette de chargement **indéfiniment**. Une section sans ses
+données montre désormais un squelette pendant le chargement et « Données indisponibles. »
+en cas d'échec ; l'encart du haut propose de réessayer. L'image de son API a été
+reconstruite depuis le code du groupe 2 (aucune migration à appliquer).
+
 ## Ce qui a été prouvé, et comment
 
 - **Backend** : typage, lint ; 127 tests unitaires ; **9 tests d'intégration verts** sur une

@@ -305,11 +305,13 @@ docker compose run --rm ml python -m smart_ticketing_ml.service.backfill    # le
 | Tickets chargés | 852, numérotés **#9 à #860** |
 | Résolutions liées (base de connaissances du RAG) | 723 |
 | Évaluations de satisfaction | 178 |
-| Comptes créés | 3 techniciens, 31 demandeurs (un par service) — **sans mot de passe** |
+| Comptes créés | 3 techniciens, 11 demandeurs (un par service) — **sans mot de passe** |
 | Embeddings | 852 (`BAAI/bge-m3`) |
 
 À savoir :
 
+- **11 demandeurs, et non 31** : le chargeur annonce « 31 demandeurs (par service) », mais 31
+  est le nombre de couples service / poste du corpus. Il crée un compte par service, soit 11.
 - **Les numéros sont fixes.** Le corpus commence à #9 pour reproduire la base où la
   démonstration a été préparée (le corpus y avait été chargé après 8 tickets d'essai) :
   les tickets cités ci-dessous gardent leur numéro. Un rechargement redonne les mêmes
@@ -333,9 +335,16 @@ docker compose run --rm ml python -m smart_ticketing_ml.service.backfill    # le
 
 ### Ce que l'on voit
 
-**Tableau de bord** (administrateur), corpus seul : 852 tickets, 129 ouverts, 464 résolus,
-259 clôturés, résolution moyenne de 48,1 h, satisfaction de 3,9 sur 178 évaluations, et
-trois techniciens chargés de 25 à 27 tickets.
+**Tableau de bord** (administrateur, période par défaut de 12 mois), corpus seul :
+
+- 723 tickets résolus, en 48,1 h en moyenne ;
+- 129 ouverts : 51 nouveaux (sans technicien), 35 en attente, 43 en cours ;
+- 852 tickets dans l'anneau des catégories ;
+- une satisfaction de 3,9 sur 178 évaluations ;
+- trois techniciens, à 27, 26 et 25 tickets ouverts.
+
+Les tickets s'étalent sur les 90 jours qui précèdent le chargement : « 12 mois » et
+« Tout » les montrent tous, « 30 j » le dernier mois seulement.
 
 Le **délai de 1re prise en charge reste vide** sur une base reconstruite : il se calcule
 sur les événements de prise en charge, et le chargeur n'en crée aucun — les tickets du

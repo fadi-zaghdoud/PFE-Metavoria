@@ -49,7 +49,7 @@ export function SelecteurPeriode({
             onClick={() => onChange(cle)}
             onKeyDown={(evenement) => clavier(evenement, index)}
             className={cn(
-              'h-8 rounded-md px-3 text-sm font-medium transition-colors',
+              'h-8 rounded-md px-2 text-sm font-medium transition-colors sm:px-3',
               actif ? 'bg-surface text-marque shadow-xs ring-1 ring-bordure' : 'text-texte-3 hover:bg-surface-3 hover:text-texte',
             )}
           >

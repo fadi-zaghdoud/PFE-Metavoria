@@ -63,11 +63,14 @@ export function Topbar({ onOpenMobileNav, onOpenPalette }: TopbarProps) {
 
       <button
         onClick={onOpenPalette}
+        aria-label="Rechercher"
         className="group flex items-center gap-2 rounded-lg border border-bordure bg-surface/70 px-3 py-1.5 text-sm text-texte-4 shadow-xs transition-all hover:border-marque-bordure hover:text-texte-3 hover:shadow-sm"
       >
         <Search className="size-4 transition-colors group-hover:text-primary-500" aria-hidden />
-        <span className="hidden sm:inline">Rechercher…</span>
-        <kbd className="hidden rounded border border-bordure bg-surface-2 px-1.5 py-0.5 font-sans text-[10px] font-medium text-texte-4 sm:inline">
+        {/* Entre 768 et 1 023 px, la barre latérale est ouverte et la place manque : le libellé
+            tronquerait le fil d'Ariane. La loupe seule y suffit. */}
+        <span className="hidden sm:inline md:max-lg:hidden">Rechercher…</span>
+        <kbd className="hidden rounded border border-bordure bg-surface-2 px-1.5 py-0.5 font-sans text-[10px] font-medium text-texte-4 sm:inline md:max-lg:hidden">
           Ctrl K
         </kbd>
       </button>

@@ -49,9 +49,13 @@ const chargerIa = tableauDeBordApi.ia;
 const chargerATraiter = tableauDeBordApi.aTraiter;
 const chargerTechniciens = tableauDeBordApi.techniciens;
 
-function ChampFiltre({ label, children }: { label: string; children: ReactNode }) {
+// Sur téléphone, un filtre s'étire (deux par ligne) ; à partir de 640 px, il reprend sa
+// largeur fixe.
+const ETIRE = 'min-w-0 grow basis-36 sm:grow-0 sm:basis-auto';
+
+function ChampFiltre({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
   return (
-    <div>
+    <div className={className}>
       <span className="mb-1 block text-xs font-medium text-texte-4">{label}</span>
       {children}
     </div>
@@ -254,32 +258,32 @@ export function TableauDeBord() {
           </ChampFiltre>
           {choix === 'dates' && (
             <>
-              <ChampFiltre label="Du">
+              <ChampFiltre label="Du" className={ETIRE}>
                 <Input
                   type="date"
                   value={dates.du ?? ''}
                   onChange={(e) => setDates((d) => ({ ...d, du: e.target.value || undefined }))}
                   aria-label="Date de début"
-                  className="w-40"
+                  className="w-full sm:w-40"
                 />
               </ChampFiltre>
-              <ChampFiltre label="Au">
+              <ChampFiltre label="Au" className={ETIRE}>
                 <Input
                   type="date"
                   value={dates.au ?? ''}
                   onChange={(e) => setDates((d) => ({ ...d, au: e.target.value || undefined }))}
                   aria-label="Date de fin"
-                  className="w-40"
+                  className="w-full sm:w-40"
                 />
               </ChampFiltre>
             </>
           )}
-          <ChampFiltre label="Catégorie">
+          <ChampFiltre label="Catégorie" className={ETIRE}>
             <Select
               value={filtres.categorieId != null ? String(filtres.categorieId) : ''}
               onChange={(e) => maj({ categorieId: e.target.value ? Number(e.target.value) : undefined })}
               aria-label="Filtrer par catégorie"
-              className="w-44"
+              className="w-full sm:w-44"
             >
               <option value="">Toutes</option>
               {categories.map((c) => (
@@ -290,12 +294,12 @@ export function TableauDeBord() {
             </Select>
           </ChampFiltre>
           {estAdmin && (
-            <ChampFiltre label="Technicien">
+            <ChampFiltre label="Technicien" className={ETIRE}>
               <Select
                 value={filtres.technicienId != null ? String(filtres.technicienId) : ''}
                 onChange={(e) => maj({ technicienId: e.target.value ? Number(e.target.value) : undefined })}
                 aria-label="Filtrer par technicien"
-                className="w-44"
+                className="w-full sm:w-44"
               >
                 <option value="">Tous</option>
                 {techniciens.map((t) => (
@@ -307,13 +311,13 @@ export function TableauDeBord() {
             </ChampFiltre>
           )}
           {estSupport && (
-            <ChampFiltre label="Service demandeur">
+            <ChampFiltre label="Service demandeur" className={ETIRE}>
               <Input
                 value={filtres.service ?? ''}
                 onChange={(e) => maj({ service: e.target.value || undefined })}
                 placeholder="Ex. Finance"
                 aria-label="Filtrer par service"
-                className="w-40"
+                className="w-full sm:w-40"
               />
             </ChampFiltre>
           )}
@@ -459,8 +463,10 @@ export function TableauDeBord() {
           </CarteGraphique>
         </div>
 
-        {/* Priorités, satisfaction ; techniciens pour le support. */}
-        <div className={cn('grid grid-cols-1 gap-4 md:grid-cols-2', estSupport && 'xl:grid-cols-3')}>
+        {/* Priorités, satisfaction ; techniciens pour le support. Deux colonnes à partir de
+            1 024 px seulement : en dessous, avec la barre latérale, une carte n'aurait pas la
+            largeur de la jauge (232 px), et la légende serait tronquée. */}
+        <div className={cn('grid grid-cols-1 gap-4 lg:grid-cols-2', estSupport && 'xl:grid-cols-3')}>
           <CarteGraphique titre="Par priorité">
             {stats ? (
               <JaugePriorites parts={partsPriorite} />
@@ -483,7 +489,7 @@ export function TableauDeBord() {
             <CarteGraphique
               titre={estAdmin ? 'Techniciens' : 'Mon activité'}
               action={estAdmin && equipe.donnees ? <ColonneOuverts periode={equipe.donnees.periode} /> : undefined}
-              className="md:col-span-2 xl:col-span-1"
+              className="lg:col-span-2 xl:col-span-1"
             >
               {equipe.donnees ? (
                 <SectionTechniciens donnees={equipe.donnees} vueEquipe={estAdmin} />

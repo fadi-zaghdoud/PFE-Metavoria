@@ -4001,8 +4001,8 @@ CSS compilé y sont toutes définies.
 - **Dans le navigateur**, pile séparée `st-demo` (base locale non touchée) — tableau de bord
   administrateur, technicien, employée et mobile, dans les deux thèmes, plus les trois
   infobulles survolées : 22 relevés, **1 450 textes, aucun sous le seuil** ; chaque secteur
-  SVG mesuré contre sa carte, **aucun sous 3:1** ; **aucune adresse e-mail** et **aucun point
-  décimal** dans le texte rendu.
+  SVG mesuré contre sa carte, **aucun sous 3:1**. Adresses e-mail et points décimaux dans le
+  texte rendu : contrôle inopérant, voir l'étape 4, « Correction ».
 - **Exports** téléchargés depuis `st-demo` puis relus : le PDF écrit « 48,1 » et « 3,9 »,
   sans aucun point décimal ; la synthèse Excel ne contient que des valeurs numériques.
 
@@ -4117,8 +4117,8 @@ reconstruite depuis le code du groupe 2 (aucune migration à appliquer).
 - **Dans le navigateur** (`st-demo`, frontend et backend reconstruits) — administrateur,
   technicien, employée, mobile, période « 30 j », survol de chaque graphique, deux thèmes :
   26 relevés, **2 192 textes**, graduations des axes SVG comprises — le banc lit désormais
-  leur `fill` —, **aucun sous le seuil** ; aucun secteur sous 3:1 ; aucune adresse e-mail,
-  aucun point décimal.
+  leur `fill` —, **aucun sous le seuil** ; aucun secteur sous 3:1. Adresses e-mail et points
+  décimaux : contrôle inopérant, voir l'étape 4, « Correction ».
 - **Exports** relus après téléchargement : mêmes chiffres qu'à l'écran, virgule dans le PDF,
   nombres dans l'Excel.
 
@@ -4200,8 +4200,8 @@ reconstruite depuis le code du groupe 2 (aucune migration à appliquer).
 - **Frontend** : build, `oxlint` (les 6 avertissements de `main`), `verifier:couleurs`
   sur 84 fichiers, `verifier:contrastes`.
 - **Dans le navigateur** (`st-demo`, deux thèmes, trois rôles, mobile, survols) : 26 relevés,
-  **2 772 textes, aucun sous le seuil**, aucun secteur sous 3:1, aucune adresse e-mail,
-  aucun point décimal.
+  **2 772 textes, aucun sous le seuil**, aucun secteur sous 3:1. Adresses e-mail et points
+  décimaux : contrôle inopérant, voir l'étape 4, « Correction ».
 
 ## Dettes assumées et documentées
 
@@ -4298,11 +4298,12 @@ reconstruite depuis le code du groupe 2 (aucune migration à appliquer).
 - **Frontend** : build, `oxlint` (les 6 avertissements de `main`), `verifier:couleurs` sur
   85 fichiers, `verifier:contrastes`.
 - **Dans le navigateur** (`st-demo`, deux thèmes, trois rôles, mobile, survols) : 40 relevés,
-  **5 218 textes, aucun sous le seuil**, aucun secteur sous 3:1, aucune adresse e-mail,
-  aucun point décimal ; pas de section chez l'employée ; « ouverts au 31/08 » sur une période
-  passée. **États simulés** — la réponse du seul point d'accès des techniciens remplacée
-  dans le navigateur, aucune base lue ni écrite pour eux : 8 techniciens repliés puis
-  dépliés, un nom très long, une absence, un technicien sans activité.
+  **5 218 textes, aucun sous le seuil**, aucun secteur sous 3:1 (adresses e-mail et points
+  décimaux : contrôle inopérant, voir l'étape 4, « Correction ») ; pas de section chez
+  l'employée ; « ouverts au 31/08 » sur une période passée. **États simulés** — la réponse
+  du seul point d'accès des techniciens remplacée dans le navigateur, aucune base lue ni
+  écrite pour eux : 8 techniciens repliés puis dépliés, un nom très long, une absence, un
+  technicien sans activité.
 - **Exports** téléchargés pour les trois rôles et relus : l'Excel en vrais nombres (47,4),
   le PDF à virgule (« 47,4 »), la mention d'absence sans motif, aucune adresse e-mail.
 
@@ -4315,3 +4316,129 @@ reconstruite depuis le code du groupe 2 (aucune migration à appliquer).
   reconstruite ne les a pas.
 - **La liste dépliée allonge la rangée** : à huit techniciens, les cartes voisines
   s'étirent d'autant. Le repli reste l'état par défaut.
+
+---
+
+# Tableau de bord v1.1 — étape 4 : affichage mobile et vérification finale
+
+> Séances des **13 et 14/10/2026** (groupe 4 commité en `48cbcab`, validé).
+> Consigne : l'affichage mobile, puis la vérification finale prévue — base reconstruite,
+> copie de la base locale, preuves par le diff, tickets de démonstration dans les deux
+> thèmes, journal et README —, et STOP avant la fusion.
+
+## Ce qui est livré
+
+- **Affichage mobile et tablette**, quatre retouches :
+  - **barre du haut** : entre 768 et 1 023 px, le libellé « Rechercher… » et « Ctrl K » se
+    masquent, la loupe reste. Le bouton porte désormais un nom accessible, « Rechercher » :
+    sans libellé visible, il n'en avait aucun ;
+  - **rangée priorités, satisfaction, techniciens** : deux colonnes à partir de 1 024 px
+    seulement, au lieu de 768 ;
+  - **sélecteur de période** : une marge intérieure réduite sous 640 px, pour tenir sur une
+    ligne ;
+  - **filtres** : sous 640 px, ils s'étirent, deux par ligne, au lieu d'une largeur fixe.
+- **PR #18**, en brouillon vers `main` : la CI y tourne, le job SQL compris.
+- **README** :
+  - « Ce que l'on voit » réécrit avec les indicateurs du nouveau tableau de bord ;
+  - le tableau des attendus corrigé : 11 demandeurs, et non 31.
+
+## Les décisions, et leurs raisons `[établi en séance]`
+
+- **Deux colonnes à partir de 1 024 px** : la jauge des priorités mesure 232 px. À 768 px,
+  avec la barre latérale, une carte sur deux colonnes n'en offrait qu'environ 187 : la jauge
+  était rognée et la légende tronquée (« F.. », « M. »).
+- **La loupe seule entre 768 et 1 023 px** : la bascule de thème, ajoutée par cette branche,
+  occupe environ 90 px de la barre ; le titre de la page y était coupé (« Tableau de b… »).
+- **La vérification sur des projets compose séparés**, jamais sur `st-demo`, dont
+  l'utilisateur se servait au même moment :
+  - `st-verif` : une base reconstruite de zéro, par la procédure du README ;
+  - `st-copie` : la base locale, copiée par `pg_dump` en session forcée en lecture seule,
+    puis restaurée dans un volume neuf.
+- **Trois comptes de la copie dotés d'un mot de passe de vérification**, dans la copie
+  seulement — se connecter écrit dans la base (jeton de session, journal d'audit). Contrôlé
+  ensuite : dans la base locale, ces comptes sont toujours sans mot de passe.
+- **L'Ollama de l'utilisateur relié aux réseaux de vérification** le temps des suggestions,
+  puis détaché, et son modèle déchargé : il n'en gardait aucun en mémoire avant.
+- **Le message du chargeur, « 31 demandeurs », n'est pas corrigé** : hors du périmètre de
+  cette branche. 31 est le nombre de couples service / poste du corpus ; le chargeur crée un
+  compte par service, soit 11. Le README dit le vrai nombre.
+
+## Ce qui a été prouvé, et comment
+
+- **CI** : les quatre jobs verts sur la PR #18 — dont « Backend (tests SQL, base
+  éphémère) », qui tournait pour la première fois.
+- **Preuves par le diff**, contre `v1.0` :
+  - **backend** : hors du tableau de bord, seuls `routes/index.ts` (une ligne) et
+    `package.json` (le script `test:integration`) changent. `ml/`, les fichiers compose, les
+    Dockerfiles et le schéma Prisma sont identiques ;
+  - **interface** : `iaApi.ts`, `ticketsApi.ts` et `types/ticket.ts` sont identiques. Sur les
+    44 autres fichiers modifiés hors du tableau de bord, **31 ne changent que des classes**
+    (preuve par l'arbre syntaxique), dont `CreateTicketPage.tsx` (1 099 nœuds) et
+    `TicketDetailPage.tsx` (6 762 nœuds) ;
+  - **les 13 autres** changent de structure, toujours pour la présentation :
+    - la bascule de thème dans `AuthLayout`, `Sidebar` et `Topbar` ;
+    - les décors en dégradé retirés de `Logo`, `EmptyState`, `Skeleton` et `StatCard` ;
+    - la pastille de statut (`Badge`, `ticket-ui`), dont la prop est facultative : sans elle,
+      le rendu est celui d'avant ;
+    - `format.ts`, où seule la palette des avatars change de classes et trois fonctions
+      s'ajoutent ;
+    - l'initialisation du thème (`main.tsx`) et le tableau de bord chargé à la demande
+      (`DashboardPage`).
+- **Base reconstruite** (`st-verif`) : les attendus du README — 852 tickets #9 à #860,
+  723 résolutions liées, 178 évaluations, 852 embeddings en 118 s ; 11 demandeurs (et non 31).
+- **Chemin de suggestion IA sur le code final**, un appel par cas, **sur la base reconstruite
+  et sur la copie de la base locale** : #108 (#70, #691, #760), #151 (#28, #678), #282 (#38,
+  #124, #644) et #323 (#606) citent exactement les sources du README ; les deux saisies
+  d'abstention s'abstiennent.
+- **Dans le navigateur, sur la base reconstruite** :
+  - tous les écrans, trois rôles, deux thèmes : 68 relevés, **9 902 textes, aucun sous le
+    seuil**, aucun effet interdit, aucun secteur sous 3:1 ;
+  - les tickets #108, #151, #282 et #323, avec leur suggestion, dans les deux thèmes ;
+  - le tableau de bord en mobile (390 px) et en tablette (768 px), trois rôles : **aucun
+    débordement horizontal** ;
+  - le tableau de bord seul, survols et états simulés compris : 40 relevés, **aucune adresse
+    e-mail, aucun point décimal** (détection corrigée, voir plus bas).
+- **Sur la copie de la base locale** :
+  - plage de démonstration (31/05 → 09/06/2026) : 85 résolus (+6,3 %), 48,6 h (−6,0 %),
+    87 ouverts (+6,1 %), prise en charge « — » ;
+  - le survol de l'anneau du module IA, enfin exercé : « 3 sur 4 acceptées · 1 corrigée
+    par un technicien » — la dette du groupe 3 est levée ;
+  - 34 relevés, puis 18 en mobile : aucun texte sous le seuil, aucun débordement ; aucune
+    adresse e-mail ni point décimal sur le tableau de bord.
+
+## Correction
+
+**La recherche d'adresses e-mail et de points décimaux du banc d'audit ne fonctionnait pas**,
+depuis sa création au groupe 1 :
+
+- ses deux expressions régulières étaient écrites dans une chaîne de gabarit JavaScript, qui
+  retire les barres obliques inverses. La page recevait `/[w.+-]+@[w-]+.[w.-]+/`, qui ne
+  reconnaît aucune adresse réelle, et une expression des points décimaux tout aussi
+  inopérante ;
+- les « aucune adresse e-mail, aucun point décimal » des groupes 1 à 4 ne prouvaient donc
+  rien. Ils sont annotés sur place ;
+- découverte le 14/10 : sur la copie, les pages de ticket, qui affichent l'adresse du
+  demandeur, n'en comptaient aucune ;
+- corrigée (barres doublées), vérifiée sur un texte d'essai, puis rejouée : aucune adresse ni
+  point décimal sur le tableau de bord, des deux côtés. Les seules adresses trouvées sont
+  celles des demandeurs, sur les pages de ticket, où elles sont attendues ;
+- les relectures des exports PDF et Excel, écrites en Python, n'étaient pas touchées.
+
+## Dettes assumées et documentées
+
+- **Le limiteur de connexions** (10 par quart d'heure et par adresse) est partagé entre le
+  banc et l'utilisateur : le 13/10, les passages sur `st-demo` l'ont épuisé, au risque de
+  refuser ses propres connexions pendant un quart d'heure. Depuis, chaque passage tourne sur
+  sa propre pile, l'API relancée entre deux passages.
+- **La mise en veille de la machine** a interrompu le premier scénario (jetons expirés) : il
+  a repris là où il s'était arrêté.
+- **Edge tarde parfois à rouvrir son port de débogage** : le banc le relance jusqu'à trois
+  fois. Un passage sombre a échoué parce qu'une vérification de types tournait en même
+  temps ; rejoué seul, il est passé.
+- **Le critère 5/5 n'a pas été rejoué** : un appel par cas.
+- **Sur la copie, après le scénario**, les chiffres des techniciens diffèrent de ceux de la
+  base locale (les tickets de démonstration y ont été affectés à Technicien Support 1) : les
+  valeurs citées pour la base locale viennent de sa lecture seule.
+- **`st-verif` et `st-copie` sont arrêtées, leurs volumes conservés.** `st-copie` contient
+  une copie de la base locale, dont trois comptes portent le mot de passe de vérification :
+  à supprimer après la fusion.

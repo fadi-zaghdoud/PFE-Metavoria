@@ -64,8 +64,8 @@ export function OtpInput({ longueur = 6, value, onChange, disabled = false }: Ot
           onFocus={(e) => e.target.select()}
           aria-label={`Chiffre ${i + 1} sur ${longueur}`}
           className={cn(
-            'size-11 rounded-lg border border-slate-300 bg-white text-center text-lg font-semibold text-slate-900 shadow-xs transition-colors',
-            'hover:border-slate-400 focus:border-primary-500 disabled:cursor-not-allowed disabled:bg-slate-50',
+            'size-11 rounded-lg border border-bordure-forte bg-surface text-center text-lg font-semibold text-texte shadow-xs transition-colors',
+            'hover:border-bordure-survol focus:border-primary-500 disabled:cursor-not-allowed disabled:bg-surface-2',
           )}
         />
       ))}

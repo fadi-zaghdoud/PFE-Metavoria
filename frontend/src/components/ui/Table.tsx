@@ -6,7 +6,7 @@ import { cn } from '../../lib/cn';
 export function TableContainer({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn('overflow-auto rounded-2xl border border-slate-200/80 bg-white shadow-sm', className)}
+      className={cn('overflow-auto rounded-2xl border border-bordure/80 bg-surface shadow-sm', className)}
       {...props}
     />
   );
@@ -20,7 +20,7 @@ export function Th({ className, ...props }: ThHTMLAttributes<HTMLTableCellElemen
   return (
     <th
       className={cn(
-        'sticky top-0 z-10 border-b border-slate-200 bg-slate-50/95 px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 backdrop-blur',
+        'sticky top-0 z-10 border-b border-bordure bg-surface-2 px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-texte-4',
         className,
       )}
       {...props}
@@ -29,5 +29,5 @@ export function Th({ className, ...props }: ThHTMLAttributes<HTMLTableCellElemen
 }
 
 export function Td({ className, ...props }: TdHTMLAttributes<HTMLTableCellElement>) {
-  return <td className={cn('border-b border-slate-100 px-4 py-3 align-middle', className)} {...props} />;
+  return <td className={cn('border-b border-bordure-faible px-4 py-3 align-middle', className)} {...props} />;
 }

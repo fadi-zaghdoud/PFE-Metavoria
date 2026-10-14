@@ -122,13 +122,13 @@ export function NotificationsBell() {
         aria-label={`Notifications${nonLues > 0 ? ` (${nonLues} non lues)` : ''}`}
         aria-haspopup="true"
         aria-expanded={ouvert}
-        className="relative rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
+        className="relative rounded-lg p-2 text-texte-4 transition-colors hover:bg-surface-3 hover:text-texte-2"
       >
         <Bell className="size-5" aria-hidden />
         {nonLues > 0 && (
           <span className="absolute right-0.5 top-0.5 inline-flex">
             <span aria-hidden className="absolute inset-0 animate-ping rounded-full bg-rose-400/70" />
-            <span className="relative flex min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-semibold leading-4 text-white shadow-sm ring-2 ring-white">
+            <span className="relative flex min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-semibold leading-4 text-white shadow-sm ring-2 ring-surface">
               {nonLues > 9 ? '9+' : nonLues}
             </span>
           </span>
@@ -143,14 +143,14 @@ export function NotificationsBell() {
             exit={{ opacity: 0, y: -8, scale: 0.98 }}
             transition={{ duration: 0.15, ease: 'easeOut' }}
             role="menu"
-            className="absolute right-0 top-full z-40 mt-2 w-[min(92vw,22rem)] overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-xl"
+            className="absolute right-0 top-full z-40 mt-2 w-[min(92vw,22rem)] overflow-hidden rounded-2xl border border-bordure/80 bg-surface shadow-xl"
           >
-            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-              <p className="text-sm font-semibold text-slate-900">Notifications</p>
+            <div className="flex items-center justify-between border-b border-bordure-faible px-4 py-3">
+              <p className="text-sm font-semibold text-texte">Notifications</p>
               {nonLues > 0 && (
                 <button
                   onClick={marquerTout}
-                  className="inline-flex items-center gap-1 text-xs font-medium text-primary-600 hover:text-primary-700"
+                  className="inline-flex items-center gap-1 text-xs font-medium text-marque hover:text-marque-fort"
                 >
                   <CheckCheck className="size-3.5" aria-hidden />
                   Tout marquer comme lu
@@ -160,16 +160,16 @@ export function NotificationsBell() {
 
             <div className="max-h-96 overflow-y-auto">
               {notifications.length === 0 ? (
-                <p className="px-4 py-10 text-center text-sm text-slate-400">Aucune notification.</p>
+                <p className="px-4 py-10 text-center text-sm text-texte-4">Aucune notification.</p>
               ) : (
-                <ul className="divide-y divide-slate-100">
+                <ul className="divide-y divide-bordure-faible">
                   {notifications.map((n) => (
                     <li key={n.id}>
                       <button
                         onClick={() => ouvrirNotification(n)}
                         className={cn(
-                          'flex w-full items-start gap-2.5 px-4 py-3 text-left transition-colors hover:bg-slate-50',
-                          !n.lu && 'bg-primary-50/40',
+                          'flex w-full items-start gap-2.5 px-4 py-3 text-left transition-colors hover:bg-surface-2',
+                          !n.lu && 'bg-marque-fond/40',
                         )}
                       >
                         <span
@@ -180,8 +180,8 @@ export function NotificationsBell() {
                           aria-hidden
                         />
                         <span className="min-w-0 flex-1">
-                          <span className="block text-sm leading-snug text-slate-700">{n.contenu}</span>
-                          <span className="mt-0.5 block text-xs text-slate-400">
+                          <span className="block text-sm leading-snug text-texte-2">{n.contenu}</span>
+                          <span className="mt-0.5 block text-xs text-texte-4">
                             {tempsRelatif(n.dateEnvoi)}
                           </span>
                         </span>

@@ -58,7 +58,7 @@ export function AppShell() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.15 }}
-              className="absolute inset-0 bg-slate-950/40"
+              className="absolute inset-0 bg-encre/40"
               onClick={() => setMobileNavOuverte(false)}
               aria-hidden
             />

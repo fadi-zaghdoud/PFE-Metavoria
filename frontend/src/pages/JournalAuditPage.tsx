@@ -170,7 +170,7 @@ export function JournalAuditPage() {
       <Card className="animate-fade-up mb-4 p-4">
         <div className="flex flex-wrap items-end gap-3">
           <div>
-            <label htmlFor="f-action" className="mb-1 block text-xs font-medium text-slate-500">
+            <label htmlFor="f-action" className="mb-1 block text-xs font-medium text-texte-4">
               Action
             </label>
             <Select
@@ -189,7 +189,7 @@ export function JournalAuditPage() {
           </div>
 
           <div>
-            <label htmlFor="f-acteur" className="mb-1 block text-xs font-medium text-slate-500">
+            <label htmlFor="f-acteur" className="mb-1 block text-xs font-medium text-texte-4">
               Acteur
             </label>
             <Select
@@ -208,7 +208,7 @@ export function JournalAuditPage() {
           </div>
 
           <div>
-            <label htmlFor="f-debut" className="mb-1 block text-xs font-medium text-slate-500">
+            <label htmlFor="f-debut" className="mb-1 block text-xs font-medium text-texte-4">
               Du
             </label>
             <Input
@@ -220,7 +220,7 @@ export function JournalAuditPage() {
             />
           </div>
           <div>
-            <label htmlFor="f-fin" className="mb-1 block text-xs font-medium text-slate-500">
+            <label htmlFor="f-fin" className="mb-1 block text-xs font-medium text-texte-4">
               Au
             </label>
             <Input
@@ -233,7 +233,7 @@ export function JournalAuditPage() {
           </div>
 
           <div>
-            <span className="mb-1 block text-xs font-medium text-slate-500">Résultat</span>
+            <span className="mb-1 block text-xs font-medium text-texte-4">Résultat</span>
             <div className="flex gap-1" role="group" aria-label="Filtrer par résultat">
               {LIBELLES_RESULTAT.map((r) => (
                 <button
@@ -244,8 +244,8 @@ export function JournalAuditPage() {
                   className={[
                     'rounded-lg px-3 py-2 text-xs font-medium transition-colors',
                     (filtres.resultat ?? '') === r.valeur
-                      ? 'bg-primary-500 text-white'
-                      : 'bg-white text-slate-500 ring-1 ring-slate-200 hover:bg-slate-50',
+                      ? 'bg-primary-600 text-white'
+                      : 'bg-surface text-texte-4 ring-1 ring-bordure hover:bg-surface-2',
                   ].join(' ')}
                 >
                   {r.label}
@@ -294,7 +294,7 @@ export function JournalAuditPage() {
                     <tr
                       key={e.id}
                       onClick={() => setSelection(e)}
-                      className="cursor-pointer transition-colors hover:bg-slate-50"
+                      className="cursor-pointer transition-colors hover:bg-surface-2"
                       tabIndex={0}
                       role="button"
                       aria-label={`Détail de l'action ${LABEL_ACTION[e.action] ?? e.action}`}
@@ -305,17 +305,17 @@ export function JournalAuditPage() {
                         }
                       }}
                     >
-                      <Td className="whitespace-nowrap tabular-nums text-xs text-slate-500">
+                      <Td className="whitespace-nowrap tabular-nums text-xs text-texte-4">
                         {formaterHorodatage(e.dateCreation)}
                       </Td>
-                      <Td className="font-medium text-slate-700">{LABEL_ACTION[e.action] ?? e.action}</Td>
-                      <Td className="text-slate-600">
+                      <Td className="font-medium text-texte-2">{LABEL_ACTION[e.action] ?? e.action}</Td>
+                      <Td className="text-texte-3">
                         {e.acteurId ? (nomUtilisateur.get(e.acteurId) ?? e.acteurNom) : e.acteurNom}
                         {!e.acteurId && e.acteurNom !== 'Système' && (
-                          <span className="ml-1 text-xs text-slate-400">(non authentifié)</span>
+                          <span className="ml-1 text-xs text-texte-4">(non authentifié)</span>
                         )}
                       </Td>
-                      <Td className="hidden text-slate-500 md:table-cell">
+                      <Td className="hidden text-texte-4 md:table-cell">
                         {e.cibleType ? `${LABEL_CIBLE[e.cibleType] ?? e.cibleType}${e.cibleId ? ` #${e.cibleId}` : ''}` : '—'}
                       </Td>
                       <Td>
@@ -323,11 +323,11 @@ export function JournalAuditPage() {
                           {e.resultat === 'ECHEC' ? 'Échec' : 'Succès'}
                         </Badge>
                       </Td>
-                      <Td className="hidden text-xs tabular-nums text-slate-500 lg:table-cell">
+                      <Td className="hidden text-xs tabular-nums text-texte-4 lg:table-cell">
                         {/* Absence QUALIFIEE d'un coup d'oeil ; le pourquoi complet est
                             dans le panneau, ouvert au clic — plus d'infobulle native. */}
                         {e.ip ?? (
-                          <span className="inline-flex items-center gap-1 text-slate-400">
+                          <span className="inline-flex items-center gap-1 text-texte-4">
                             {estImportee(e) && <History className="size-3" aria-hidden />}
                             {estImportee(e) ? 'historique' : '—'}
                           </span>
@@ -339,8 +339,8 @@ export function JournalAuditPage() {
               </Table>
             </TableContainer>
 
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-4 py-3">
-              <p className="flex items-center gap-1.5 text-xs text-slate-400">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-bordure-faible px-4 py-3">
+              <p className="flex items-center gap-1.5 text-xs text-texte-4">
                 <Info className="size-3.5 shrink-0" aria-hidden />
                 {entrees.length} entrée{entrees.length > 1 ? 's' : ''} affichée
                 {entrees.length > 1 ? 's' : ''}

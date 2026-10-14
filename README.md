@@ -305,11 +305,13 @@ docker compose run --rm ml python -m smart_ticketing_ml.service.backfill    # le
 | Tickets chargés | 852, numérotés **#9 à #860** |
 | Résolutions liées (base de connaissances du RAG) | 723 |
 | Évaluations de satisfaction | 178 |
-| Comptes créés | 3 techniciens, 31 demandeurs (un par service) — **sans mot de passe** |
+| Comptes créés | 3 techniciens, 11 demandeurs (un par service) — **sans mot de passe** |
 | Embeddings | 852 (`BAAI/bge-m3`) |
 
 À savoir :
 
+- **11 demandeurs, et non 31** : le chargeur annonce « 31 demandeurs (par service) », mais 31
+  est le nombre de couples service / poste du corpus. Il crée un compte par service, soit 11.
 - **Les numéros sont fixes.** Le corpus commence à #9 pour reproduire la base où la
   démonstration a été préparée (le corpus y avait été chargé après 8 tickets d'essai) :
   les tickets cités ci-dessous gardent leur numéro. Un rechargement redonne les mêmes
@@ -333,9 +335,16 @@ docker compose run --rm ml python -m smart_ticketing_ml.service.backfill    # le
 
 ### Ce que l'on voit
 
-**Tableau de bord** (administrateur), corpus seul : 852 tickets, 129 ouverts, 464 résolus,
-259 clôturés, résolution moyenne de 48,1 h, satisfaction de 3,9 sur 178 évaluations, et
-trois techniciens chargés de 25 à 27 tickets.
+**Tableau de bord** (administrateur, période par défaut de 12 mois), corpus seul :
+
+- 723 tickets résolus, en 48,1 h en moyenne ;
+- 129 ouverts : 51 nouveaux (sans technicien), 35 en attente, 43 en cours ;
+- 852 tickets dans l'anneau des catégories ;
+- une satisfaction de 3,9 sur 178 évaluations ;
+- trois techniciens, à 27, 26 et 25 tickets ouverts.
+
+Les tickets s'étalent sur les 90 jours qui précèdent le chargement : « 12 mois » et
+« Tout » les montrent tous, « 30 j » le dernier mois seulement.
 
 Le **délai de 1re prise en charge reste vide** sur une base reconstruite : il se calcule
 sur les événements de prise en charge, et le chargeur n'en crée aucun — les tickets du
@@ -439,6 +448,7 @@ Scripts utiles :
 | `npm run typecheck` | Vérifie les types sans compiler |
 | `npm run lint` / `lint:fix` | Vérifie / corrige le style de code (ESLint) |
 | `npm test` | Lance les tests unitaires (voir « Lancer les tests ») |
+| `npm run test:integration` | Lance les tests SQL sur une base de test dédiée (voir « Lancer les tests ») |
 | `npm run prisma:studio` | Ouvre Prisma Studio (interface de la base de données) |
 | `npm run prisma:migrate` | Crée et applique une nouvelle migration |
 
@@ -456,8 +466,8 @@ Le serveur de dev Vite proxifie automatiquement les appels `/api` vers `http://l
 ## Lancer les tests
 
 Ce sont les commandes de l'intégration continue (`.github/workflows/ci.yml`), rejouées à
-chaque push et à chaque pull request vers `main`. Aucune ne demande de base de données,
-de modèle lourd ni de Docker.
+chaque push et à chaque pull request vers `main`. Aucune ne demande de modèle lourd ; seuls
+les tests d'intégration du backend demandent une base de données — jetable.
 
 ### Backend — typage, lint, tests unitaires
 
@@ -483,6 +493,25 @@ JWT_SECRET=ci-factice-aucun-secret-ci-factice-aucun-secret \
 npm test
 ```
 
+### Backend — tests d'intégration (SQL)
+
+Les points d'accès du tableau de bord (`/api/tableau-de-bord/…`) agrègent en SQL : leurs
+tests (`src/**/*.itest.ts`) interrogent une **vraie** base PostgreSQL, y écrivent un jeu de
+données aux dates choisies, puis la vident. Leur garde **refuse toute base dont le nom ne
+finit pas par `_test`**, avant la moindre requête : sans `DATABASE_URL` explicite, ils
+liraient `backend/.env`, qui pointe sur la base de développement.
+
+```bash
+docker run -d --name st-test-db -e POSTGRES_USER=test -e POSTGRES_PASSWORD=test   -e POSTGRES_DB=smart_ticketing_test -p 55434:5432 pgvector/pgvector:pg17
+export DATABASE_URL=postgresql://test:test@localhost:55434/smart_ticketing_test
+npx prisma migrate deploy
+npm run test:integration
+docker rm -f st-test-db        # la base ne sert qu'aux tests
+```
+
+En CI, le job `backend-integration` crée la même base comme service du job, applique les
+migrations et lance ces tests.
+
 ### Module IA — pytest
 
 ```bash
@@ -496,6 +525,37 @@ python -m pytest -m "not slow"     # suite rapide, 100 % hors ligne
 - Les tests marqués `slow` (`python -m pytest -m slow`) chargent bge-m3 ou Tesseract, et
   se désactivent proprement si la dépendance manque.
 - Dans la pile Docker : `docker compose run --rm ml pytest -m "not slow" -p no:cacheprovider`.
+
+### Frontend — lint, build, garde-fous du thème
+
+```bash
+cd frontend
+npm ci
+npm run lint                  # oxlint
+npm run build                 # tsc -b, puis vite build
+npm run verifier:couleurs     # aucune couleur réservée au thème clair, aucun dégradé ni verre
+npm run verifier:contrastes   # contrastes WCAG des jetons et des graphiques, deux thèmes
+```
+
+- **`verifier:couleurs`** refuse toute classe Tailwind qui ne vaut que pour le thème
+  clair (nuances neutres `slate-*`, `gray-*`…, blanc ou noir pleins, fonds pâles `-50` à
+  `-200`, textes `-600` et plus…) sans son pendant `dark:` sur la même ligne. Les écrans
+  passent par les jetons sémantiques d'`src/index.css` (`surface`, `texte`, `bordure`,
+  `marque`, états…), redéfinis pour le thème sombre. `exportRapport.ts` en est exclu :
+  les exports PDF et Excel restent clairs, quel que soit le thème de l'interface. Il
+  refuse aussi tout **dégradé, effet de verre, flou ou lueur** (`bg-gradient-*`,
+  `*-gradient()`, `backdrop-*`, `blur-*`, `shadow-glow`, `glass`), dans les composants et
+  la feuille de style : l'interface est plate.
+- **`verifier:contrastes`** calcule, à partir d'`index.css` et de la palette Tailwind, le
+  contraste de chaque couple texte/fond des jetons, dans les deux thèmes : 4,5:1 pour le
+  texte, 3:1 pour les icônes d'état. Il contrôle aussi les **graphiques** : chaque marque à
+  3:1 sur la carte, les teintes voisines de l'anneau des catégories séparées en vision
+  normale et sous daltonisme, la rampe des priorités monotone. Il échoue si un contrôle
+  passe sous son seuil.
+- **`node scripts/prouver-classes-seulement.mjs <révision> <fichier.tsx>`** prouve qu'un
+  fichier ne diffère d'une révision que par des classes CSS : les deux arbres syntaxiques
+  sont comparés, seules les chaînes faites entièrement de classes sont neutralisées
+  (ex. `v1.0 src/pages/CreateTicketPage.tsx`).
 
 ## Modèle de données
 
@@ -579,9 +639,9 @@ désactivation d'un compte, qui coupe la connexion et vise un départ :
 
 L'absence en cours est rappelée par une pastille **Absent** dans la liste des utilisateurs,
 par une mention « absent jusqu'au … » dans le sélecteur de technicien d'un ticket, et par
-une puce sur le graphique de charge du tableau de bord. Le **motif** n'est visible que sur
-la page Absences : le graphique de charge est consultable par tous les techniciens, et un
-arrêt maladie est une donnée de santé.
+une pastille « absent jusqu'au … » dans la section Techniciens du tableau de bord. Le
+**motif** n'est visible que sur la page Absences : le tableau de bord ne le reçoit jamais,
+car un arrêt maladie est une donnée de santé.
 
 ### Comment le technicien est choisi
 
@@ -763,7 +823,8 @@ alertes automatiques sur échecs répétés · durée de conservation réglable 
   liste paginée avec recherche côté serveur (titre, description, catégorie, demandeur, numéro)
 - ✅ **Tableau de bord et rapports** (§6.4) : tickets à affecter, ouverts et résolus, temps
   moyen de résolution, délai de 1re prise en charge avec son effectif, satisfaction,
-  répartitions par statut, priorité, catégorie et technicien ; filtres par période,
+  répartitions par statut, priorité et catégorie, activité de chaque technicien (tickets
+  ouverts, résolus, temps moyen) ; filtres par période,
   technicien, catégorie et service ; export PDF et Excel
 - ✅ **Affectation automatique** (§6.2) : interrupteur manuel/automatique persistant,
   spécialités technicien ↔ catégorie, **gestion des absences** (congé, maladie, formation)
@@ -782,14 +843,18 @@ alertes automatiques sur échecs répétés · durée de conservation réglable 
 - ✅ **Flywheel** : capture des labels validés, réentraînement supervisé et garde de déploiement
   qui refuse un modèle non meilleur sur le jeu réel
 - ✅ Design system frontend (sidebar, palette ⌘K, toasts, composants réutilisables)
+- ✅ **Thème clair et thème sombre** sur tous les écrans : préférence du système par
+  défaut, bascule à trois états (système, clair, sombre) mémorisée dans le navigateur,
+  contrastes vérifiés dans les deux thèmes ; les exports PDF et Excel restent clairs
 - ✅ **Conteneurisation Docker autonome et prouvée sur serveur nu** : 7 services, provisionnement
   vérifié des modèles. Après le premier démarrage, le **module IA** fonctionne hors-ligne ; les
   pièces jointes, l'OCR, les photos de profil et les e-mails exigent Cloudinary et le SMTP
 - ✅ **Données de démonstration** chargeables depuis un clone propre (profil `demo`) : 852 tickets
   synthétiques aux numéros fixes, base de connaissances du RAG, réentraînement — voir
   « Données de démonstration »
-- ✅ **Intégration continue** (GitHub Actions) : typage, lint et tests du backend, suite rapide
-  pytest du module IA, rejoués à chaque push et pull request vers `main`
+- ✅ **Intégration continue** (GitHub Actions) : typage, lint et tests du backend, tests SQL
+  sur une base éphémère, suite rapide pytest du module IA, lint, build et garde-fous du
+  thème du frontend, rejoués à chaque push et pull request vers `main`
 
 **Non retenu au périmètre** — écarté par écrit, annexe B du
 [plan de travail](docs/plan-de-travail-esprit.md) :

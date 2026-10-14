@@ -37,7 +37,7 @@ export function Avatar({ prenom, nom, photoUrl, size = 'md', className }: Avatar
         aria-hidden
         loading="lazy"
         onError={() => setErreur(true)}
-        className={cn(base, 'bg-slate-100 object-cover')}
+        className={cn(base, 'bg-surface-3 object-cover')}
       />
     );
   }

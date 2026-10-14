@@ -6,12 +6,14 @@ import { AnimatedNumber } from './AnimatedNumber';
 
 type Tone = 'primary' | 'success' | 'warning' | 'danger' | 'neutral';
 
-const TONES: Record<Tone, { chip: string; aura: string; glow: string }> = {
-  primary: { chip: 'from-primary-500 to-primary-600', aura: 'from-primary-500/15', glow: 'shadow-glow-sm' },
-  success: { chip: 'from-emerald-500 to-teal-600', aura: 'from-emerald-500/15', glow: '' },
-  warning: { chip: 'from-amber-500 to-orange-500', aura: 'from-amber-500/15', glow: '' },
-  danger: { chip: 'from-rose-500 to-rose-600', aura: 'from-rose-500/15', glow: '' },
-  neutral: { chip: 'from-slate-500 to-slate-600', aura: 'from-slate-500/10', glow: '' },
+// Pastille d'icône : aplat teinté de l'état, icône à 3:1 sur ce fond (vérifié par
+// `verifier:contrastes`). Ni dégradé, ni halo, ni lueur (consigne du 09/10).
+const TONES: Record<Tone, string> = {
+  primary: 'bg-marque-fond text-marque',
+  success: 'bg-succes-fond text-succes-accent',
+  warning: 'bg-alerte-fond text-alerte-accent',
+  danger: 'bg-danger-fond text-danger-accent',
+  neutral: 'bg-surface-3 text-texte-3',
 };
 
 interface Trend {
@@ -20,9 +22,9 @@ interface Trend {
 }
 
 const TREND_STYLE = {
-  up: { cls: 'bg-emerald-50 text-emerald-700 ring-emerald-600/15', Icon: ArrowUpRight },
-  down: { cls: 'bg-rose-50 text-rose-700 ring-rose-600/15', Icon: ArrowDownRight },
-  neutral: { cls: 'bg-slate-100 text-slate-600 ring-slate-500/10', Icon: Minus },
+  up: { cls: 'bg-succes-fond text-succes-texte ring-succes-accent/15', Icon: ArrowUpRight },
+  down: { cls: 'bg-danger-fond text-danger-texte ring-danger-accent/15', Icon: ArrowDownRight },
+  neutral: { cls: 'bg-surface-3 text-texte-3 ring-texte-4/10', Icon: Minus },
 };
 
 interface StatCardProps {
@@ -61,18 +63,10 @@ export function StatCard({
       )}
       style={{ animationDelay: `${index * 70}ms` }}
     >
-      {/* Halo décoratif discret en coin */}
-      <span
-        aria-hidden
-        className={cn(
-          'pointer-events-none absolute -right-8 -top-10 size-28 rounded-full bg-gradient-to-br to-transparent opacity-70 blur-2xl transition-opacity duration-300 group-hover:opacity-100',
-          t.aura,
-        )}
-      />
       <div className="relative flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-slate-500">{label}</p>
-          <p className="mt-2 text-2xl font-semibold tabular-nums tracking-tight text-slate-900">
+          <p className="truncate text-sm font-medium text-texte-4">{label}</p>
+          <p className="mt-2 text-2xl font-semibold tabular-nums tracking-tight text-texte">
             {typeof value === 'number' ? (
               <AnimatedNumber value={value} decimals={decimals} suffix={suffix} />
             ) : (
@@ -92,17 +86,11 @@ export function StatCard({
                   {trend.label}
                 </span>
               )}
-              {hint && <span className="text-xs text-slate-400">{hint}</span>}
+              {hint && <span className="text-xs text-texte-4">{hint}</span>}
             </div>
           )}
         </div>
-        <span
-          className={cn(
-            'flex size-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white ring-1 ring-inset ring-white/20',
-            t.chip,
-            t.glow,
-          )}
-        >
+        <span className={cn('flex size-11 shrink-0 items-center justify-center rounded-xl', t)}>
           <Icon className="size-5" aria-hidden />
         </span>
       </div>

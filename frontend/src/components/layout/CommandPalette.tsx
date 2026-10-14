@@ -111,7 +111,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.12 }}
-            className="absolute inset-0 bg-slate-950/40 backdrop-blur-[2px]"
+            className="absolute inset-0 bg-encre/50"
             onClick={onClose}
             aria-hidden
           />
@@ -123,26 +123,26 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.97, y: -8 }}
             transition={{ duration: 0.16, ease: 'easeOut' }}
-            className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-xl"
+            className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-bordure/80 bg-surface shadow-xl"
           >
-            <div className="flex items-center gap-2.5 border-b border-slate-100 px-4">
-              <Search className="size-4 text-slate-400" aria-hidden />
+            <div className="flex items-center gap-2.5 border-b border-bordure-faible px-4">
+              <Search className="size-4 text-texte-4" aria-hidden />
               <input
                 ref={inputRef}
                 value={requete}
                 onChange={(e) => setRequete(e.target.value)}
                 placeholder="Rechercher une page ou une action…"
                 aria-label="Rechercher une commande"
-                className="h-12 w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
+                className="h-12 w-full bg-transparent text-sm outline-none placeholder:text-texte-4"
               />
-              <kbd className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-400">
+              <kbd className="rounded border border-bordure bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-texte-4">
                 Échap
               </kbd>
             </div>
 
             <ul role="listbox" aria-label="Résultats" className="max-h-72 overflow-y-auto p-2">
               {resultats.length === 0 && (
-                <li className="px-3 py-8 text-center text-sm text-slate-400">Aucun résultat</li>
+                <li className="px-3 py-8 text-center text-sm text-texte-4">Aucun résultat</li>
               )}
               {resultats.map((cmd, i) => {
                 const Icon = cmd.icon;
@@ -153,12 +153,12 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
                       onMouseEnter={() => setIndexActif(i)}
                       className={cn(
                         'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors',
-                        i === indexActif ? 'bg-primary-50 text-primary-700' : 'text-slate-700',
+                        i === indexActif ? 'bg-marque-fond text-marque-fort' : 'text-texte-2',
                       )}
                     >
                       <Icon className="size-4 shrink-0" aria-hidden />
                       <span className="flex-1">{cmd.label}</span>
-                      <span className="text-xs text-slate-400">{cmd.section}</span>
+                      <span className="text-xs text-texte-4">{cmd.section}</span>
                     </button>
                   </li>
                 );

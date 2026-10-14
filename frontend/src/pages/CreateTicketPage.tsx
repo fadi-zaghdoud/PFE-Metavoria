@@ -101,7 +101,7 @@ export function CreateTicketPage() {
     <div className="mx-auto max-w-2xl">
       <Link
         to="/tickets"
-        className="mb-3 inline-flex items-center gap-1.5 text-sm text-slate-500 transition-colors hover:text-slate-900"
+        className="mb-3 inline-flex items-center gap-1.5 text-sm text-texte-4 transition-colors hover:text-texte"
       >
         <ArrowLeft className="size-4" aria-hidden />
         Tickets
@@ -172,23 +172,23 @@ export function CreateTicketPage() {
                 multiple
                 onChange={ajouterFichiers}
                 disabled={fichiers.length >= MAX_PJ}
-                className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-200 disabled:opacity-50"
+                className="block w-full text-sm text-texte-3 file:mr-3 file:rounded-lg file:border-0 file:bg-surface-3 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-texte-2 hover:file:bg-surface-4 disabled:opacity-50"
               />
               {fichiers.length > 0 && (
                 <ul className="mt-2 space-y-1">
                   {fichiers.map((f, i) => (
                     <li
                       key={`${f.name}-${f.lastModified}-${i}`}
-                      className="flex items-center gap-2 rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs"
+                      className="flex items-center gap-2 rounded-lg bg-surface-2 px-2.5 py-1.5 text-xs"
                     >
-                      <Paperclip className="size-3.5 shrink-0 text-slate-400" aria-hidden />
-                      <span className="min-w-0 flex-1 truncate text-slate-700">{f.name}</span>
-                      <span className="shrink-0 text-slate-400">{formaterOctets(f.size)}</span>
+                      <Paperclip className="size-3.5 shrink-0 text-texte-4" aria-hidden />
+                      <span className="min-w-0 flex-1 truncate text-texte-2">{f.name}</span>
+                      <span className="shrink-0 text-texte-4">{formaterOctets(f.size)}</span>
                       <button
                         type="button"
                         onClick={() => setFichiers((prev) => prev.filter((_, j) => j !== i))}
                         aria-label={`Retirer ${f.name}`}
-                        className="shrink-0 text-slate-400 hover:text-rose-600"
+                        className="shrink-0 text-texte-4 hover:text-danger-accent"
                       >
                         <X className="size-3.5" aria-hidden />
                       </button>

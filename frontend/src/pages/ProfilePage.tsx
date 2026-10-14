@@ -129,7 +129,7 @@ export function ProfilePage() {
       <PageHeader title="Mon profil" description="Gérez vos informations personnelles et votre mot de passe." />
 
       {/* Carte d'identité */}
-      <Card className="mb-6 overflow-hidden bg-gradient-to-br from-white to-primary-50/50">
+      <Card className="mb-6 overflow-hidden">
         <CardContent className="flex flex-wrap items-center gap-4">
           <div className="relative shrink-0">
             <Avatar
@@ -137,11 +137,11 @@ export function ProfilePage() {
               nom={utilisateur.nom}
               photoUrl={utilisateur.photoUrl}
               size="lg"
-              className="ring-2 ring-white shadow-sm"
+              className="ring-2 ring-surface shadow-sm"
             />
             {enCoursPhoto && (
               <span
-                className="absolute inset-0 flex items-center justify-center rounded-full bg-slate-900/45"
+                className="absolute inset-0 flex items-center justify-center rounded-full bg-encre/45"
                 aria-hidden
               >
                 <Loader2 className="size-5 animate-spin text-white" />
@@ -153,7 +153,7 @@ export function ProfilePage() {
               disabled={enCoursPhoto}
               aria-label={utilisateur.photoUrl ? 'Changer la photo de profil' : 'Ajouter une photo de profil'}
               title={`${utilisateur.photoUrl ? 'Changer' : 'Ajouter'} une photo (${FORMATS_PHOTO_LABEL}, 2 Mo maximum)`}
-              className="absolute -bottom-0.5 -right-0.5 rounded-full bg-white p-1.5 text-slate-500 shadow-sm ring-1 ring-slate-200 transition-colors hover:text-primary-600 disabled:cursor-not-allowed disabled:opacity-50"
+              className="absolute -bottom-0.5 -right-0.5 rounded-full bg-surface p-1.5 text-texte-4 shadow-sm ring-1 ring-bordure transition-colors hover:text-marque disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Camera className="size-3.5" aria-hidden />
             </button>
@@ -167,14 +167,14 @@ export function ProfilePage() {
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+              <h2 className="text-lg font-semibold tracking-tight text-texte">
                 {utilisateur.prenom} {utilisateur.nom}
               </h2>
               <Badge variant={utilisateur.role === 'ADMINISTRATEUR' ? 'primary' : 'neutral'}>
                 {LABELS_ROLE[utilisateur.role]}
               </Badge>
             </div>
-            <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">
+            <p className="mt-1 flex items-center gap-1.5 text-sm text-texte-4">
               <Mail className="size-3.5" aria-hidden />
               {utilisateur.email}
             </p>
@@ -183,13 +183,13 @@ export function ProfilePage() {
                 type="button"
                 onClick={handleRetirerPhoto}
                 disabled={enCoursPhoto}
-                className="mt-1.5 text-xs font-medium text-slate-400 underline-offset-2 transition-colors hover:text-rose-600 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                className="mt-1.5 text-xs font-medium text-texte-4 underline-offset-2 transition-colors hover:text-danger-texte hover:underline disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Retirer la photo
               </button>
             )}
           </div>
-          <p className="text-xs text-slate-400">Membre depuis {tempsRelatif(utilisateur.dateCreation)}</p>
+          <p className="text-xs text-texte-4">Membre depuis {tempsRelatif(utilisateur.dateCreation)}</p>
           {erreurPhoto && (
             <div className="w-full">
               <Alert variant="danger">{erreurPhoto}</Alert>
@@ -259,7 +259,7 @@ export function ProfilePage() {
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <label htmlFor="nouveauMotDePasse" className="block text-sm font-medium text-slate-700">
+                <label htmlFor="nouveauMotDePasse" className="block text-sm font-medium text-texte-2">
                   Nouveau mot de passe
                 </label>
                 <PasswordInput

@@ -80,7 +80,7 @@ export function ActivateAccountPage() {
   let contenu;
   if (etat.statut === 'CHARGEMENT') {
     contenu = (
-      <div className="flex items-center gap-2.5 text-sm text-slate-500" role="status">
+      <div className="flex items-center gap-2.5 text-sm text-texte-4" role="status">
         <Loader2 className="size-4 animate-spin" aria-hidden />
         Vérification du lien d'invitation…
       </div>
@@ -89,7 +89,7 @@ export function ActivateAccountPage() {
     contenu = (
       <div className="space-y-4">
         <Alert variant="danger">{etat.message}</Alert>
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-texte-4">
           Besoin d'un nouveau lien ? Contactez votre administrateur : il peut renvoyer l'invitation en
           un clic depuis la gestion des utilisateurs.
         </p>
@@ -104,7 +104,7 @@ export function ActivateAccountPage() {
         </Alert>
 
         <div className="space-y-1.5">
-          <label htmlFor="motDePasse" className="block text-sm font-medium text-slate-700">
+          <label htmlFor="motDePasse" className="block text-sm font-medium text-texte-2">
             Choisissez votre mot de passe
           </label>
           <PasswordInput
@@ -149,7 +149,7 @@ export function ActivateAccountPage() {
       titre="Activer votre compte"
       sousTitre="Dernière étape : choisissez votre mot de passe personnel."
       pied={
-        <Link to="/connexion" className="font-medium text-primary-600 hover:underline">
+        <Link to="/connexion" className="font-medium text-marque hover:underline">
           J'ai déjà un compte actif
         </Link>
       }

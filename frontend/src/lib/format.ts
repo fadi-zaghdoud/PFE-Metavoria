@@ -11,15 +11,17 @@ export function initiales(prenom: string, nom: string): string {
 }
 
 // Couleur d'avatar stable, dérivée du nom (même personne = même couleur).
+// Palette CATÉGORIELLE (une teinte par personne, sans signification d'état) : chaque
+// teinte porte explicitement son pendant sombre — aplat translucide, initiales claires.
 const AVATAR_PALETTE = [
-  'bg-indigo-100 text-indigo-700',
-  'bg-emerald-100 text-emerald-700',
-  'bg-amber-100 text-amber-700',
-  'bg-rose-100 text-rose-700',
-  'bg-sky-100 text-sky-700',
-  'bg-violet-100 text-violet-700',
-  'bg-teal-100 text-teal-700',
-  'bg-orange-100 text-orange-700',
+  'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-200',
+  'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200',
+  'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-200',
+  'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-200',
+  'bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-200',
+  'bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-200',
+  'bg-teal-100 text-teal-700 dark:bg-teal-500/20 dark:text-teal-200',
+  'bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-200',
 ];
 
 export function couleurAvatar(graine: string): string {
@@ -48,6 +50,35 @@ export function tempsRelatif(date: Date | string): string {
 export function dateLongue(date: Date | string): string {
   const d = typeof date === 'string' ? new Date(date) : date;
   return d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+// ── Nombres à la française ───────────────────────────────────────────────────────────
+// Virgule décimale, espace fine insécable entre les milliers et devant « % » (Intl,
+// fr-FR) : « 47,5 h », jamais « 47.5 h ». Tout nombre affiché par le tableau de bord, ses
+// infobulles et le PDF passe par ces fonctions.
+export function nombreFr(n: number, decimalesMax = 0, decimalesMin = 0): string {
+  return n.toLocaleString('fr-FR', {
+    minimumFractionDigits: decimalesMin,
+    maximumFractionDigits: decimalesMax,
+  });
+}
+
+// Part d'un total en pourcentage (« 70,8 % »). « — » quand le total est nul : pas de
+// pourcentage sans effectif.
+export function pourcentageFr(part: number, total: number, decimales = 1): string {
+  if (total <= 0) return '—';
+  return (part / total).toLocaleString('fr-FR', {
+    style: 'percent',
+    minimumFractionDigits: decimales,
+    maximumFractionDigits: decimales,
+  });
+}
+
+// Durée en heures : « 48,1 h », « 2 h » ; sous l'heure, en minutes ; « — » si inconnue.
+export function dureeHeuresFr(heures: number | null): string {
+  if (heures == null) return '—';
+  if (heures < 1) return `${Math.round(heures * 60)} min`;
+  return `${nombreFr(heures, 1)} h`;
 }
 
 // Taille de fichier lisible : 512 o, 24 Ko, 3,4 Mo.

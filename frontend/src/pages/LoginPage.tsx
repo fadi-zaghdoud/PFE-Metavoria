@@ -47,7 +47,7 @@ export function LoginPage() {
       pied={
         <>
           Pas encore de compte ?{' '}
-          <Link to="/inscription" className="font-medium text-primary-600 hover:underline">
+          <Link to="/inscription" className="font-medium text-marque hover:underline">
             Créer un compte
           </Link>
         </>
@@ -68,10 +68,10 @@ export function LoginPage() {
 
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
-            <label htmlFor="motDePasse" className="block text-sm font-medium text-slate-700">
+            <label htmlFor="motDePasse" className="block text-sm font-medium text-texte-2">
               Mot de passe
             </label>
-            <Link to="/mot-de-passe-oublie" className="text-xs font-medium text-primary-600 hover:underline">
+            <Link to="/mot-de-passe-oublie" className="text-xs font-medium text-marque hover:underline">
               Mot de passe oublié ?
             </Link>
           </div>

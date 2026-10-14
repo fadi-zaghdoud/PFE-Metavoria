@@ -224,8 +224,8 @@ export function TicketsListPage() {
               className={cn(
                 'rounded-lg px-3 py-1.5 text-sm font-medium transition-all duration-150',
                 vue === id
-                  ? 'bg-primary-600 text-white shadow-glow-sm ring-1 ring-inset ring-white/15'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
+                  ? 'bg-primary-600 text-white shadow-xs ring-1 ring-inset ring-white/15'
+                  : 'text-texte-3 hover:bg-surface-3 hover:text-texte',
               )}
             >
               {label}
@@ -240,7 +240,7 @@ export function TicketsListPage() {
             recherche, et « sm:max-w-sm » tronquait l'indication. */}
         <div className="relative min-w-56 flex-1 sm:max-w-md">
           <Search
-            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400"
+            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-texte-4"
             aria-hidden
           />
           <Input
@@ -280,7 +280,7 @@ export function TicketsListPage() {
         {/* « chargés » et non « trouvés » : la liste est paginée, ce nombre est celui des
             lignes en main, pas celui des tickets correspondant aux filtres. Le dire évite
             de laisser lire « 50 tickets » comme un total. */}
-        <p className="ml-auto text-xs tabular-nums text-slate-400">
+        <p className="ml-auto text-xs tabular-nums text-texte-4">
           {chargement
             ? '…'
             : `${tickets.length} ticket${tickets.length > 1 ? 's' : ''} chargé${
@@ -338,7 +338,7 @@ export function TicketsListPage() {
                 <tr
                   key={t.id}
                   onClick={() => navigate(`/tickets/${t.id}`)}
-                  className="cursor-pointer transition-colors hover:bg-slate-50/70"
+                  className="cursor-pointer transition-colors hover:bg-surface-2/70"
                   tabIndex={0}
                   role="button"
                   aria-label={`Ouvrir le ticket ${t.id} : ${t.titre}`}
@@ -358,8 +358,8 @@ export function TicketsListPage() {
                   <Td>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs text-slate-400">#{t.id}</span>
-                        <p className="truncate font-medium text-slate-900">{t.titre}</p>
+                        <span className="font-mono text-xs text-texte-4">#{t.id}</span>
+                        <p className="truncate font-medium text-texte">{t.titre}</p>
                       </div>
                       {/* L'ancienneté est posée ICI, dans la première colonne, et non à
                           côté de « Créé » : cette dernière disparaît sous md, et c'est
@@ -369,11 +369,11 @@ export function TicketsListPage() {
                         {t.categorie ? (
                           <Badge variant="neutral">{t.categorie.nom}</Badge>
                         ) : (
-                          <span className="text-xs text-slate-300">Non classé</span>
+                          <span className="text-xs text-texte-4">Non classé</span>
                         )}
                         <BadgeAnciennete statut={t.statut} dateCreation={t.dateCreation} />
                         {t._count.commentaires > 0 && (
-                          <span className="text-xs text-slate-400">
+                          <span className="text-xs text-texte-4">
                             {t._count.commentaires} message{t._count.commentaires > 1 ? 's' : ''}
                           </span>
                         )}
@@ -385,10 +385,10 @@ export function TicketsListPage() {
                       <div className="flex items-center gap-2">
                         <Avatar prenom={t.demandeur.prenom} nom={t.demandeur.nom} photoUrl={t.demandeur.photoUrl} size="sm" />
                         <div className="min-w-0">
-                          <p className="truncate text-sm text-slate-700">
+                          <p className="truncate text-sm text-texte-2">
                             {t.demandeur.prenom} {t.demandeur.nom}
                           </p>
-                          <p className="truncate text-xs text-slate-400">{t.demandeur.service ?? '—'}</p>
+                          <p className="truncate text-xs text-texte-4">{t.demandeur.service ?? '—'}</p>
                         </div>
                       </div>
                     </Td>
@@ -441,15 +441,15 @@ export function TicketsListPage() {
                     ) : t.technicien ? (
                       <div className="flex items-center gap-2">
                         <Avatar prenom={t.technicien.prenom} nom={t.technicien.nom} photoUrl={t.technicien.photoUrl} size="sm" />
-                        <span className="truncate text-sm text-slate-700">
+                        <span className="truncate text-sm text-texte-2">
                           {t.technicien.prenom} {t.technicien.nom}
                         </span>
                       </div>
                     ) : (
-                      <span className="text-sm text-slate-400">Non assigné</span>
+                      <span className="text-sm text-texte-4">Non assigné</span>
                     )}
                   </Td>
-                  <Td className="hidden text-xs text-slate-400 md:table-cell">
+                  <Td className="hidden text-xs text-texte-4 md:table-cell">
                     {tempsRelatif(t.dateCreation)}
                   </Td>
                 </tr>

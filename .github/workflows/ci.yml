@@ -1,10 +1,14 @@
 # =============================================================================
 #  Intégration continue — rejoue les tests à chaque modification proposée à main.
 #
-#  Deux jobs indépendants, aucun ne demande de base de données, de modèle lourd
-#  ni de build Docker :
-#    - backend : typage, lint et tests unitaires (node:test, fonctions pures) ;
-#    - ml      : suite rapide pytest (`-m "not slow"`), 100 % hors ligne.
+#  Quatre jobs indépendants ; aucun ne demande de modèle lourd ni de build Docker, et un
+#  seul une base de données — éphémère :
+#    - backend  : typage, lint et tests unitaires (node:test, fonctions pures) ;
+#    - backend-integration : tests SQL des points d'accès du tableau de bord, sur une base
+#                 PostgreSQL jetable créée pour le job ;
+#    - ml       : suite rapide pytest (`-m "not slow"`), 100 % hors ligne ;
+#    - frontend : lint, typage et build, plus les deux garde-fous du mode sombre
+#                 (aucune couleur réservée au thème clair, contrastes des deux thèmes).
 # =============================================================================
 name: CI
 
@@ -58,6 +62,47 @@ jobs:
       - run: npm run lint
       - run: npm test
 
+  backend-integration:
+    name: Backend (tests SQL, base éphémère)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: backend
+    # Base PostgreSQL JETABLE, créée pour ce job et détruite avec lui — même image que la
+    # pile Docker (pgvector). Les tests d'intégration la vident : leur garde refuse toute
+    # base dont le nom ne finit pas par « _test ».
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: smart_ticketing_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d smart_ticketing_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/smart_ticketing_test?schema=public
+      JWT_SECRET: ci-factice-aucun-secret-ci-factice-aucun-secret
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - run: npm ci
+      - run: npx prisma generate
+      # Le schéma réel, migration par migration : les tests interrogent les vraies tables.
+      - run: npx prisma migrate deploy
+      - run: npm run test:integration
+
   ml:
     name: Module IA (pytest, suite rapide)
     runs-on: ubuntu-24.04
@@ -84,3 +129,27 @@ jobs:
       - run: pip install -r requirements.lock
 
       - run: python -m pytest -m "not slow" -p no:cacheprovider
+
+  frontend:
+    name: Frontend (lint, typage, build, couleurs, contrastes)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      # `tsc -b` puis `vite build` : le build est la porte la plus stricte du typage.
+      - run: npm run build
+      # Mode sombre : un écran qui réintroduit une couleur écrite pour le thème clair
+      # seulement, ou un couple texte/fond sous 4,5:1 dans l'un des thèmes, fait échouer.
+      - run: npm run verifier:couleurs
+      - run: npm run verifier:contrastes

@@ -3585,3 +3585,860 @@ garantie** ; les deux cas retenus illustrent le mécanisme, ils ne le générali
   manifestes ont été calculés sur la copie Windows. Les empreintes n'étant jamais
   contrôlées à l'exécution, rien ne casse ; mais sous Linux, elles ne se vérifient pas.
   Non corrigé ici : renormaliser modifierait des fichiers versionnés hors du périmètre.
+
+---
+
+# Mode sombre — des jetons sémantiques, puis tous les écrans
+
+> Séance des **08 et 09/10/2026**, branche `mode-sombre-et-tableau-de-bord`, partie « mode
+> sombre » (le tableau de bord suit). Le 16/09, le mode sombre avait été **chiffré puis
+> écarté** (entrée « Passe interface — photo de profil, et le mode sombre chiffré puis
+> écarté ») : 549 couleurs en dur, aucune variante `dark:`, aucun jeton sémantique, et la
+> crainte qu'un écran oublié reste blanc en pleine démonstration. La dette en nommait le
+> préalable : une tokenisation sémantique. Consignes de la séance : **aucun changement
+> backend ni de comportement** ; le formulaire de création de ticket garde **exactement**
+> ses champs (les cas d'abstention de la démonstration en dépendent) ; les exports PDF et
+> Excel **restent clairs** ; et le mode sombre couvre **tous** les écrans — « un écran
+> oublié, illisible en sombre, est pire que pas de mode sombre du tout ».
+
+## Ce qui est livré
+
+- **Des jetons sémantiques** dans `index.css` : fonds (`fond`, `surface`, `surface-2` à
+  `-4`, `encre`), textes (`texte`, `texte-2` à `-4`, `decor`), bordures (`bordure-faible`
+  à `bordure-survol`), marque (`marque`, `marque-fort`, `marque-fond`…) et quatre états
+  (`succes`, `alerte`, `danger`, `info`), chacun décliné en `fond`, `fond-2`, `bordure`,
+  `accent`, `texte` et `texte-fort`. En clair, ils **pointent sur la palette d'origine**
+  (`slate-…`, `primary-…`) ; le bloc `.dark` les redéfinit.
+- **Le mécanisme** (`lib/theme.ts`, `lib/useTheme.ts`) : préférence à trois états —
+  système, clair, sombre — mémorisée dans `localStorage` (`smart-ticketing:theme`) ;
+  « système » efface la clé et suit `prefers-color-scheme` en direct ; les autres onglets
+  suivent par l'événement `storage`. Un **script en ligne dans `index.html`** pose la
+  classe `dark` avant le premier rendu : pas d'éclair du mauvais thème. `color-scheme` est
+  déclaré, pour les contrôles natifs (champs de date, listes, barres de défilement).
+- **La bascule** (`BasculeTheme`) : groupe de boutons radio ARIA, flèches du clavier. Dans
+  la barre du haut, sur les pages publiques et, **sous 640 px**, dans le menu latéral.
+- **La migration** : 551 classes dans 43 fichiers, par une **table de correspondance
+  explicite** (script de séance, hors dépôt), puis des corrections à la main : panneau de
+  marque des pages publiques (sombre dans les deux thèmes, jeton `texte-sur-encre`
+  constant), couleurs d'avatar (8 teintes, chacune avec son pendant sombre), surbrillances
+  et dégradés du détail de ticket.
+- **Deux garde-fous**, rejoués par un **nouveau job `frontend`** de la CI (`npm ci`, lint,
+  build, puis les deux scripts) :
+  - `npm run verifier:couleurs` refuse toute couleur « claire seulement » sans son pendant
+    `dark:` sur la même ligne ;
+  - `npm run verifier:contrastes` calcule le contraste WCAG des couples de jetons, dans les
+    deux thèmes, et échoue sous le seuil.
+
+## Les décisions, et leurs raisons `[établi en séance]`
+
+### Des jetons, pas des `dark:` posés fichier par fichier
+
+C'était la « voie propre » chiffrée le 16/09, et la consigne de la séance. Le garde-fou
+rend **vérifiable** ce qui avait motivé le refus du 16/09, la probabilité d'oublier un
+écran : avant la migration, il relevait **561** couleurs claires seulement ; après, **0**
+sur 67 fichiers, et la CI le rejoue à chaque proposition.
+
+### `accent` pour les icônes, `texte` pour les mots
+
+Les nuances 600 des états, employées comme texte, ne tenaient pas 4,5:1 en clair. Mesuré
+sur blanc : émeraude 3,67, ambre 3,19, ciel 4,02, rose 4,51 (mais 4,10 sur son fond
+`rose-50`). Les textes d'état passent en **700** (de 5,05 à 6,06 sur blanc) ; `accent`
+(600) reste réservé aux icônes, pour lesquelles le seuil est de 3:1.
+
+### Les écarts visibles en thème clair, tous dictés par une mesure
+
+Le clair reste celui d'avant, à ces exceptions près :
+
+| Élément | Avant → après | Contraste mesuré |
+| --- | --- | --- |
+| `texte-4` (textes secondaires) | `slate-500` → `oklch(54% 0.046 257.417)` | 4,45 sur le fond de page et 4,35 sur `slate-100` → 4,72 et 4,61 |
+| Textes d'état | 600 → 700 | voir ci-dessus |
+| Pastilles à texte blanc | `rose-500` → `rose-600` ; `primary-500` → `primary-600` | 3,76 → 4,51 ; 4,47 → 6,29 |
+| Badge « catégorie incertaine » | `opacity-60` → grisé par la couleur, contour en pointillés | 2,77 → conforme |
+| Copyright des pages publiques | `slate-500` → `slate-400`, sur le panneau sombre | 4,23 → 7,68 |
+| Quatre textes en `slate-300` | → `texte-4` | 1,48 → conforme |
+| Bandeau du tableau de bord | blanc à 60 % et 70 % → 85 % et 90 % | 3,01 et 3,57 → 4,55 et 4,91, sur l'arrêt le plus clair du dégradé |
+| `slate-800` | fusionné dans `texte` (`slate-900`), 4 emplois | — |
+
+Foncer `texte-4` a été validé en séance. Le badge incertain reste **grisé** : la mention
+« grisée » du README, de la page Paramètres et du registre des paramètres du backend reste
+donc exacte, sans toucher au backend.
+
+### En sombre, le contour des champs à 3,74:1
+
+Première valeur (`slate-700` sur `slate-900`) : **1,73:1**, des champs presque invisibles.
+`slate-500` : **3,74:1**, au-dessus du 3:1 attendu d'un contour de contrôle.
+
+### Sur téléphone, la bascule passe dans le menu
+
+Mesuré sur les captures à 390 px : avec la bascule dans la barre du haut, le titre de la
+page n'avait plus qu'environ 90 px et s'affichait « Tableau de … ». Sous 640 px, la
+bascule quitte la barre pour le menu latéral ; au-delà, elle reste dans la barre.
+
+### Les exports restent clairs, par construction
+
+`exportRapport.ts` porte sa propre palette, sans lien avec le CSS (constat du 16/09). Il
+n'est pas modifié, et le garde-fou l'exclut nommément.
+
+## Ce qui a été prouvé, et comment
+
+- **Hors navigateur** : `tsc -b` et build propres ; `oxlint` rend les 6 avertissements
+  `only-export-components` déjà présents sur `main`, aucun nouveau ; garde-fou à 0 ;
+  **52 couples** de jetons conformes dans les deux thèmes.
+- **Dans le navigateur, sur un projet compose séparé** (`st-demo` : volume neuf, données de
+  démonstration, comptes de test, un ticket affecté, commenté, avec sa suggestion). La base
+  de démonstration locale n'a pas été touchée. Edge sans interface, piloté par le protocole
+  DevTools, a capturé chaque écran **dans les deux thèmes** : 4 pages publiques, 12 écrans
+  administrateur, 3 écrans technicien, 5 écrans employé, 3 états flottants (notifications,
+  palette ⌘K, sélecteur de technicien) et 4 vues à 390 px, soit 62 captures. Sur chacune,
+  un audit mesure le contraste de **chaque texte rendu** contre son fond réel,
+  transparences composées et dégradés compris (jugés sur leur arrêt le plus défavorable) :
+  **9 856 textes, aucun laissé sans mesure**.
+  - **21 textes sous le seuil.** Vingt venaient du bandeau du tableau de bord, un défaut
+    **antérieur à la séance** (identique sur `main`), resté invisible tant que l'audit
+    ignorait les dégradés. Corrigé, puis remesuré sur le tableau de bord de l'employée dans
+    les deux thèmes : 0. Le dernier est la notification « Connexion réussie », capturée
+    pendant son animation (2,73) ; mesurée au repos : 5,05 en clair, 6,78 en sombre.
+- **Consignes vérifiées** : le diff de `CreateTicketPage.tsx` ne contient que des classes
+  de couleur (`git diff --word-diff`), les champs sont les mêmes ; `exportRapport.ts`,
+  `backend/`, `ml/` et `docker-compose.yml` sont inchangés.
+
+## Dettes assumées et documentées
+
+- **Le contour des champs reste à 1,48:1 en clair** (`slate-300` sur blanc), sous le 3:1
+  de WCAG 1.4.11. Il est d'origine ; le corriger changerait tous les champs du thème clair,
+  au-delà des écarts validés en séance.
+- **La contrainte d'ordonnancement du 16/09 n'a pas été tenue** : la passe page par page
+  (PR #15) a précédé le mode sombre, et les mêmes écrans ont été rouverts une seconde fois.
+- **L'audit dans le navigateur n'est pas dans la CI** : il demande la pile complète et des
+  données. La CI rejoue les deux garde-fous statiques, pas les captures.
+- **Les glyphes décoratifs** (`decor` : chevrons, séparateurs) restent sous 3:1 dans les
+  deux thèmes (1,48 et 2,36) : ils ne portent aucune information.
+
+---
+
+# Tableau de bord v1.1 — la consigne, les définitions, puis l'aplat (étape 2)
+
+> Séance du **09/10/2026**, branche `mode-sombre-et-tableau-de-bord` : `v1.0` plus le mode
+> sombre, commité en sauvegarde de travail (`a1d0dde`) et poussé. Consigne de la séance,
+> qui remplace les précédentes sur le tableau de bord et le mode sombre : refaire le tableau
+> de bord en produit professionnel — neuf sections (en-tête ; quatre indicateurs ; créés et
+> résolus en aires ; anneau par catégorie ; techniciens ; satisfaction ; priorités ;
+> performance du module IA ; « À traiter ») — dans un style **plat** : cartes blanches
+> arrondies sur gris très clair, une seule couleur d'accent, statuts de même couleur sur
+> tous les écrans, **aucun dégradé ni effet de verre** (« ils passent mal au vidéoprojecteur
+> et gênent le mode sombre »). Règles : backend en nouveaux points d'accès de lecture seule,
+> agrégés en SQL et testés, sans migration ni contrat modifié ; une seule bibliothèque de
+> graphiques ; formulaire de création et chemin de suggestion IA strictement inchangés,
+> prouvé par le diff ; exports clairs ; base locale en lecture seule. Le travail avance par
+> étapes, et chaque arrêt laisse un état complet et fusionnable.
+
+## Étape 1 — ce que l'inventaire a établi
+
+- **Aucune bibliothèque de graphiques** n'était installée : les barres étaient des `div`
+  animées. **Recharts** est retenu (SVG : les jetons CSS et l'audit du DOM s'y appliquent).
+  **Chart.js est écarté** : il dessine dans un canvas, qui ignore les variables CSS et
+  échappe à l'audit.
+- **L'API de statistiques existante** porte la période sur la date de création et mesure la
+  « résolution moyenne » de la création à la **clôture**. Elle reste inchangée (contrat) ;
+  les nouveaux indicateurs passeront par de nouveaux points d'accès.
+- **Base locale**, mesurée en session `default_transaction_read_only=on` (Docker démarré
+  avec l'accord de l'utilisateur ; la pile a relancé `migrate deploy`, sans rien à
+  appliquer, et le seed des catégories — son démarrage normal) :
+  - 852 tickets synthétiques créés du **16/04 au 15/07/2026** (UTC), 20 réels du 10/07 au
+    23/09 ;
+  - 7 tickets portent un événement `PRISE_EN_CHARGE` (du 28/07 au 23/09) ; 185 évaluations ;
+  - 32 lignes `SuggestionIA` : 12 classifications sur 11 tickets réels (3 acceptées,
+    1 corrigée, 8 non tranchées), 7 solutions du RAG (6 générées, 1 abstention),
+    12 priorisations, 1 résumé ;
+  - **aucun des 10 techniciens n'a de photo** ;
+  - le ticket réel **#3** (essai du 11/07) est « Résolu » sans aucun événement ni clôture :
+    sa date de résolution est inconnue.
+- **Base reconstruite** : dates posées sur les 90 jours qui précèdent le chargement ; aucun
+  événement de prise en charge ; aucune suggestion IA avant la première action.
+
+## Les définitions des indicateurs `[établi en séance, validé par l'utilisateur]`
+
+Elles iront dans le rapport. L'écran et les exports les partageront : les exports seront
+alignés au groupe 1, en même temps que les quatre indicateurs, pour que l'écran et le PDF
+n'affichent jamais deux temps de résolution différents.
+
+| Indicateur | Définition |
+| --- | --- |
+| Date de résolution | dernier événement « Résolu » ; à défaut, date de clôture |
+| Tickets résolus sur la période | date de résolution dans la période |
+| Temps moyen de résolution | moyenne de (résolution − création) des tickets résolus sur la période, effectif affiché |
+| Délai moyen de 1re prise en charge | moyenne de (1er `PRISE_EN_CHARGE` − création) des tickets pris en charge dans la période, effectif affiché ; « — » s'il n'y en a aucun |
+| Tickets ouverts | stock à la **fin** de la période : créés avant, pas encore résolus à cet instant |
+| Période précédente | même durée, juste avant ; variation affichée **seulement** si l'indicateur y a des données |
+| Répartitions (catégorie, priorité) | tickets créés dans la période |
+| « À traiter » | indépendant de la période, suit les autres filtres |
+| Satisfaction | positive = 4 et 5, neutre = 3, négative = 1 et 2, règle écrite à l'écran |
+
+- **Pourquoi l'événement, et non la clôture.** `resoudre()` n'écrit que l'événement
+  « Résolu » (`resolutionDate` n'est rempli que si une solution est saisie). La clôture
+  n'arrive qu'à la validation du demandeur ou par l'administrateur : la prendre pour fin
+  compterait l'attente du demandeur dans le temps de résolution. Les tickets synthétiques
+  n'ont aucun événement ; le chargeur pose leur `dateCloture` à la résolution, d'où le repli.
+- **Pourquoi un stock pour « ouverts ».** « Créés dans la période et encore ouverts » — la
+  définition de l'API existante — ne se compare pas d'une période à l'autre : les tickets
+  anciens ont eu plus de temps pour être résolus.
+- **Ticket résolu sans date connue (#3)** : jamais compté ouvert, ni résolu dans une
+  période, ni dans le temps de résolution. On montre ce qu'on sait.
+- **Alternatives écartées** : la mesure existante création → clôture ; « ouverts » au sens
+  de l'API existante.
+- Bornes : jours entiers en UTC, comme le point d'accès existant (serveur en UTC). À
+  reconfirmer par le point d'accès lui-même au groupe 1.
+
+## La période de démonstration
+
+- **12 derniers mois par défaut** : tout s'affiche sur les deux bases ; la période
+  précédente est vide, donc aucune variation n'apparaît — conformément à la règle.
+  **30 jours** aurait laissé le tableau de bord presque vide sur la base locale (données
+  d'avril à juillet). **90 jours pour montrer la variation**, que j'avais proposé, est
+  **refusé** par l'utilisateur : période en cours presque vide, précédente pleine, et toutes
+  les cartes en forte baisse rouge devant le jury.
+- **Plage retenue pour montrer la variation sur la base locale : du 31/05/2026 au
+  09/06/2026** (10 jours ; période précédente du 21/05 au 30/05). Trouvée par une requête en
+  lecture seule sur toutes les fenêtres de 7 à 45 jours comprises dans le corpus, en
+  minimisant le plus grand écart relatif des quatre mesures :
+
+| Mesure | 31/05 → 09/06 | 21/05 → 30/05 | Écart |
+| --- | --- | --- | --- |
+| Créés | 90 | 96 | −6,3 % |
+| Résolus | 85 | 80 | +6,3 % |
+| Temps moyen de résolution | 48,6 h | 51,7 h | −6,1 % |
+| Ouverts (fin de période) | 87 | 82 | +6,1 % |
+| Prises en charge | 0 | 0 | « — » |
+
+- **Pourquoi pas plus long.** Les 129 tickets synthétiques ouverts ne se résolvent jamais :
+  le stock d'ouverts croît avec le temps, et son écart avec la durée de la fenêtre — la
+  meilleure fenêtre de 30 jours donne +33 %, celle de 42 jours +61,5 %.
+
+## Étape 2 — l'aplat, les jetons de statut et de graphiques
+
+### Ce qui est livré
+
+- **Plus aucun dégradé, effet de verre, flou ni lueur**, dans 18 fichiers d'interface :
+  barre du haut et menu opaques ; voiles des dialogues et de la palette ⌘K à 50 % sans flou
+  (au lieu de 40 % flouté) ; bouton principal sans lueur ; logo, pastilles d'indicateurs,
+  état vide et panneau des pages publiques en aplat ; halos du fond de page retirés ;
+  squelettes de chargement en pulsation au lieu d'un balayage en dégradé ; bandeau
+  d'accueil du tableau de bord en carte plate ; barres du tableau de bord en aplat.
+- **Jetons de statut** `statut-nouveau` … `statut-clos` : la couleur de remplissage de
+  chaque statut, la même pour la pastille des badges — désormais — et pour les graphiques.
+  Une seule table, `PASTILLE_STATUT` (`features/tickets/statutCouleurs.ts`).
+- **Jetons de graphiques** : `serie-accent` ; l'anneau `categorie-1` à `-6` et
+  `categorie-aucune` ; la rampe `priorite-*` ; la satisfaction `avis-*` ; grille et axes.
+  Déclarés dans un bloc `@theme static` (voir plus bas).
+- **Garde-fous étendus**, rejoués par la CI :
+  - `verifier:couleurs` refuse désormais tout dégradé, effet de verre, flou ou lueur, dans
+    les composants **et** la feuille de style, ainsi que tout texte en jeton translucide ;
+  - `verifier:contrastes` contrôle les graphiques : marques à 3:1 sur la carte ; bande de
+    luminance et saturation des séries ; voisins séparés d'au moins 15 en vision normale et
+    8 sous protanopie et deutéranopie (distance OKLab ×100, simulation de Machado, Oliveira
+    et Fernandes 2009) ; rampe des priorités monotone, à 0,06 d'un cran à l'autre, sa
+    marche la plus proche de la carte à 2:1.
+- **`scripts/prouver-classes-seulement.mjs`** : compare l'arbre syntaxique TypeScript d'un
+  fichier à celui d'une révision ; seules les chaînes faites entièrement de classes sont
+  neutralisées. Tout autre écart — logique, texte, propriété, élément — le fait échouer.
+
+### Les décisions, et leurs raisons `[établi en séance]`
+
+#### L'aplat sur toute l'application
+
+Décision validée : un tableau de bord plat dans une coquille vitrée et dégradée serait
+incohérent, et les raisons de la consigne valent pour tous les écrans. Condition posée :
+pour le formulaire de création et le panneau IA, le diff ne doit changer que des classes. Le
+cercle décoratif du panneau IA est donc **gardé, en aplat** (`bg-marque-fond-2/60`), plutôt
+que supprimé : retirer l'élément aurait changé la structure.
+
+#### La palette de l'anneau, dérivée par énumération
+
+- **Méthode** : neuf familles de la palette Tailwind, hors teintes des statuts — sans le
+  rouge, qui dit « danger », ni le pourpre et le fuchsia, trop proches du violet. Pour
+  chaque famille et chaque thème, le pas le plus proche d'une luminance cible parmi ceux qui
+  tiennent la bande, la saturation et 3:1. Puis tous les ordres de 6 parmi 9, notés sur la
+  pire séparation des parts voisines, **dernière et première comprises, pour 3 à 6 parts** :
+  la séparation doit tenir quel que soit le nombre de catégories.
+- **Huit emplacements sont impossibles** sans le rouge et les trois violets : la meilleure
+  séparation tombe à 6,6, sous la cible de 8. D'où **six emplacements, plus le gris** de
+  « Non classé » — un anneau se lit mal au-delà de six parts.
+- **Retenu : bleu → orange → sarcelle → ocre → rose → olive** (clair : `blue-600`,
+  `orange-700`, `teal-600`, `yellow-700`, `pink-600`, `lime-700` ; sombre : `blue-500`,
+  `orange-600`, `teal-600`, `yellow-700`, `pink-600`, `lime-600`) : 10,1 sous daltonisme,
+  20,8 en vision normale. Ce n'est **pas** l'ordre le mieux séparé : le premier (violet →
+  orange → sarcelle → ocre → cyan → olive) atteint 13,2. Le retenu l'est pour son ouverture
+  bleu, orange, sarcelle, celle de la palette de référence de la méthode ; les deux
+  dépassent la cible. Choix esthétique entre ordres valides, assumé comme tel.
+
+#### Deux défauts trouvés par le garde-fou lui-même
+
+- **Satisfaction, thème sombre** : le gris neutre (`slate-500`) ne se distinguait du rose
+  « négatif » qu'à **7,4** sous deutéranopie. Passé à `slate-400` : 10,1.
+- **« Non classé »** : `slate-500` ne se distinguait de la sarcelle qu'à **11,6** en vision
+  normale et **6,1** sous daltonisme. Contre les six teintes, deux gris seulement passent :
+  `slate-700` en clair, `slate-300` en sombre (24,0 et 9,7 ; 28,2 et 23,3). Conséquence
+  assumée : « Non classé » est la part la plus contrastée de l'anneau.
+
+#### `@theme static`, sans quoi un graphique aurait perdu ses couleurs en clair
+
+Tailwind v4 n'émet la valeur d'un jeton de `@theme` que si une classe l'utilise ; le bloc
+`.dark`, en CSS ordinaire, est toujours émis. Un graphique lisant `var(--color-categorie-1)`
+aurait donc eu une couleur en sombre et **aucune en clair**. Constaté dans le CSS compilé,
+corrigé par `@theme static`, puis vérifié : les 136 variables de couleur référencées par le
+CSS compilé y sont toutes définies.
+
+### Ce qui a été prouvé, et comment
+
+- **Hors navigateur** : `tsc -b` et build propres ; `oxlint` rend les 6 avertissements de
+  `main`, aucun nouveau (la table des pastilles vit dans un module sans composant pour ne pas
+  en ajouter un septième) ; `verifier:couleurs` : 68 fichiers, aucun effet interdit ;
+  `verifier:contrastes` : 52 couples de texte et tous les contrôles de graphiques, dans les
+  deux thèmes.
+- **Le formulaire de création et le panneau IA ne changent que par des classes**
+  (`prouver-classes-seulement.mjs`, depuis `v1.0`) : `CreateTicketPage.tsx`, arbres
+  identiques hors classes (1 099 nœuds), 7 listes de classes modifiées sur 17, 12 classes de
+  couleur ; `TicketDetailPage.tsx`, arbres identiques hors classes (6 762 nœuds), 84 listes
+  sur 171. `backend/`, `ml/` et les clients d'API du frontend : aucune modification depuis
+  `v1.0`.
+- **Dans le navigateur**, sur la pile séparée `st-demo` (frontend reconstruit depuis l'arbre
+  de travail ; base locale non touchée) : Edge sans
+  interface, piloté par le protocole DevTools (banc de la séance des 08-09/10, adapté), a
+  capturé chaque écran **dans les deux thèmes** — pages publiques, administrateur,
+  technicien, employée, états flottants, vues à 390 px — et la notification de connexion
+  **au repos** pour les trois rôles : 68 relevés, **10 189 textes mesurés, aucun sous le
+  seuil**, et **aucun dégradé, arrière-plan filtré ni flou dans le rendu** (détection
+  ajoutée au banc, sur les styles calculés de chaque élément).
+  - Une première passe avait relevé 5 textes. Quatre venaient de la notification
+    « Connexion réussie », capturée pendant son fondu de sortie — une animation JavaScript,
+    que la neutralisation des animations CSS n'arrête pas : le banc la mesure désormais au
+    repos, puis attend sa disparition avant chaque capture ; 0 échec.
+  - Le cinquième était un **vrai défaut, présent depuis `v1.0`** : l'encart « Le service IA
+    est injoignable » de la page des catégories, en `text-amber-700/90` (devenu
+    `text-alerte-texte/90` à la migration), à **4,18:1**. Il n'apparaît que service IA
+    arrêté : les passes précédentes, service démarré, ne pouvaient pas le voir. Corrigé,
+    avec deux autres textes d'état translucides du même mécanisme (catégories, paramètres) ;
+    `verifier:couleurs` refuse désormais tout texte en jeton translucide, que le calcul sur
+    les jetons pleins ne peut pas vérifier.
+
+### Dettes assumées et documentées
+
+- **« Non classé » ressort** davantage que les catégories (gris foncé en clair, clair en
+  sombre) : c'est le prix de la séparation mesurée.
+- **Les teintes de l'anneau sont saturées** (pas 600 et 700 en clair) : les pas plus sobres
+  sortaient de la bande ou passaient sous 3:1.
+- **Le cercle décoratif du panneau IA reste**, en aplat, pour que le diff ne change que des
+  classes.
+- **Au-delà de six catégories**, l'anneau devra regrouper : à traiter au groupe 2.
+- **Bornes de période en UTC** : la plage de démonstration est à reconfirmer par le point
+  d'accès lui-même au groupe 1.
+
+---
+
+# Tableau de bord v1.1 — groupe 1 : l'anneau, la jauge et la satisfaction
+
+> Séance du **10/10/2026**, même branche (étape 2 commitée en `1ddbf89`). Nouvelle consigne
+> de l'utilisateur, avec une maquette cible : **aucune liste de barres horizontales** sur le
+> tableau de bord, un type de graphique fixé pour chaque section, et un nouvel ordre des
+> groupes — 1 : les graphiques sur les données actuelles, sans toucher au serveur ;
+> 2 : le socle (périodes, points d'accès, tests SQL, en-tête, cartes, aires, exports) ;
+> 3 : module IA et « À traiter » ; 4 : techniciens. Trois corrections s'y ajoutent :
+> aucune adresse e-mail sur le tableau de bord ; techniciens actifs seulement ; virgule
+> décimale partout, l'Excel gardant de vrais nombres. Chaque groupe laisse un tableau de
+> bord complet et fusionnable.
+
+## Ce qui est livré
+
+- **Recharts 3.10.1**, seule bibliothèque de graphiques (décision D1), chargé **à la
+  demande** avec le tableau de bord (`React.lazy`) : le morceau principal passe de 594 à
+  582 kB ; le tableau de bord et Recharts forment un morceau de 328 kB (97 kB compressé)
+  que les autres écrans ne chargent pas.
+- **Anneau des catégories** : total au centre, légende chiffrée (toutes les catégories,
+  même à 0), infobulle (effectif, part, total). Une catégorie garde l'emplacement de couleur
+  de son rang dans l'ordre des identifiants, jamais celui de son effectif ; au-delà de six
+  catégories, la sixième part regroupe les suivantes ; « Non classé » ferme l'anneau, en gris.
+- **Jauge des priorités** : demi-anneau segmenté de Faible, à gauche, à Critique, à droite,
+  rampe d'une seule teinte, total au centre, légende chiffrée, infobulle.
+- **Satisfaction** : note moyenne en grand, nombre d'évaluations, trois lignes —
+  positives, neutres, négatives — avec icône et pourcentage ; l'effectif de chaque ligne en
+  infobulle, au survol comme au focus clavier ; la règle écrite dessous, « 4-5 étoiles
+  positive · 3 neutre · 1-2 négative » ; « Aucune évaluation sur la période » sinon.
+- **Retirés** : le bandeau d'accueil, le bloc « Utilisateurs » et la liste des derniers
+  comptes créés — qui affichait les adresses e-mail. Un titre de page sobre les remplace.
+- **Restent jusqu'à leurs remplaçants** (règle : un bloc ne disparaît qu'à l'arrivée du
+  sien) : les barres « Tickets par statut » (groupe 2, mention sous la carte « Ouverts »),
+  « Charge par technicien » (groupe 4) et les quatre cartes actuelles (groupe 2).
+- **Virgule décimale** : `nombreFr`, `pourcentageFr` et `dureeHeuresFr` dans
+  `lib/format.ts` ; « 48,1 h » sur les cartes, dans les infobulles et le PDF. L'espace fine
+  insécable qu'Intl place entre les milliers est remplacée, dans le PDF, par une espace
+  insécable : les polices standard de jsPDF ne savent pas écrire la première. **L'Excel
+  écrit de vrais nombres** — la synthèse écrivait jusque-là des textes — au format `0` ou
+  `0.0`, que le tableur affiche dans sa langue.
+- **États** : une erreur de chargement s'annonce, avec « Réessayer » ; pendant un
+  rechargement, l'image précédente reste, atténuée — ni squelette, ni saut de mise en page.
+
+## Les décisions, et leurs raisons `[établi en séance]`
+
+- **Parts dans l'ordre des emplacements**, pas des tailles : c'est l'ordre dont les
+  voisinages ont été vérifiés par `verifier:contrastes` ; la légende suit le même.
+- **L'infobulle de l'anneau passait sous la carte voisine** : chaque carte animée forme son
+  propre contexte d'empilement, et l'infobulle, qui déborde, était peinte avant la carte
+  suivante. La carte survolée, ou qui a le focus, passe désormais au premier plan.
+- **Rampe claire des priorités foncée d'un cran** (`primary-500`, `-600`, `-800`, `-950`).
+  À l'étape 2, sa marche Faible (`primary-400`, 2,98:1) était admise au seuil des rampes
+  ordinales (2:1). Le contrôle des secteurs **dans le rendu**, ajouté pour ce groupe, l'a
+  relevée : désormais toutes les marques sont à 3:1, sans exception, et `verifier:contrastes`
+  l'exige. L'entrée de l'étape 2 décrit l'état d'alors ; celle-ci, la correction.
+- **Pourcentages au dixième** : leur somme peut s'écarter de 100 d'un dixième, par arrondi.
+
+## Ce qui a été prouvé, et comment
+
+- **Hors navigateur** : build ; `oxlint`, les 6 avertissements de `main` et aucun autre ;
+  `verifier:couleurs` sur 75 fichiers ; `verifier:contrastes`, dont les quatre marches de
+  priorité de 4,47:1 à 15,99:1 en clair et de 3,99:1 à 11,96:1 en sombre ; formulaire de
+  création et détail de ticket toujours identiques à `v1.0` hors classes.
+- **Dans le navigateur**, pile séparée `st-demo` (base locale non touchée) — tableau de bord
+  administrateur, technicien, employée et mobile, dans les deux thèmes, plus les trois
+  infobulles survolées : 22 relevés, **1 450 textes, aucun sous le seuil** ; chaque secteur
+  SVG mesuré contre sa carte, **aucun sous 3:1**. Adresses e-mail et points décimaux dans le
+  texte rendu : contrôle inopérant, voir l'étape 4, « Correction ».
+- **Exports** téléchargés depuis `st-demo` puis relus : le PDF écrit « 48,1 » et « 3,9 »,
+  sans aucun point décimal ; la synthèse Excel ne contient que des valeurs numériques.
+
+## Dettes assumées et documentées
+
+- **Doublon provisoire** : la carte « Satisfaction moyenne » et la section Satisfaction
+  disent la même note jusqu'au groupe 2, qui remplace les cartes.
+- **Deux listes de barres** restent jusqu'aux groupes 2 et 4, comme dit plus haut.
+- **`npm audit`** signale trois vulnérabilités (`dompurify`, par jsPDF ; `react-router`),
+  **antérieures à Recharts** et hors du périmètre : non corrigées ici.
+- **Les fichiers exportés sont datés en UTC** (`toISOString`) : peu après minuit, heure
+  locale, ils portent la date de la veille. Antérieur à la séance, non corrigé.
+
+---
+
+# Tableau de bord v1.1 — groupe 2 : le socle, l'en-tête, les cartes et la courbe
+
+> Séances des **12 et 13/10/2026** (groupe 1 commité en `8a94e0f`, validé dans le
+> navigateur). Périmètre fixé par la consigne du 10/10 : périodes, points d'accès en
+> lecture seule, tests SQL et leur job CI, en-tête à boutons de période, quatre cartes,
+> courbe en aires, exports alignés.
+
+## Ce qui est livré
+
+- **Backend, en lecture seule et additif** — `GET /api/tableau-de-bord/indicateurs` et
+  `/tendance`, montés à côté des routes existantes ; `/tickets/statistiques` est inchangé,
+  aucune migration :
+  - `tableauDeBord.periode.ts`, fonctions pures : jours entiers en UTC, bornes comprises ;
+    période précédente de même durée, finissant la veille ; « Tout » depuis le premier
+    ticket, sans période précédente ; granularité jour jusqu'à 45 jours, semaine (du
+    lundi) jusqu'à un an, mois au-delà ;
+  - `tableauDeBord.repository.ts` : toutes les agrégations **en SQL**, selon les
+    définitions D3 ; les tranches vides de la courbe sont produites par
+    `generate_series` ;
+  - le service applique le périmètre du rôle — un employé ne voit que ses tickets — et ne
+    donne la valeur précédente que si elle a un effectif.
+- **Tests** : 9 tests unitaires des périodes (`npm test`, 127 au total) et **9 tests
+  d'intégration** (`npm run test:integration`) sur une vraie base PostgreSQL, à partir d'un
+  jeu de 7 tickets aux dates choisies. Chaque attendu se recalcule à la main : résolution
+  par l'événement ou, à défaut, par la clôture ; ticket résolu sans date ; stock d'ouverts
+  à la fin de la période précédente ; 1re prise en charge ; périmètre de l'employée ;
+  filtres ; « Tout » ; tranches quotidiennes et hebdomadaires ; refus des paramètres
+  invalides. La garde refuse toute base dont le nom ne finit pas par « _test ».
+- **CI** : un job `backend-integration` crée une base `pgvector:pg17` éphémère, applique
+  les migrations et lance ces tests.
+- **En-tête** : boutons de période (7 j, 30 j, 90 j, 12 mois — par défaut —, Tout, Dates),
+  les filtres existants, les exports, et une ligne qui dit la période et ce à quoi elle est
+  comparée.
+- **Quatre cartes** : Résolus, Temps de résolution, Ouverts, 1re prise en charge — icône,
+  valeur en grand, variation fléchée **seulement** si la période précédente a des données ;
+  vert pour une amélioration, rouge pour une dégradation (plus de résolus est mieux ; plus
+  d'ouverts ou un délai plus long, pire) ; effectif des moyennes sous la valeur.
+- **Statuts** : la mention sous « Ouverts » (nouveaux, en attente, en cours), aux couleurs
+  des badges. Chez l'administrateur, « nouveaux » mène aux tickets sans technicien.
+- **Courbe** : créés en aire légère, résolus en ligne, une seule échelle, réticule et
+  infobulle donnant les deux séries de la tranche.
+- **Exports alignés** : la synthèse reprend les quatre indicateurs de l'écran, avec la
+  valeur de la période précédente et les effectifs, puis une note des définitions.
+- **Retirés**, leurs remplaçants arrivés : les quatre anciennes cartes (dont « À affecter »
+  et « Satisfaction moyenne »), les barres « Tickets par statut », l'ancien panneau de
+  filtres.
+
+## Les décisions, et leurs raisons `[établi en séance]`
+
+- **Bornes calculées par l'interface, période précédente et granularité par le serveur.**
+  Les boutons deviennent des jours (`du`, `au`) ; les mêmes bornes vont aux nouveaux points
+  d'accès et à `/tickets/statistiques`, dont l'anneau, la jauge et la satisfaction
+  dépendent. Une seule source de bornes, donc des cartes et des répartitions sur la même
+  période.
+- **Bornes transmises en jours, converties par Postgres** (`'2026-05-31'::date`). Une date
+  JavaScript passerait par le fuseau du pilote `pg` et décalerait les bornes d'un fuseau à
+  l'autre ; un jour, non.
+- **Statuts seulement si la période finit aujourd'hui.** Le statut d'une date passée n'est
+  pas reconstituable : les tickets synthétiques n'ont pas d'historique d'événements. Pour
+  une période passée, la carte dit plutôt la date du stock (« au 9 juin 2026 »).
+- **« À affecter » remplacé par la mention.** Dans ce cycle de vie, un ticket Nouveau n'a
+  pas de technicien : la mention, avec son lien, porte la même information. La règle
+  « un bloc ne disparaît qu'à l'arrivée de son remplaçant » est tenue ; le groupe 3 y
+  ajoutera le compteur de « À traiter ».
+- **Pas de variation sur un zéro** : le pourcentage d'un zéro ne veut rien dire, le
+  serveur ne donne pas la valeur précédente sans effectif, et l'interface n'affiche rien.
+- **Satisfaction et répartitions sur les tickets créés dans la période**, le périmètre
+  de `/tickets/statistiques`, inchangé ; écrit dans la note des définitions de l'export.
+
+## Un bogue trouvé par les tests d'intégration
+
+La première exécution a échoué sur `resolus.precedent` : le service renvoyait, comme valeur
+de la période précédente, celle de la période **en cours** (`precedent(l.resolus, …)` au
+lieu de `l.resolus_prec`). La carte « Résolus » aurait affiché « 0 % » partout. Corrigé ;
+c'est exactement le défaut qu'un test sur un jeu de données calculé à la main existe pour
+attraper.
+
+**Un second défaut, vu par l'utilisateur dans son navigateur** : son API tournait encore sur
+l'image d'avant le groupe 2, les nouveaux points d'accès répondaient 404 — et la carte de la
+courbe gardait alors un squelette de chargement **indéfiniment**. Une section sans ses
+données montre désormais un squelette pendant le chargement et « Données indisponibles. »
+en cas d'échec ; l'encart du haut propose de réessayer. L'image de son API a été
+reconstruite depuis le code du groupe 2 (aucune migration à appliquer).
+
+## Ce qui a été prouvé, et comment
+
+- **Backend** : typage, lint ; 127 tests unitaires ; **9 tests d'intégration verts** sur une
+  base jetable (`st-test-db`), migrations appliquées par `migrate deploy`.
+- **Sur la base locale, en lecture seule** : le code réel du service, exécuté dans une
+  session `default_transaction_read_only=on` vérifiée avant toute requête, redonne les
+  chiffres de la plage de démonstration — 85 résolus contre 80, 48,6 h contre 51,7 h,
+  87 ouverts contre 82, prise en charge « — » — et, sur 12 mois, 735 résolus et
+  136 ouverts dont 54 nouveaux, 36 en attente et 46 en cours.
+- **Frontend** : build, `oxlint` (les 6 avertissements de `main`), `verifier:couleurs` sur
+  82 fichiers, `verifier:contrastes` ; formulaire de création et détail de ticket toujours
+  identiques à `v1.0` hors classes.
+- **Dans le navigateur** (`st-demo`, frontend et backend reconstruits) — administrateur,
+  technicien, employée, mobile, période « 30 j », survol de chaque graphique, deux thèmes :
+  26 relevés, **2 192 textes**, graduations des axes SVG comprises — le banc lit désormais
+  leur `fill` —, **aucun sous le seuil** ; aucun secteur sous 3:1. Adresses e-mail et points
+  décimaux : contrôle inopérant, voir l'étape 4, « Correction ».
+- **Exports** relus après téléchargement : mêmes chiffres qu'à l'écran, virgule dans le PDF,
+  nombres dans l'Excel.
+
+## Dettes assumées et documentées
+
+- **Le job CI ne tourne que sur une pull request vers `main`** (déclencheurs du workflow) :
+  sa première exécution réelle aura lieu à l'ouverture de la PR, à l'étape 4. Les mêmes
+  commandes ont été jouées en local, sur la même image.
+- **Tranches partielles** : la première et la dernière semaine (ou le dernier mois) d'une
+  période ne sont pas complètes ; leur point peut paraître creux.
+- **Barres « Charge par technicien »** : jusqu'au groupe 4.
+- **Sur écran étroit**, le bouton « Réinitialiser » fait passer les exports à la ligne.
+
+---
+
+# Tableau de bord v1.1 — groupe 3 : le module IA et « À traiter »
+
+> Séance du **13/10/2026** (groupe 2 commité en `e6fe638`, puis `97ecc36`, validé).
+> Consigne : le module IA en anneau de progression, toujours avec « x sur n », plus trois
+> petits chiffres — suggestions générées, abstentions, corrections collectées ; « À traiter »
+> avec le compteur des tickets sans technicien, puis la liste des tickets à pastilles de
+> statut.
+
+## Ce qui est livré
+
+- **`GET /api/tableau-de-bord/ia`**, réservé au support (technicien, administrateur ;
+  l'employé reçoit 403 — décision D7) : sur la période, les catégories proposées (acceptées,
+  corrigées, en attente) et les solutions du RAG (générées, abstentions, échecs).
+- **`GET /api/tableau-de-bord/a-traiter`**, sans période : les comptes des tickets ouverts
+  (dont sans technicien, et sans prise en charge) et deux listes, les cinq plus anciens
+  sans prise en charge et les cinq plus anciens ouverts, avec leur ancienneté en jours.
+- **Tests** : 7 tests d'intégration de plus (16 au total), sur un jeu de données propre :
+  chaque sort d'une suggestion ; une suggestion hors période ; le filtre de service ; le
+  refus fait à l'employée ; l'ordre et la limite des listes (six nouveaux pour en montrer
+  cinq) ; le périmètre de l'employée ; le filtre de technicien ; l'absence d'effet de la
+  période. Les fichiers d'intégration s'exécutent désormais un par un
+  (`--test-concurrency=1`) : chacun vide la même base.
+- **Section « Module IA »** :
+  - l'anneau de progression de la part acceptée, au centre « 75 % » — ou « — » sans
+    proposition tranchée —, à côté « 3 sur 4 tranchées · 8 en attente » ;
+  - trois petits chiffres, avec une définition au survol ;
+  - le nombre de générations en échec, seulement s'il y en a.
+- **Section « À traiter »** — « Mes tickets ouverts » pour un employé :
+  - le compteur des tickets sans technicien, en alerte (lien vers les tickets à affecter
+    chez l'administrateur), ou « Aucun ticket sans technicien » ;
+  - deux onglets, « Sans prise en charge » et « Plus anciens », avec leur total ;
+  - chaque ticket avec son numéro, son titre, son ancienneté et sa pastille ; puis « Les 5
+    plus anciens sur 90 ».
+
+## Les décisions, et leurs raisons `[établi en séance]`
+
+- **Définitions du module IA** :
+  - **catégorie proposée** : une suggestion de classification, toutes origines confondues —
+    à la création ou après la lecture d'une pièce jointe ;
+  - **tranchée** : acceptée ou corrigée par un technicien, à la résolution, à la clôture ou
+    par une recatégorisation. La part acceptée porte sur les tranchées seules, l'effectif à
+    côté ; les propositions en attente sont comptées à part, jamais dans le pourcentage ;
+  - **correction collectée** : une catégorie proposée puis corrigée — le désaccord dont le
+    réentraînement tire le plus. `labelsValides()` en compte davantage (tout ticket réel
+    résolu avec une catégorie) : ce n'est pas le même nombre, et l'écran ne les mélange pas ;
+  - **abstention** : le RAG s'est abstenu, faute de ticket assez proche — un résultat
+    valide. **Échec** : le service était indisponible ;
+  - période : la **date de la suggestion**.
+- **« À traiter » ignore la période** : c'est le présent. « Sans prise en charge » se lit au
+  statut (Nouveau, En attente) — prendre en charge est la seule voie vers « En cours », et
+  les tickets synthétiques n'ont pas d'événements ; « sans technicien » se lit à
+  l'affectation.
+- **La piste de l'anneau de progression est un décor**, pas une donnée : sa classe `piste`
+  l'écarte du contrôle de contraste des marques, dans le banc d'audit.
+
+## Ce qui a été prouvé, et comment
+
+- **Backend** : typage, lint ; **16 tests d'intégration verts** sur la base jetable.
+- **Sur la base locale, en lecture seule**, par le code réel du service : 12 catégories
+  proposées, 4 tranchées dont 3 acceptées — **75 %, « 3 sur 4 »** —, 8 en attente ;
+  6 suggestions générées, 1 abstention, aucun échec ; **1 correction**. « À traiter » :
+  136 ouverts, **54 sans technicien**, 90 sans prise en charge ; le plus ancien, #670,
+  ouvert depuis 178 jours.
+- **Frontend** : build, `oxlint` (les 6 avertissements de `main`), `verifier:couleurs`
+  sur 84 fichiers, `verifier:contrastes`.
+- **Dans le navigateur** (`st-demo`, deux thèmes, trois rôles, mobile, survols) : 26 relevés,
+  **2 772 textes, aucun sous le seuil**, aucun secteur sous 3:1. Adresses e-mail et points
+  décimaux : contrôle inopérant, voir l'étape 4, « Correction ».
+
+## Dettes assumées et documentées
+
+- **L'infobulle de l'anneau de progression n'a pas été exercée par le banc** : la base de
+  `st-demo` n'a aucune catégorie tranchée, l'anneau n'y montre que sa piste. Sur la base
+  locale (3 sur 4), elle est à voir dans le navigateur.
+- **Le banc attend désormais 30 s le port de débogage d'Edge** : 10 s n'ont pas suffi une
+  fois, au relancement du navigateur entre les deux thèmes.
+- **La carte « Module IA » est plus courte que « À traiter »** : un vide sous les trois
+  chiffres, sur grand écran.
+
+---
+
+# Tableau de bord v1.1 — groupe 4 : les techniciens
+
+> Séance du **13/10/2026** (groupe 3 commité en `9ab0357`, validé).
+> Consigne : une liste avec avatar à initiales et nombre de tickets, sans barres ; seulement
+> les techniciens actifs sur la période, triés par nombre de tickets, les autres résumés en
+> une ligne (« 5 sans activité ») ; les initiales, pas de photos. Décision D7 : la section
+> nomme des collègues — l'administrateur voit l'équipe, un technicien sa seule ligne, un
+> employé rien.
+
+## Ce qui est livré
+
+- **`GET /api/tableau-de-bord/techniciens`**, réservé au support (l'employé reçoit 403). Pour
+  chaque technicien actif sur la période : ses tickets ouverts à la fin de la période, ses
+  tickets résolus sur la période et leur temps moyen de résolution, la date de fin d'une
+  absence en cours ; puis le nombre de comptes techniciens sans activité. Un technicien n'y
+  reçoit que sa propre ligne, quel que soit le filtre demandé. Ni adresse e-mail, ni motif
+  d'absence.
+- **Tests** : 6 tests d'intégration de plus (22 au total) :
+  - les définitions et le tri ;
+  - « ouverts » au dernier jour de la période ;
+  - ni e-mail ni motif d'absence dans la réponse ;
+  - la ligne unique du technicien, même quand il demande celle d'un collègue ;
+  - le refus fait à l'employée ;
+  - les filtres de technicien et de service.
+- **Section « Techniciens »** (administrateur), à la place des barres « Charge par
+  technicien » :
+  - une liste : avatar à initiales, nom, « 236 résolus · 47,4 h en moyenne » et, à droite,
+    les tickets ouverts — l'en-tête de la colonne dit « ouverts », ou « ouverts au 31/08 »
+    pour une période passée ;
+  - trois lignes, puis « 6 autres actifs · 1 sans activité » ; « N autres actifs » déplie la
+    liste, « Réduire la liste » la replie ;
+  - une infobulle par ligne, au survol et au focus clavier : ce que mesure chaque nombre ;
+  - une absence en cours : la pastille « absent jusqu'au 13/10 ».
+- **Section « Mon activité »** (technicien) : son nom, puis trois lignes — tickets ouverts,
+  résolus, temps moyen de résolution —, ou « Aucune activité sur la période ».
+- **Exports** : la « Charge par technicien » laisse place à la liste de l'écran — feuille
+  « Techniciens » de l'Excel, section du PDF —, avec sa définition. Le technicien y trouve
+  « Mon activité » ; l'employé, plus rien : son export nommait jusqu'ici tous les techniciens.
+  Au passage, un titre de section ne reste plus seul en bas de page du PDF (c'était déjà le
+  cas de « Charge par technicien »).
+
+## Les décisions, et leurs raisons `[établi en séance]`
+
+- **Les définitions** :
+  - au **technicien actuel** du ticket : l'historique des affectations n'est pas reconstitué ;
+  - **ouverts** : ses tickets non résolus à la fin de la période — la définition de la carte
+    « Ouverts », ventilée par technicien. Sur une période qui finit aujourd'hui, c'est sa
+    charge du moment ;
+  - **résolus** et **temps moyen** : ceux des cartes du haut, ventilés par technicien ;
+    l'effectif de la moyenne est le nombre de résolus, affiché à côté ;
+  - **actif sur la période** : au moins un ticket ouvert à sa fin ou résolu en son cours —
+    autrement dit, un ticket qu'il a détenu, ouvert, à un moment de la période ;
+  - **sans activité** : les comptes techniciens actifs, non désactivés, sans aucun de ces
+    tickets. Un administrateur ou un compte désactivé n'apparaissent que s'ils ont une
+    activité.
+- **Le tri** : par tickets ouverts, puis par résolus — l'ordre de la colonne « en cours » de
+  la maquette.
+- **« ouverts » plutôt que « en cours »**, l'en-tête de la maquette : « En cours » est aussi
+  un statut, affiché sous la carte « Ouverts ». La colonne compte les tickets en attente ET
+  en cours : sur la base locale, 27 + 26 + 25 + 2 + 2 = 82 tickets, contre 46 tickets « en
+  cours » (et 36 en attente). Le même mot pour deux nombres, sur le même écran, se lirait comme une erreur. Avec
+  « ouverts », la colonne et la carte se recoupent : 82 + 54 tickets sans technicien = 136.
+- **Trois lignes avant « N autres actifs »**, comme la maquette : à cinq, la carte dépassait
+  ses voisines (priorités, satisfaction) d'environ 150 px, et la rangée gardait deux vides.
+- **La vue du technicien en trois lignes** plutôt qu'en une ligne de liste : seule, la ligne
+  laissait la carte aux deux tiers vide.
+- **L'absence** : la date de fin seulement, comme l'ancien graphique de charge ; le motif ne
+  quitte jamais l'administration des absences.
+
+## Ce qui a été prouvé, et comment
+
+- **Backend** : typage, lint, 127 tests unitaires ; **22 tests d'intégration verts** sur la
+  base jetable.
+- **Sur la base locale, en lecture seule**, par le code réel du service :
+  - 12 mois : 9 techniciens actifs, 1 sans activité — Technicien Support 1 (27 ouverts,
+    236 résolus, 47,4 h), Support 2 (26, 238, 48,8 h), Support 3 (25, 249, 48 h), puis
+    « test test » (2, 7) et Fadi Zaghdoud (2, 1) ;
+  - plage de démonstration (31/05 → 09/06/2026) : 3 actifs, 7 sans activité — Support 1
+    (22 ouverts, 26 résolus, 45 h), Support 3 (19, 32, 56,4 h), Support 2 (17, 27, 42,7 h) ;
+  - un technicien qui demande la ligne d'un collègue reçoit la sienne.
+- **Frontend** : build, `oxlint` (les 6 avertissements de `main`), `verifier:couleurs` sur
+  85 fichiers, `verifier:contrastes`.
+- **Dans le navigateur** (`st-demo`, deux thèmes, trois rôles, mobile, survols) : 40 relevés,
+  **5 218 textes, aucun sous le seuil**, aucun secteur sous 3:1 (adresses e-mail et points
+  décimaux : contrôle inopérant, voir l'étape 4, « Correction ») ; pas de section chez
+  l'employée ; « ouverts au 31/08 » sur une période passée. **États simulés** — la réponse
+  du seul point d'accès des techniciens remplacée dans le navigateur, aucune base lue ni
+  écrite pour eux : 8 techniciens repliés puis dépliés, un nom très long, une absence, un
+  technicien sans activité.
+- **Exports** téléchargés pour les trois rôles et relus : l'Excel en vrais nombres (47,4),
+  le PDF à virgule (« 47,4 »), la mention d'absence sans motif, aucune adresse e-mail.
+
+## Dettes assumées et documentées
+
+- **Le technicien actuel, pas l'historique** : un ticket réaffecté compte entièrement chez
+  son dernier technicien, y compris sur une période passée.
+- **Les comptes de test de la base locale** (« Tech Evt », « Tech Sat »…) sont actifs sur
+  12 mois : un ticket résolu chacun, en 0 min. Ce sont de vraies données ; une base
+  reconstruite ne les a pas.
+- **La liste dépliée allonge la rangée** : à huit techniciens, les cartes voisines
+  s'étirent d'autant. Le repli reste l'état par défaut.
+
+---
+
+# Tableau de bord v1.1 — étape 4 : affichage mobile et vérification finale
+
+> Séances des **13 et 14/10/2026** (groupe 4 commité en `48cbcab`, validé).
+> Consigne : l'affichage mobile, puis la vérification finale prévue — base reconstruite,
+> copie de la base locale, preuves par le diff, tickets de démonstration dans les deux
+> thèmes, journal et README —, et STOP avant la fusion.
+
+## Ce qui est livré
+
+- **Affichage mobile et tablette**, quatre retouches :
+  - **barre du haut** : entre 768 et 1 023 px, le libellé « Rechercher… » et « Ctrl K » se
+    masquent, la loupe reste. Le bouton porte désormais un nom accessible, « Rechercher » :
+    sans libellé visible, il n'en avait aucun ;
+  - **rangée priorités, satisfaction, techniciens** : deux colonnes à partir de 1 024 px
+    seulement, au lieu de 768 ;
+  - **sélecteur de période** : une marge intérieure réduite sous 640 px, pour tenir sur une
+    ligne ;
+  - **filtres** : sous 640 px, ils s'étirent, deux par ligne, au lieu d'une largeur fixe.
+- **PR #18**, en brouillon vers `main` : la CI y tourne, le job SQL compris.
+- **README** :
+  - « Ce que l'on voit » réécrit avec les indicateurs du nouveau tableau de bord ;
+  - le tableau des attendus corrigé : 11 demandeurs, et non 31.
+
+## Les décisions, et leurs raisons `[établi en séance]`
+
+- **Deux colonnes à partir de 1 024 px** : la jauge des priorités mesure 232 px. À 768 px,
+  avec la barre latérale, une carte sur deux colonnes n'en offrait qu'environ 187 : la jauge
+  était rognée et la légende tronquée (« F.. », « M. »).
+- **La loupe seule entre 768 et 1 023 px** : la bascule de thème, ajoutée par cette branche,
+  occupe environ 90 px de la barre ; le titre de la page y était coupé (« Tableau de b… »).
+- **La vérification sur des projets compose séparés**, jamais sur `st-demo`, dont
+  l'utilisateur se servait au même moment :
+  - `st-verif` : une base reconstruite de zéro, par la procédure du README ;
+  - `st-copie` : la base locale, copiée par `pg_dump` en session forcée en lecture seule,
+    puis restaurée dans un volume neuf.
+- **Trois comptes de la copie dotés d'un mot de passe de vérification**, dans la copie
+  seulement — se connecter écrit dans la base (jeton de session, journal d'audit). Contrôlé
+  ensuite : dans la base locale, ces comptes sont toujours sans mot de passe.
+- **L'Ollama de l'utilisateur relié aux réseaux de vérification** le temps des suggestions,
+  puis détaché, et son modèle déchargé : il n'en gardait aucun en mémoire avant.
+- **Le message du chargeur, « 31 demandeurs », n'est pas corrigé** : hors du périmètre de
+  cette branche. 31 est le nombre de couples service / poste du corpus ; le chargeur crée un
+  compte par service, soit 11. Le README dit le vrai nombre.
+
+## Ce qui a été prouvé, et comment
+
+- **CI** : les quatre jobs verts sur la PR #18 — dont « Backend (tests SQL, base
+  éphémère) », qui tournait pour la première fois.
+- **Preuves par le diff**, contre `v1.0` :
+  - **backend** : hors du tableau de bord, seuls `routes/index.ts` (une ligne) et
+    `package.json` (le script `test:integration`) changent. `ml/`, les fichiers compose, les
+    Dockerfiles et le schéma Prisma sont identiques ;
+  - **interface** : `iaApi.ts`, `ticketsApi.ts` et `types/ticket.ts` sont identiques. Sur les
+    44 autres fichiers modifiés hors du tableau de bord, **31 ne changent que des classes**
+    (preuve par l'arbre syntaxique), dont `CreateTicketPage.tsx` (1 099 nœuds) et
+    `TicketDetailPage.tsx` (6 762 nœuds) ;
+  - **les 13 autres** changent de structure, toujours pour la présentation :
+    - la bascule de thème dans `AuthLayout`, `Sidebar` et `Topbar` ;
+    - les décors en dégradé retirés de `Logo`, `EmptyState`, `Skeleton` et `StatCard` ;
+    - la pastille de statut (`Badge`, `ticket-ui`), dont la prop est facultative : sans elle,
+      le rendu est celui d'avant ;
+    - `format.ts`, où seule la palette des avatars change de classes et trois fonctions
+      s'ajoutent ;
+    - l'initialisation du thème (`main.tsx`) et le tableau de bord chargé à la demande
+      (`DashboardPage`).
+- **Base reconstruite** (`st-verif`) : les attendus du README — 852 tickets #9 à #860,
+  723 résolutions liées, 178 évaluations, 852 embeddings en 118 s ; 11 demandeurs (et non 31).
+- **Chemin de suggestion IA sur le code final**, un appel par cas, **sur la base reconstruite
+  et sur la copie de la base locale** : #108 (#70, #691, #760), #151 (#28, #678), #282 (#38,
+  #124, #644) et #323 (#606) citent exactement les sources du README ; les deux saisies
+  d'abstention s'abstiennent.
+- **Dans le navigateur, sur la base reconstruite** :
+  - tous les écrans, trois rôles, deux thèmes : 68 relevés, **9 902 textes, aucun sous le
+    seuil**, aucun effet interdit, aucun secteur sous 3:1 ;
+  - les tickets #108, #151, #282 et #323, avec leur suggestion, dans les deux thèmes ;
+  - le tableau de bord en mobile (390 px) et en tablette (768 px), trois rôles : **aucun
+    débordement horizontal** ;
+  - le tableau de bord seul, survols et états simulés compris : 40 relevés, **aucune adresse
+    e-mail, aucun point décimal** (détection corrigée, voir plus bas).
+- **Sur la copie de la base locale** :
+  - plage de démonstration (31/05 → 09/06/2026) : 85 résolus (+6,3 %), 48,6 h (−6,0 %),
+    87 ouverts (+6,1 %), prise en charge « — » ;
+  - le survol de l'anneau du module IA, enfin exercé : « 3 sur 4 acceptées · 1 corrigée
+    par un technicien » — la dette du groupe 3 est levée ;
+  - 34 relevés, puis 18 en mobile : aucun texte sous le seuil, aucun débordement ; aucune
+    adresse e-mail ni point décimal sur le tableau de bord.
+
+## Correction
+
+**La recherche d'adresses e-mail et de points décimaux du banc d'audit ne fonctionnait pas**,
+depuis sa création au groupe 1 :
+
+- ses deux expressions régulières étaient écrites dans une chaîne de gabarit JavaScript, qui
+  retire les barres obliques inverses. La page recevait `/[w.+-]+@[w-]+.[w.-]+/`, qui ne
+  reconnaît aucune adresse réelle, et une expression des points décimaux tout aussi
+  inopérante ;
+- les « aucune adresse e-mail, aucun point décimal » des groupes 1 à 4 ne prouvaient donc
+  rien. Ils sont annotés sur place ;
+- découverte le 14/10 : sur la copie, les pages de ticket, qui affichent l'adresse du
+  demandeur, n'en comptaient aucune ;
+- corrigée (barres doublées), vérifiée sur un texte d'essai, puis rejouée : aucune adresse ni
+  point décimal sur le tableau de bord, des deux côtés. Les seules adresses trouvées sont
+  celles des demandeurs, sur les pages de ticket, où elles sont attendues ;
+- les relectures des exports PDF et Excel, écrites en Python, n'étaient pas touchées.
+
+## Dettes assumées et documentées
+
+- **Le limiteur de connexions** (10 par quart d'heure et par adresse) est partagé entre le
+  banc et l'utilisateur : le 13/10, les passages sur `st-demo` l'ont épuisé, au risque de
+  refuser ses propres connexions pendant un quart d'heure. Depuis, chaque passage tourne sur
+  sa propre pile, l'API relancée entre deux passages.
+- **La mise en veille de la machine** a interrompu le premier scénario (jetons expirés) : il
+  a repris là où il s'était arrêté.
+- **Edge tarde parfois à rouvrir son port de débogage** : le banc le relance jusqu'à trois
+  fois. Un passage sombre a échoué parce qu'une vérification de types tournait en même
+  temps ; rejoué seul, il est passé.
+- **Le critère 5/5 n'a pas été rejoué** : un appel par cas.
+- **Sur la copie, après le scénario**, les chiffres des techniciens diffèrent de ceux de la
+  base locale (les tickets de démonstration y ont été affectés à Technicien Support 1) : les
+  valeurs citées pour la base locale viennent de sa lecture seule.
+- **`st-verif` et `st-copie` sont arrêtées, leurs volumes conservés.** `st-copie` contient
+  une copie de la base locale, dont trois comptes portent le mot de passe de vérification :
+  à supprimer après la fusion.
